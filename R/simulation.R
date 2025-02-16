@@ -1,4 +1,4 @@
-##' Simulation function soley for testing and exploring ALDEx2, Truth is in CLR
+##' Simulation function soley for testing and exploring ALDEx3, Truth is in CLR
 ##' Coordinates.
 ##'
 ##' Not designed to create realistic data. Does not add any noise to linear

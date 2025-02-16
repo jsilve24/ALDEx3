@@ -1,7 +1,7 @@
-##' ALDEx2 Linear Models
+##' ALDEx3 Linear Models
 ##'
 ##' 
-##' @title ALDEx2 Linear Modles
+##' @title ALDEx3 Linear Modles
 ##' @param counts an (D x N) matrix of sequence count, N is number of samples, D
 ##'   is number of taxa or genes
 ##' @param X either a formula (in which case DATA must be non-null) or a model
@@ -17,7 +17,7 @@
 ##' @return List with elements estimate (P x D x nsample array), std.error (P x
 ##'   D x nsample array), and p.val (P x D matrix) summarizing over the
 ##'   posterior. TODO p.value calcluation may be slightly different than in
-##'   current ALDEx2 -- need to check.
+##'   current ALDEx3 -- need to check.
 ##' @export
 ##' @author Justin Silverman
 aldex.lm <- function(Y, X, data=NULL, nsample=2000,  gamma=NULL) {

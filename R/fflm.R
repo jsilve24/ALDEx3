@@ -1,10 +1,10 @@
-## Freaking Fast Linear Models for ALDEx2
+## Freaking Fast Linear Models for ALDEx3
 ## Author: Justin D. Silverman 
 ## Email: justinsilverman@psu.edu
 
 ##' Freaking Fask Linear Models
 ##'
-##' Tailored for ALDEx2 where covariates are shared between massive numbers of
+##' Tailored for ALDEx3 where covariates are shared between massive numbers of
 ##' linear regressions where only Y is changing.
 ##'
 ##' @param Y a numeric array (N x D X S) where D is the number of taxa/genes, N
