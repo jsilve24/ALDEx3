@@ -8,7 +8,7 @@ test_that("aldex.lm runs", {
   expect_true(TRUE)
 })
 
-test_that("test-aldex_lm.R",{
+test_that("test-aldex_lm.R correct mean estimate",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
   res <- aldex.lm(sim$Y, sim$X, GAMMA=default)
@@ -16,3 +16,18 @@ test_that("test-aldex_lm.R",{
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
 
+
+test_that("test-aldex_lm.R errors with too small streaming",{
+  set.seed(4985)
+  sim <- aldex.lm.sim.clr(N=1000, depth=10000)
+  expect_error(aldex.lm(sim$Y, sim$X, GAMMA=default, streamsize=0.001))
+})
+
+
+test_that("test-aldex_lm.R correct mean estimate when streaming",{
+  set.seed(4985)
+  sim <- aldex.lm.sim.clr(N=1000, depth=10000)
+  res <- aldex.lm(sim$Y, sim$X, GAMMA=default, streamsize=10)
+  mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
+  expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
+})
