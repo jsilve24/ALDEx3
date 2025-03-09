@@ -14,7 +14,8 @@ default <- function(X, Y, logWpara) {
   gamma <- 0.5 # TODO provide functionality so this is no longer hard coded
   P <- nrow(X)
   nsample <- dim(logWpara)[3]
-  logWperp <- -apply(logWpara, c(2,3), FUN=`mean`)
+  logWperp <- -colMeans(logWpara, dims=1)
+
   tmp <- P*nsample
   Lambdaperp <- matrix(rnorm(tmp,0,gamma), P, nsample)
   logWperp <- logWperp + t(X)%*% Lambdaperp
