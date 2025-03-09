@@ -16,6 +16,3 @@ test_that("test-aldex_lm.R",{
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
 
-profvis({
-  res <- aldex.lm(sim$Y, sim$X, GAMMA=default)
-})

@@ -10,7 +10,7 @@
 ##'   be "~condition-1" (note the lack of the left hand side).
 ##' @param data a data frame for use with formula, must have N rows
 ##' @param nsample number of monte carlo replicates
-##' @param gamma the scale model, can be a function or an N x nsample matrix. If
+##' @param GAMMA the scale model, can be a function or an N x nsample matrix. If
 ##'   a function is passed, it should take one argument (pi) which is a N x D x
 ##'   nsample array of log-transformed relative abundances. That function must
 ##'   in turn output an N x nsample matrix of scale samples on the log2 scale.
@@ -19,7 +19,10 @@
 ##'   streaming chunk. If D*N*nsample*8/1000000 is less than streamsize then no
 ##'   streaming will be performed. Note, to conserve memory, samples from the
 ##'   Dirichlet and scale models will not be returned if streaming is used.
-##'   Streaming can be turned off by setting streamsize=Inf. 
+##'   Streaming can be turned off by setting streamsize=Inf.
+##' @param return.samples (default TRUE) if true, return samples for logWpara
+##'   composition and logWperp (scale). Will override to FALSE if streaming is
+##'   required.
 ##' @return List with elements estimate (P x D x nsample array), std.error (P x
 ##'   D x nsample array), and p.val (P x D matrix) summarizing over the
 ##'   posterior. TODO p.value calcluation may be slightly different than in
@@ -27,7 +30,7 @@
 ##' @export
 ##' @author Justin Silverman
 aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
-                     streamsize=8000) {
+                     streamsize=8000, return.samples=FALSE) {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -60,8 +63,6 @@ aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   ## combine output of the different streams
   out <- combine.streams(out)
 
-  ## TODO add options to return all matricies, logWperp, etc... 
-  
   ## summarise output
   p.lower <- apply(out$p.lower,c(1,2), FUN=`mean`)
   p.upper <- apply(out$p.upper,c(1,2), FUN=`mean`)
@@ -80,7 +81,6 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
   ## dirichlet sample
   logWpara <- array(NA, c(D, N, nsample))
   for (i in 1:N) {
-    ## TODO add option to change prior
     logWpara[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
   }
 
@@ -97,8 +97,12 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
 
   ## fit linear model
   out <- fflm(aperm(logW, c(2,1,3)),t(X)) # TODO change fflm so it gives correct
-  # output dimensions and takes correct
-  # inputs dimensions -- without needing
-  # aperm
-   
+                                          # output dimensions and takes correct
+                                          # inputs dimensions -- without needing
+                                          # aperm
+  if (!stream){
+    out$logWpara <- logWpara
+    out$logWperp <- logWperp
+  }
+  return(out)
  }
