@@ -18,7 +18,7 @@ standard errors, and the two-sided p-values for each coefficient (P), of
 each model fit to each taxa (D) and each posterior sample (S)
 }
 \description{
-Tailored for ALDEx2 where covariates are shared between massive numbers of
+Tailored for ALDEx3 where covariates are shared between massive numbers of
 linear regressions where only Y is changing.
 }
 \author{

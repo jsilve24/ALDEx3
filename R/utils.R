@@ -3,7 +3,7 @@
 ##' Takes a list l, where every element is itself a list of 3D arrays. Each
 ##' array should have matching first and second dimentions. This function
 ##' combines those arrays along the third dimension.
-##' @param l
+##' @param l a list, where every element is itself a list of 3D arrays.
 ##' @return a list of 3D arrays
 ##' @author Justin Silverman
 ##' @import purrr

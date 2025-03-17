@@ -2,7 +2,7 @@
 % Please edit documentation in R/simulation.R
 \name{aldex.lm.sim.clr}
 \alias{aldex.lm.sim.clr}
-\title{Simulation function soley for testing and exploring ALDEx2, Truth is in CLR
+\title{Simulation function soley for testing and exploring ALDEx3, Truth is in CLR
 Coordinates.}
 \usage{
 aldex.lm.sim.clr(D = 10, N = 11, P = 2, depth = 10000)

@@ -2,9 +2,17 @@
 % Please edit documentation in R/aldex.R
 \name{aldex.lm}
 \alias{aldex.lm}
-\title{ALDEx2 Linear Modles}
+\title{ALDEx3 Linear Modles}
 \usage{
-aldex.lm(Y, X, data = NULL, nsample = 2000, gamma = NULL)
+aldex.lm(
+  Y,
+  X,
+  data = NULL,
+  nsample = 2000,
+  GAMMA = NULL,
+  streamsize = 8000,
+  return.samples = FALSE
+)
 }
 \arguments{
 \item{X}{either a formula (in which case DATA must be non-null) or a model
@@ -16,10 +24,21 @@ be "~condition-1" (note the lack of the left hand side).}
 
 \item{nsample}{number of monte carlo replicates}
 
-\item{gamma}{the scale model, can be a function or an N x nsample matrix. If
+\item{GAMMA}{the scale model, can be a function or an N x nsample matrix. If
 a function is passed, it should take one argument (pi) which is a N x D x
 nsample array of log-transformed relative abundances. That function must
 in turn output an N x nsample matrix of scale samples on the log2 scale.}
+
+\item{streamsize}{(default 8000) memory footprint (approximate) at which to
+use streaming. This should be thought of as the number of Mb for each
+streaming chunk. If D\emph{N}nsample*8/1000000 is less than streamsize then no
+streaming will be performed. Note, to conserve memory, samples from the
+Dirichlet and scale models will not be returned if streaming is used.
+Streaming can be turned off by setting streamsize=Inf.}
+
+\item{return.samples}{(default TRUE) if true, return samples for logWpara
+composition and logWperp (scale). Will override to FALSE if streaming is
+required.}
 
 \item{counts}{an (D x N) matrix of sequence count, N is number of samples, D
 is number of taxa or genes}
@@ -28,10 +47,10 @@ is number of taxa or genes}
 List with elements estimate (P x D x nsample array), std.error (P x
 D x nsample array), and p.val (P x D matrix) summarizing over the
 posterior. TODO p.value calcluation may be slightly different than in
-current ALDEx2 -- need to check.
+current ALDEx3 -- need to check.
 }
 \description{
-ALDEx2 Linear Models
+ALDEx3 Linear Models
 }
 \author{
 Justin Silverman

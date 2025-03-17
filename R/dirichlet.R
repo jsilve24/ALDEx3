@@ -1,7 +1,7 @@
 ##' Function for sampling Dirichlet random variables
 ##'
 ##' @param n number of samples
-##' @param alpha DxN matrix of Dirichlet parameters
+##' @param Alpha DxN matrix of Dirichlet parameters
 ##' @return an D x n matrix of samples 
 ##' @author Justin Silverman
 rDirichletMat <- function(n, Alpha) {
