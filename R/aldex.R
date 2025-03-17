@@ -79,10 +79,7 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
   D <- nrow(Y)
   
   ## dirichlet sample
-  logWpara <- array(NA, c(D, N, nsample))
-  for (i in 1:N) {
-    logWpara[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
-  }
+  logWpara <- log2(rDirichletMat(nsample, Y+0.5))
 
   ## sample from scale model
   if (is.null(GAMMA)){
