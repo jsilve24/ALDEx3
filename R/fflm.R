@@ -37,8 +37,8 @@ fflm <- function(Y, X) {
    stderr <- sqrt(dvcov %*% t(sigmaSq))
    t <- Theta / stderr
    dof <- N-P
-   p.lower <- pt(t, dof)
-   p.upper <- pt(-t, dof)
+   p.upper <- pt(t, dof, lower.tail=F)
+   p.lower <- 1-p.upper
    return(list(estimate = array(Theta, c(P, D, S)),
                std.error = array(stderr, c(P, D, S)),
                p.lower = array(p.lower, c(P, D, S)),
