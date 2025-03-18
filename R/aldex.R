@@ -23,6 +23,8 @@
 ##' @param return.samples (default TRUE) if true, return samples for logWpara
 ##'   composition and logWperp (scale). Will override to FALSE if streaming is
 ##'   required.
+##' @param p.adjust.method (default BH) The method for multiple hypothesis test
+##'   correction. See `p.adjust` for all available methods.
 ##' @return List with elements estimate (P x D x nsample array), std.error (P x
 ##'   D x nsample array), and p.val (P x D matrix) summarizing over the
 ##'   posterior. TODO p.value calcluation may be slightly different than in
@@ -30,7 +32,8 @@
 ##' @export
 ##' @author Justin Silverman
 aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
-                     streamsize=8000, return.samples=FALSE) {
+                     streamsize=8000, return.samples=FALSE,
+                     p.adjust.method="BH") {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -63,13 +66,34 @@ aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   ## combine output of the different streams
   out <- combine.streams(out)
 
-  ## summarise output
-  p.lower <- apply(out$p.lower,c(1,2), FUN=`mean`)
-  p.upper <- apply(out$p.upper,c(1,2), FUN=`mean`)
-  ## TODO BH adjustment, before 
-  p <- 2*pmin(p.lower, p.upper) # TODO this is different than in Beyond
-  # Normalizations
-  return(list(estimate=out$estimate, std.error=out$std.error, p.val=p))
+  # p-value calculations, accounting for sign changes
+  p.lower <- apply(2*out$p.lower, c(1,2,3), function(item) min(1, item))
+  p.upper <- apply(2*out$p.upper, c(1,2,3), function(item) min(1, item))
+  p.lower.adj <- apply(p.lower, c(1,3), function(item) {
+    p.adjust(item, method=p.adjust.method)
+  })
+  p.upper.adj <- apply(p.upper, c(1,3), function(item) {
+    p.adjust(item, method=p.adjust.method)
+  })
+  p.lower.mean <- apply(p.lower, c(2,1), mean)
+  p.upper.mean <- apply(p.upper, c(2,1), mean)
+  p.res <- c()
+  for(col_i in 1:ncol(p.lower.mean)) {
+    tmp_mat <- cbind(p.lower.mean[,col_i],
+                     p.upper.mean[,col_i])
+    p.res <- rbind(p.res, apply(tmp_mat, 1, min))
+  }
+  p.lower.mean.adj <- apply(p.lower.adj, c(1,2), mean)
+  p.upper.mean.adj <- apply(p.upper.adj, c(1,2), mean)
+  p.adj.res <- c()
+  for(col_i in 1:ncol(p.lower.mean.adj)) {
+    tmp_mat <- cbind(p.lower.mean.adj[,col_i],
+                     p.upper.mean.adj[,col_i])
+    p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
+  }
+
+  return(list(estimate=out$estimate, std.error=out$std.error, p.val=p.res,
+              p.val.adj=p.adj.res))
   ## TODO write a good "summary" function and wrap this all in S3 class
 }
 

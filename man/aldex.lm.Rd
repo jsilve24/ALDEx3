@@ -11,7 +11,8 @@ aldex.lm(
   nsample = 2000,
   GAMMA = NULL,
   streamsize = 8000,
-  return.samples = FALSE
+  return.samples = FALSE,
+  p.adjust.method = "BH"
 )
 }
 \arguments{
@@ -39,6 +40,9 @@ Streaming can be turned off by setting streamsize=Inf.}
 \item{return.samples}{(default TRUE) if true, return samples for logWpara
 composition and logWperp (scale). Will override to FALSE if streaming is
 required.}
+
+\item{p.adjust.method}{(default BH) The method for multiple hypothesis test
+correction. See \code{p.adjust} for all available methods.}
 
 \item{counts}{an (D x N) matrix of sequence count, N is number of samples, D
 is number of taxa or genes}
