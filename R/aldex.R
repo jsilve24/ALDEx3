@@ -67,8 +67,8 @@ aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   out <- combine.streams(out)
 
   # p-value calculations, accounting for sign changes
-  p.lower <- apply(2*out$p.lower, c(1,2,3), function(item) min(1, item))
-  p.upper <- apply(2*out$p.upper, c(1,2,3), function(item) min(1, item))
+  p.lower <- array(pmin(1, 2 * out$p.lower), dim = dim(out$p.lower))
+  p.upper <- array(pmin(1, 2 * out$p.upper), dim = dim(out$p.upper))
   p.lower.adj <- apply(p.lower, c(1,3), function(item) {
     p.adjust(item, method=p.adjust.method)
   })
