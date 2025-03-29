@@ -88,3 +88,10 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
    expect_true(all(abs(round(aldex3.res$p.val[2,], 4)-aldex2.pvals)<0.015))
    expect_true(all(abs(round(aldex3.res$p.val.adj[2,], 4)-aldex2.adj.pvals)<0.015))
 })
+
+
+test_that("aldex retrns posterior samples when it should", {
+  sim <- aldex.lm.sim.clr(N=10, depth=100)
+  res <- aldex(sim$Y, sim$X, GAMMA=default, return.samples=TRUE)
+  expect_true("logWpara" %in% names(res))
+})

@@ -92,8 +92,13 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
     p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
   }
 
-  return(list(estimate=out$estimate, std.error=out$std.error, p.val=p.res,
-              p.val.adj=p.adj.res))
+  res <- list(estimate=out$estimate, std.error=out$std.error, p.val=p.res,
+              p.val.adj=p.adj.res)
+  if (return.samples) {
+    res[["logWperp"]] <- out$logWperp
+    res[["logWpara"]] <- out$logWpara
+  }
+  return(res)
   ## TODO write a good "summary" function and wrap this all in S3 class
 }
 
@@ -123,10 +128,11 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
   out <- fflm(aperm(logW, c(2,1,3)),t(X)) # TODO change fflm so it gives correct
                                           # output dimensions and takes correct
                                           # inputs dimensions -- without needing
-                                          # aperm
+  # aperm
   if (!stream){
     out$logWpara <- logWpara
     out$logWperp <- logWperp
   }
+
   return(out)
  }
