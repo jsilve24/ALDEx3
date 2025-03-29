@@ -31,7 +31,7 @@
 ##'   current ALDEx3 -- need to check.
 ##' @export
 ##' @author Justin Silverman
-aldex.lm <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
+aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
                      streamsize=8000, return.samples=FALSE,
                      p.adjust.method="BH") {
   N <- ncol(Y)

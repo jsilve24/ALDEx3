@@ -1,38 +1,38 @@
-test_that("aldex.lm runs", {
+test_that("aldex runs", {
   Y <- matrix(1:110, 10, 11)
   condition <- c(rep(0, 5), rep(1, 6))
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex.lm(Y, X, data, nsample=nsample, GAMMA=default)
+  foo <- aldex(Y, X, data, nsample=nsample, GAMMA=default)
   expect_true(TRUE)
 })
 
-test_that("test-aldex_lm.R correct mean estimate",{
+test_that("test-aldex.R correct mean estimate",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex.lm(sim$Y, sim$X, GAMMA=default)
+  res <- aldex(sim$Y, sim$X, GAMMA=default)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
 
 
-test_that("test-aldex_lm.R errors with too small streaming",{
+test_that("test-aldex.R errors with too small streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  expect_error(aldex.lm(sim$Y, sim$X, GAMMA=default, streamsize=0.001))
+  expect_error(aldex(sim$Y, sim$X, GAMMA=default, streamsize=0.001))
 })
 
 
-test_that("test-aldex_lm.R correct mean estimate when streaming",{
+test_that("test-aldex.R correct mean estimate when streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex.lm(sim$Y, sim$X, GAMMA=default, streamsize=10)
+  res <- aldex(sim$Y, sim$X, GAMMA=default, streamsize=10)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
 
-test_that("test-aldex_lm.R gives similar results to ALDEx2's aldex.glm", {
+test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
   set.seed(4985)
   ## Sim params
   mc.samples <- 6000
@@ -60,7 +60,7 @@ test_that("test-aldex_lm.R gives similar results to ALDEx2's aldex.glm", {
     })
     return(z)
   }
-  aldex3.res <- aldex.lm(sim_Y, t(cbind(1, metadata)),
+  aldex3.res <- aldex(sim_Y, t(cbind(1, metadata)),
                           nsample=mc.samples,
                           GAMMA=gamma_func)
   ## Generated with this code
