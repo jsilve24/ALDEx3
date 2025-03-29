@@ -96,4 +96,9 @@ test_that("aldex retrns posterior samples when it should", {
                return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logWpara"))
   expect_true("logWpara" %in% names(res))
+  expect_true("estimate" %in% names(res))
+  expect_true("std.error" %in% names(res))
+  expect_true("p.val" %in% names(res))
+  expect_true("p.val.adj" %in% names(res))
+  expect_false("logWperp" %in% names(res))
 })
