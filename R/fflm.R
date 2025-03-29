@@ -11,8 +11,9 @@
 ##'   is the number of samples, and S is the number of posterior samples
 ##' @param X a numeric matrix (N x P) where P is number of covariates
 ##' @return A list of (P x D x S)-arrays with the OLS point estimates, the
-##'   standard errors, and the two-sided p-values for each coefficient (P), of
-##'   each model fit to each taxa (D) and each posterior sample (S)
+##'   standard errors, and the two-sided p-values (using White's robust standard
+##'   errors) for each coefficient (P), of each model fit to each taxa (D) and
+##'   each posterior sample (S)
 ##' @author Justin Silverman
 fflm <- function(Y, X) {
    N <- dim(Y)[1]
@@ -32,9 +33,11 @@ fflm <- function(Y, X) {
    b <- t(X) %*% Y
    Theta <- solve(A, b)
    sqerr <- (Y - X %*% Theta)^2
-   sigmaSq <- colSums(sqerr)/(N-P)
-   dvcov <- diag( chol2inv(chol(t(X) %*% X)))
-   stderr <- sqrt(dvcov %*% t(sigmaSq))
+   ## sigmaSq <- colSums(sqerr)/(N-P)
+   chol.inv <- chol2inv(chol(t(X) %*% X))
+   dvcov <- diag(chol.inv %*% t(X) %*% diag(sqerr) %*% X %*%chol.inv)
+   ## stderr <- sqrt(dvcov %*% t(sigmaSq))
+   stderr <- sqrt(dvcov)
    t <- Theta / stderr
    dof <- N-P
    p.upper <- pt(t, dof, lower.tail=F)
