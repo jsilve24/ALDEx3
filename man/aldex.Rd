@@ -11,6 +11,7 @@ aldex(
   nsample = 2000,
   GAMMA = NULL,
   streamsize = 8000,
+  return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj"),
   return.samples = FALSE,
   p.adjust.method = "BH"
 )
@@ -37,9 +38,10 @@ streaming will be performed. Note, to conserve memory, samples from the
 Dirichlet and scale models will not be returned if streaming is used.
 Streaming can be turned off by setting streamsize=Inf.}
 
-\item{return.samples}{(default TRUE) if true, return samples for logWpara
-composition and logWperp (scale). Will override to FALSE if streaming is
-required.}
+\item{return.pars}{what results should be returned, see return section below.
+
+.samples (default TRUE) if true, return samples for logWpara composition and
+logWperp (scale). Will override to FALSE if streaming is required.}
 
 \item{p.adjust.method}{(default BH) The method for multiple hypothesis test
 correction. See \code{p.adjust} for all available methods.}
@@ -48,10 +50,21 @@ correction. See \code{p.adjust} for all available methods.}
 is number of taxa or genes}
 }
 \value{
-List with elements estimate (P x D x nsample array), std.error (P x
-D x nsample array), and p.val (P x D matrix) summarizing over the
-posterior. TODO p.value calcluation may be slightly different than in
-current ALDEx3 -- need to check.
+a list with elements controled by parameter resturn.pars. Options
+include:
+\itemize{
+\item X: P x N covariate matrix
+\item estimate: (P x D x nsample array) of linear model estimates
+\item std.error: (P x D x nsample array) of standard error for the estimates
+\item p.val: (P x D) matrix, unadjusted p-value for two-sided t-test
+\item p.val.adj: (P x D) matrix, p-value for two-sided t-test adjusted
+according to \code{p.adj.method}
+\item logWperp: (N x S) matrix, samples of the log scale from the scale model
+\item logWpara: (D x N x S) array, samples of the log composition from
+the multinomial-Dirichlet
+\item streaming: boolean, detnote if streaming was used.
+Note, logWperp and logWpara are not returned if streaming is active
+}
 }
 \description{
 ALDEx3 Linear Models

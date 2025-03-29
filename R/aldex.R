@@ -20,20 +20,31 @@
 ##'   streaming will be performed. Note, to conserve memory, samples from the
 ##'   Dirichlet and scale models will not be returned if streaming is used.
 ##'   Streaming can be turned off by setting streamsize=Inf.
-##' @param return.samples (default TRUE) if true, return samples for logWpara
-##'   composition and logWperp (scale). Will override to FALSE if streaming is
-##'   required.
+##' @param return.pars what results should be returned, see return section below. 
+##'
+##' .samples (default TRUE) if true, return samples for logWpara composition and
+##'   logWperp (scale). Will override to FALSE if streaming is required.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
-##' @return List with elements estimate (P x D x nsample array), std.error (P x
-##'   D x nsample array), and p.val (P x D matrix) summarizing over the
-##'   posterior. TODO p.value calcluation may be slightly different than in
-##'   current ALDEx3 -- need to check.
+##' @return a list with elements controled by parameter resturn.pars. Options
+##'   include:
+##'   - X: P x N covariate matrix 
+##'   - estimate: (P x D x nsample array) of linear model estimates
+##'   - std.error: (P x D x nsample array) of standard error for the estimates
+##'   - p.val: (P x D) matrix, unadjusted p-value for two-sided t-test
+##'   - p.val.adj: (P x D) matrix, p-value for two-sided t-test adjusted
+##'      according to `p.adj.method`
+##'   - logWperp: (N x S) matrix, samples of the log scale from the scale model
+##'   - logWpara: (D x N x S) array, samples of the log composition from
+##'      the multinomial-Dirichlet
+##'   - streaming: boolean, detnote if streaming was used. 
+##'  Note, logWperp and logWpara are not returned if streaming is active
 ##' @export
 ##' @author Justin Silverman
 aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
-                     streamsize=8000, return.samples=FALSE,
-                     p.adjust.method="BH") {
+                  streamsize=8000,
+                  return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj"),
+                  return.samples=FALSE, p.adjust.method="BH") {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -92,12 +103,14 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
     p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
   }
 
-  res <- list(estimate=out$estimate, std.error=out$std.error, p.val=p.res,
-              p.val.adj=p.adj.res)
-  if (return.samples) {
-    res[["logWperp"]] <- out$logWperp
-    res[["logWpara"]] <- out$logWpara
-  }
+  res <- list()
+  res$streaming <- stream
+  if ("estimate" %in% return.pars) res$estimate <- out$estimate
+  if ("std.error" %in% return.pars) res$std.error <- out$std.error
+  if ("p.val" %in% return.pars) res$p.val <- p.res
+  if ("p.val.adj" %in% return.pars) res$p.val.adj <- p.adj.res
+  if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
+  if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
   return(res)
   ## TODO write a good "summary" function and wrap this all in S3 class
 }

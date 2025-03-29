@@ -92,6 +92,8 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
 
 test_that("aldex retrns posterior samples when it should", {
   sim <- aldex.lm.sim.clr(N=10, depth=100)
-  res <- aldex(sim$Y, sim$X, GAMMA=default, return.samples=TRUE)
+  res <- aldex(sim$Y, sim$X, GAMMA=default,
+               return.pars=c("X", "estimate", "std.error", "p.val",
+                                "p.val.adj", "logWpara"))
   expect_true("logWpara" %in% names(res))
 })
