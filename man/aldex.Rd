@@ -13,7 +13,8 @@ aldex(
   streamsize = 8000,
   return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj"),
   return.samples = FALSE,
-  p.adjust.method = "BH"
+  p.adjust.method = "BH",
+  robust.se = FALSE
 )
 }
 \arguments{
@@ -38,13 +39,14 @@ streaming will be performed. Note, to conserve memory, samples from the
 Dirichlet and scale models will not be returned if streaming is used.
 Streaming can be turned off by setting streamsize=Inf.}
 
-\item{return.pars}{what results should be returned, see return section below.
-
-.samples (default TRUE) if true, return samples for logWpara composition and
-logWperp (scale). Will override to FALSE if streaming is required.}
+\item{return.pars}{what results should be returned, see return section
+below.}
 
 \item{p.adjust.method}{(default BH) The method for multiple hypothesis test
 correction. See \code{p.adjust} for all available methods.}
+
+\item{robust.se}{(default FALSE) should White's Heteroscedasticity-robust
+Standard Errors be used rather then the traditional approach. (slower)}
 
 \item{counts}{an (D x N) matrix of sequence count, N is number of samples, D
 is number of taxa or genes}

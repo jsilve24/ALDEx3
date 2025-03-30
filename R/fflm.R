@@ -10,11 +10,13 @@
 ##' @param Y a numeric array (N x D X S) where D is the number of taxa/genes, N
 ##'   is the number of samples, and S is the number of posterior samples
 ##' @param X a numeric matrix (N x P) where P is number of covariates
+##' @param hce (default FALSE), should Heteroskedasticity-consistent standard
+##'   errors be used? Slower to compute. 
 ##' @return A list of (P x D x S)-arrays with the OLS point estimates, the
 ##'   standard errors, and the two-sided p-values for each coefficient (P), of
 ##'   each model fit to each taxa (D) and each posterior sample (S)
 ##' @author Justin Silverman
-fflm <- function(Y, X) {
+fflm <- function(Y, X, hce=FALSE) {
    N <- dim(Y)[1]
    D <- dim(Y)[2]
    S <- dim(Y)[3]
@@ -32,9 +34,20 @@ fflm <- function(Y, X) {
    b <- t(X) %*% Y
    Theta <- solve(A, b)
    sqerr <- (Y - X %*% Theta)^2
-   sigmaSq <- colSums(sqerr)/(N-P)
-   dvcov <- diag( chol2inv(chol(t(X) %*% X)))
-   stderr <- sqrt(dvcov %*% t(sigmaSq))
+   if (!hce) {
+     sigmaSq <- colSums(sqerr)/(N-P)
+     dvcov <- diag( chol2inv(chol(t(X) %*% X)))
+     stderr <- sqrt(dvcov %*% t(sigmaSq))
+   } else if (hce) {
+     ## use white's robust standard errors instead of the more common standard
+     ## errors implemented above.
+     ## I want you to write the implmentation here. 
+     XtXinvXt2 <- (chol2inv(chol(t(X) %*% X)) %*% t(X))^2
+     stderr <- matrix(0, P, D*S)
+     for (i in 1:(D*S)) {
+       stderr[,i] <- sqrt(rowSums(sweep(XtXinvXt2, 2, sqerr[,i], FUN=`*`)))
+     }
+   }
    t <- Theta / stderr
    dof <- N-P
    p.upper <- pt(t, dof, lower.tail=F)

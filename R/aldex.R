@@ -20,12 +20,12 @@
 ##'   streaming will be performed. Note, to conserve memory, samples from the
 ##'   Dirichlet and scale models will not be returned if streaming is used.
 ##'   Streaming can be turned off by setting streamsize=Inf.
-##' @param return.pars what results should be returned, see return section below. 
-##'
-##' .samples (default TRUE) if true, return samples for logWpara composition and
-##'   logWperp (scale). Will override to FALSE if streaming is required.
+##' @param return.pars what results should be returned, see return section
+##'   below.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
+##' @param robust.se (default FALSE) should White's Heteroscedasticity-robust
+##'   Standard Errors be used rather then the traditional approach. (slower)
 ##' @return a list with elements controled by parameter resturn.pars. Options
 ##'   include:
 ##'   - X: P x N covariate matrix 
@@ -44,7 +44,7 @@
 aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
                   streamsize=8000,
                   return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj"),
-                  return.samples=FALSE, p.adjust.method="BH") {
+                  return.samples=FALSE, p.adjust.method="BH", robust.se = FALSE) {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -71,7 +71,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   }
   while (nsample.remaining > 0) {
     nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, GAMMA, stream)
+    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, GAMMA, stream, robust.se)
     iter <- iter+1
   }
   ## combine output of the different streams
@@ -116,7 +116,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
 }
 
 
-aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
+aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream, robust.se=FALSE) {
   N <- ncol(Y)
   D <- nrow(Y)
   
@@ -138,10 +138,10 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream) {
   logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
 
   ## fit linear model
-  out <- fflm(aperm(logW, c(2,1,3)),t(X)) # TODO change fflm so it gives correct
-                                          # output dimensions and takes correct
-                                          # inputs dimensions -- without needing
-  # aperm
+  out <- fflm(aperm(logW, c(2,1,3)),t(X), robust.se) # TODO change fflm so it
+                                          # gives correct output dimensions and
+                                          # takes correct inputs dimensions --
+                                          # without needing aperm
   if (!stream){
     out$logWpara <- logWpara
     out$logWperp <- logWperp

@@ -4,13 +4,16 @@
 \alias{fflm}
 \title{Freaking Fask Linear Models}
 \usage{
-fflm(Y, X)
+fflm(Y, X, hce = FALSE)
 }
 \arguments{
 \item{Y}{a numeric array (N x D X S) where D is the number of taxa/genes, N
 is the number of samples, and S is the number of posterior samples}
 
 \item{X}{a numeric matrix (N x P) where P is number of covariates}
+
+\item{hce}{(default FALSE), should Heteroskedasticity-consistent standard
+errors be used? Slower to compute.}
 }
 \value{
 A list of (P x D x S)-arrays with the OLS point estimates, the
