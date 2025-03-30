@@ -16,34 +16,39 @@
 ##'   each posterior sample (S)
 ##' @author Justin Silverman
 fflm <- function(Y, X) {
-   N <- dim(Y)[1]
-   D <- dim(Y)[2]
-   S <- dim(Y)[3]
-   P <- dim(X)[2]
-   stopifnot(dim(X)[1] == N)
-  tmp <- 
-   stopifnot (P <= N)
+  N <- dim(Y)[1]
+  D <- dim(Y)[2]
+  S <- dim(Y)[3]
+  P <- dim(X)[2]
+  stopifnot(dim(X)[1] == N)
+  stopifnot (P <= N)
 
-   ## from 3D array to 2D as a hack to make this much faster
-   ## Will make Y, N x PS 
-   Y <- array(Y, c(N, D*S))
-   ## Y <- Y[,,1]
-   ## Now compute OLS solution 
-   A <- t(X) %*% X
-   b <- t(X) %*% Y
-   Theta <- solve(A, b)
-   sqerr <- (Y - X %*% Theta)^2
-   ## sigmaSq <- colSums(sqerr)/(N-P)
-   chol.inv <- chol2inv(chol(t(X) %*% X))
-   dvcov <- diag(chol.inv %*% t(X) %*% diag(sqerr) %*% X %*%chol.inv)
-   ## stderr <- sqrt(dvcov %*% t(sigmaSq))
-   stderr <- sqrt(dvcov)
-   t <- Theta / stderr
-   dof <- N-P
-   p.upper <- pt(t, dof, lower.tail=F)
-   p.lower <- 1-p.upper
-   return(list(estimate = array(Theta, c(P, D, S)),
-               std.error = array(stderr, c(P, D, S)),
-               p.lower = array(p.lower, c(P, D, S)),
-               p.upper = array(p.upper, c(P, D, S))))
+  Y <- array(Y, c(N, D * S))
+
+  XtX_inv <- chol2inv(chol(crossprod(X)))
+  Theta <- XtX_inv %*% crossprod(X, Y)
+
+  residuals <- Y - X %*% Theta
+
+  hat_matrix <- X %*% XtX_inv
+  robust_var <- matrix(0, nrow = P, ncol = D*S)
+
+  for (i in 1:(D*S)) {
+    X_resid <- hat_matrix * residuals[, i]
+    robust_var[, i] <- colSums(X_resid^2)
+  }
+
+  stderr <- sqrt(robust_var)
+  t_values <- Theta / stderr
+  
+  dof <- N - P
+  p.upper <- 2 * pt(-abs(t_values), df = dof)
+  p.lower <- 1 - p.upper
+
+  return(list(
+    estimate = array(Theta, c(P, D, S)),
+    std.error = array(stderr, c(P, D, S)),
+    p.lower = array(p.lower, c(P, D, S)),
+    p.upper = array(p.upper, c(P, D, S))
+  ))
 }
