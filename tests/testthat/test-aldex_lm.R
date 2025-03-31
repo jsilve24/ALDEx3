@@ -4,14 +4,14 @@ test_that("aldex runs", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data, nsample=nsample, scale=default)
+  foo <- aldex(Y, X, data, nsample=nsample, scale=clr, gamma=0.5)
   expect_true(TRUE)
 })
 
 test_that("test-aldex.R correct mean estimate",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex(sim$Y, sim$X, scale=default)
+  res <- aldex(sim$Y, sim$X, scale=clr)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
@@ -20,14 +20,14 @@ test_that("test-aldex.R correct mean estimate",{
 test_that("test-aldex.R errors with too small streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  expect_error(aldex(sim$Y, sim$X, scale=default, streamsize=0.001))
+  expect_error(aldex(sim$Y, sim$X, scale=clr, streamsize=0.001))
 })
 
 
 test_that("test-aldex.R correct mean estimate when streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex(sim$Y, sim$X, scale=default, streamsize=10)
+  res <- aldex(sim$Y, sim$X, scale=clr, streamsize=10)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
@@ -92,7 +92,7 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
 
 test_that("aldex retrns posterior samples when it should", {
   sim <- aldex.lm.sim.clr(N=10, depth=100)
-  res <- aldex(sim$Y, sim$X, scale=default,
+  res <- aldex(sim$Y, sim$X, scale=clr,
                return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logWpara"))
   expect_true("logWpara" %in% names(res))
@@ -102,3 +102,4 @@ test_that("aldex retrns posterior samples when it should", {
   expect_true("p.val.adj" %in% names(res))
   expect_false("logWperp" %in% names(res))
 })
+

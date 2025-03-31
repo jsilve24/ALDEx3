@@ -4,7 +4,7 @@
 \alias{fflm}
 \title{Freaking Fask Linear Models}
 \usage{
-fflm(Y, X, hce = FALSE)
+fflm(Y, X, test = "t.HC3")
 }
 \arguments{
 \item{Y}{a numeric array (N x D X S) where D is the number of taxa/genes, N
@@ -12,8 +12,14 @@ is the number of samples, and S is the number of posterior samples}
 
 \item{X}{a numeric matrix (N x P) where P is number of covariates}
 
-\item{hce}{(default FALSE), should Heteroskedasticity-consistent standard
-errors be used? Slower to compute.}
+\item{test}{(default t.HC3), "t", t test is performed for each covariate
+(fast); "t.HC0" Heteroskedasticsity-Robust Standard Errors used (HC0;
+White's; slower); "t.HC3" (default) Heteroskedasticsity-Robust Standard
+Errors used (HC3; unlike HC0, this includes a leverage adjustment and is
+better for small sample sizes or when there are data with high leverage;
+slowest). To learn more about these, loko at Long and Ervin (2000) Using
+Heteroscedasticity Consistent Standard Errors in the Linear Regression
+Model, The American Statistician.}
 }
 \value{
 A list of (P x D x S)-arrays with the OLS point estimates, the

@@ -10,10 +10,8 @@
 ##'   be "~condition-1" (note the lack of the left hand side).
 ##' @param data a data frame for use with formula, must have N rows
 ##' @param nsample number of monte carlo replicates
-##' @param scale the scale model, can be a function or an N x nsample matrix. If
-##'   a function is passed, it should take one argument (pi) which is a N x D x
-##'   nsample array of log-transformed relative abundances. That function must
-##'   in turn output an N x nsample matrix of scale samples on the log2 scale.
+##' @param scale the scale model, can be a function or an N x nsample matrix.
+##'   The API for writing your own scale models is documented below in examples.
 ##' @param streamsize (default 8000) memory footprint (approximate) at which to
 ##'   use streaming. This should be thought of as the number of Mb for each
 ##'   streaming chunk. If D*N*nsample*8/1000000 is less than streamsize then no
@@ -31,28 +29,53 @@
 ##'   better for small sample sizes or when there are data with high leverage;
 ##'   slowest). To learn more about these, loko at Long and Ervin (2000) Using
 ##'   Heteroscedasticity Consistent Standard Errors in the Linear Regression
-##'   Model, The American Statistician. 
+##'   Model, The American Statistician.
+##' @param ... parameters to be passed to the scale model (if a function is
+##'   provided)
 ##' @return a list with elements controled by parameter resturn.pars. Options
-##'   include:
-##'   - X: P x N covariate matrix 
-##'   - estimate: (P x D x nsample) array of linear model estimates
-##'   - std.error: (P x D x nsample) array of standard error for the estimates
-##'   - p.val: (P x D) matrix, unadjusted p-value for two-sided t-test
-##'   - p.val.adj: (P x D) matrix, p-value for two-sided t-test adjusted
-##'      according to `p.adj.method`
-##'   - logWperp: (N x S) matrix, samples of the log scale from the scale model
-##'   - logWpara: (D x N x S) array, samples of the log composition from
-##'      the multinomial-Dirichlet
-##'   - streaming: boolean, detnote if streaming was used. 
-##'  Note, logWperp and logWpara are not returned if streaming is active
+##'   include: - X: P x N covariate matrix - estimate: (P x D x nsample) array
+##'   of linear model estimates - std.error: (P x D x nsample) array of standard
+##'   error for the estimates - p.val: (P x D) matrix, unadjusted p-value for
+##'   two-sided t-test - p.val.adj: (P x D) matrix, p-value for two-sided t-test
+##'   adjusted according to `p.adj.method` - logWperp: (N x S) matrix, samples
+##'   of the log scale from the scale model - logWpara: (D x N x S) array,
+##'   samples of the log composition from the multinomial-Dirichlet - streaming:
+##'   boolean, detnote if streaming was used. Note, logWperp and logWpara are
+##'   not returned if streaming is active
+##'  @examples
+##'  \dontrun{
+##' Y <- matrix(1:110, 10, 11)
+##' condition <- c(rep(0, 5), rep(1, 6))
+##' data <- data.frame(condition=condition)
+##' ## demonstrate formula interface and passing optional argument (gamma) to
+##' ## the scale model (clr)
+##' res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
+##' 
+##' ## demonstrating how to write a custom scale model # will write a model that
+##' ## generalizes total sum scaling (where we assume no change between 
+##' ## conditions)
+##' ## Functions can include parameters X (model matrix), Y, and logWpara.
+##' ## If included in the function definition, those parameters will be passed
+##' ## dynamically when aldex is running. Other optional parameters (gamma)
+##' ## can be passed as additional arguments to the aldex function
+##' tss <- function(X, logWpara, gamma=0.5) {
+##'   P <- nrow(X)
+##'   nsample <- dim(logWpara)[3]
+##'   Lambdaperp <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
+##'   logWperp <- t(X)%*% Lambdaperp
+##'   return(logWperp)
+##' }
+##' res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
+##' }
 ##' @export
 ##' @author Justin Silverman
 aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                   streamsize=8000,
                   return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj",
                                 "logWpara", "logWperp"),
-                  return.samples=FALSE, p.adjust.method="BH",
-                  test="t.HC3") {
+                  return.samples=FALSE, p.adjust.method="BH", test="t.HC3", ...) {
+  scale.args <- list(...)
+
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -82,7 +105,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   }
   while (nsample.remaining > 0) {
     nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test)
+    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test,
+                                     scale.args)
     iter <- iter+1
   }
   ## combine output of the different streams
@@ -131,9 +155,12 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
 }
 
 
-aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream, robust.se=FALSE) {
+aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream,
+                              robust.se=FALSE,
+                              scale.args) {
   N <- ncol(Y)
   D <- nrow(Y)
+
   
   ## dirichlet sample
   logWpara <- array(NA, c(D, N, nsample))
@@ -144,8 +171,16 @@ aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream, robust.se=FALSE
   ## sample from scale model
   if (is.null(scale)){
     stop("You probably want a scale model :)")
+  } else if (is.matrix(scale)) {
+    stopifnot(dim(scale)==c(N, nsample))
+    logWperp <- scale
   } else if (is.function(scale)) {
-    logWperp <- scale(X, Y, logWpara)
+    req.args <- formalArgs(scale)
+    scale.args <- scale.args[intersect(names(scale.args), req.args)]
+    if ("logWpara" %in% req.args) scale.args$logWpara <- logWpara
+    if ("X" %in% req.args) scale.args$X <- X
+    if ("Y" %in% req.args) scale.args$Y <- Y
+    logWperp <- do.call(scale, scale.args)
     ## some error checking to make sure whats returned has right dimensions
   } 
 

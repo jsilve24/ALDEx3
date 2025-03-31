@@ -7,11 +7,11 @@ center <- function(logWpara) {
 
 ##' Default scale model discussed in Nixon et al. Beyond Normalizations
 ##'
-##' @param gamma TODO fix documentation
+##' @param gamma variance in scale, documented in Nixon et al. (TODO document
+##'   here as well)
 ##' @return N x nsample matrix
 ##' @author Justin Silverman
-default <- function(X, Y, logWpara) {
-  gamma <- 0.5 # TODO provide functionality so this is no longer hard coded
+clr <- function(X, logWpara, gamma=0.5) {
   P <- nrow(X)
   nsample <- dim(logWpara)[3]
   logWperp <- -colMeans(logWpara, dims=1)
