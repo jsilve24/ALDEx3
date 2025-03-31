@@ -22,6 +22,7 @@ test_that("fflm correctness", {
 
 test_that("fflm, robust correctness", {
   library(lmtest)
+  library(sandwich)
   N <- 10
   D <- 10
   S <- 200
