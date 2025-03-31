@@ -21,8 +21,8 @@ test_that("fflm correctness", {
 
 
 test_that("fflm, robust correctness HC0", {
-  library(lmtest)
-  library(sandwich)
+  require(lmtest)
+  require(sandwich)
   N <- 10
   D <- 10
   S <- 200
@@ -47,8 +47,8 @@ test_that("fflm, robust correctness HC0", {
 
 
 test_that("fflm, robust correctness HC3", {
-  library(lmtest)
-  library(sandwich)
+  require(lmtest)
+  require(sandwich)
   N <- 10
   D <- 10
   S <- 200

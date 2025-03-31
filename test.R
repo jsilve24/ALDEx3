@@ -11,5 +11,5 @@ data <- data.frame(condition=condition)
 
 
 profvis({
-foo <- aldex(selex, ~condition, data, nsample=1024, GAMMA=default, streamsize=1000)
+foo <- aldex(selex, ~condition, data, nsample=1024, scale=default, streamsize=1000)
 })

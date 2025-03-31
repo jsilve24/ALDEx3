@@ -9,7 +9,7 @@ aldex(
   X,
   data = NULL,
   nsample = 2000,
-  GAMMA = NULL,
+  scale = NULL,
   streamsize = 8000,
   return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj", "logWpara",
     "logWperp"),
@@ -28,7 +28,7 @@ be "~condition-1" (note the lack of the left hand side).}
 
 \item{nsample}{number of monte carlo replicates}
 
-\item{GAMMA}{the scale model, can be a function or an N x nsample matrix. If
+\item{scale}{the scale model, can be a function or an N x nsample matrix. If
 a function is passed, it should take one argument (pi) which is a N x D x
 nsample array of log-transformed relative abundances. That function must
 in turn output an N x nsample matrix of scale samples on the log2 scale.}

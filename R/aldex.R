@@ -10,7 +10,7 @@
 ##'   be "~condition-1" (note the lack of the left hand side).
 ##' @param data a data frame for use with formula, must have N rows
 ##' @param nsample number of monte carlo replicates
-##' @param GAMMA the scale model, can be a function or an N x nsample matrix. If
+##' @param scale the scale model, can be a function or an N x nsample matrix. If
 ##'   a function is passed, it should take one argument (pi) which is a N x D x
 ##'   nsample array of log-transformed relative abundances. That function must
 ##'   in turn output an N x nsample matrix of scale samples on the log2 scale.
@@ -47,7 +47,7 @@
 ##'  Note, logWperp and logWpara are not returned if streaming is active
 ##' @export
 ##' @author Justin Silverman
-aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
+aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                   streamsize=8000,
                   return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj",
                                 "logWpara", "logWperp"),
@@ -82,7 +82,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   }
   while (nsample.remaining > 0) {
     nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, GAMMA, stream, test)
+    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test)
     iter <- iter+1
   }
   ## combine output of the different streams
@@ -131,7 +131,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
 }
 
 
-aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream, robust.se=FALSE) {
+aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream, robust.se=FALSE) {
   N <- ncol(Y)
   D <- nrow(Y)
   
@@ -142,10 +142,10 @@ aldex.lm.internal <- function(Y, X, nsample, GAMMA=NULL, stream, robust.se=FALSE
   }
 
   ## sample from scale model
-  if (is.null(GAMMA)){
+  if (is.null(scale)){
     stop("You probably want a scale model :)")
-  } else if (is.function(GAMMA)) {
-    logWperp <- GAMMA(X, Y, logWpara)
+  } else if (is.function(scale)) {
+    logWperp <- scale(X, Y, logWpara)
     ## some error checking to make sure whats returned has right dimensions
   } 
 
