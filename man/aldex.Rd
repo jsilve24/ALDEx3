@@ -11,7 +11,8 @@ aldex(
   nsample = 2000,
   GAMMA = NULL,
   streamsize = 8000,
-  return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj"),
+  return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj", "logWpara",
+    "logWperp"),
   return.samples = FALSE,
   p.adjust.method = "BH",
   robust.se = FALSE
@@ -56,8 +57,8 @@ a list with elements controled by parameter resturn.pars. Options
 include:
 \itemize{
 \item X: P x N covariate matrix
-\item estimate: (P x D x nsample array) of linear model estimates
-\item std.error: (P x D x nsample array) of standard error for the estimates
+\item estimate: (P x D x nsample) array of linear model estimates
+\item std.error: (P x D x nsample) array of standard error for the estimates
 \item p.val: (P x D) matrix, unadjusted p-value for two-sided t-test
 \item p.val.adj: (P x D) matrix, p-value for two-sided t-test adjusted
 according to \code{p.adj.method}

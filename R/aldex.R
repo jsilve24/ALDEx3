@@ -29,8 +29,8 @@
 ##' @return a list with elements controled by parameter resturn.pars. Options
 ##'   include:
 ##'   - X: P x N covariate matrix 
-##'   - estimate: (P x D x nsample array) of linear model estimates
-##'   - std.error: (P x D x nsample array) of standard error for the estimates
+##'   - estimate: (P x D x nsample) array of linear model estimates
+##'   - std.error: (P x D x nsample) array of standard error for the estimates
 ##'   - p.val: (P x D) matrix, unadjusted p-value for two-sided t-test
 ##'   - p.val.adj: (P x D) matrix, p-value for two-sided t-test adjusted
 ##'      according to `p.adj.method`
@@ -43,7 +43,8 @@
 ##' @author Justin Silverman
 aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
                   streamsize=8000,
-                  return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj"),
+                  return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj",
+                                "logWpara", "logWperp"),
                   return.samples=FALSE, p.adjust.method="BH", robust.se = FALSE) {
   N <- ncol(Y)
   D <- nrow(Y)
@@ -55,9 +56,12 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   ## compute model matrix
   if (inherits(X, "formula")) {
     if (is.null(data)) stop("data should not be null if X is a formula")
+    formula <- X
     X <- t(model.matrix(X, data))
     ## some error checking to make sure whats returned has right dimensions
-  } 
+  } else {
+    formula <- NULL
+  }
 
   ## perform streaming 
   out <- list()
@@ -77,7 +81,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   ## combine output of the different streams
   out <- combine.streams(out)
 
-  # p-value calculations, accounting for sign changes
+  #### p-value calculations, accounting for sign changes ####
   p.lower <- array(pmin(1, 2 * out$p.lower), dim = dim(out$p.lower))
   p.upper <- array(pmin(1, 2 * out$p.upper), dim = dim(out$p.upper))
   p.lower.adj <- apply(p.lower, c(1,3), function(item) {
@@ -102,15 +106,19 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
                      p.upper.mean.adj[,col_i])
     p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
   }
+  #### END p value computation
 
   res <- list()
   res$streaming <- stream
+  res$X <- X
   if ("estimate" %in% return.pars) res$estimate <- out$estimate
   if ("std.error" %in% return.pars) res$std.error <- out$std.error
   if ("p.val" %in% return.pars) res$p.val <- p.res
   if ("p.val.adj" %in% return.pars) res$p.val.adj <- p.adj.res
   if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
   if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
+  if (!is.null(data)) res$data <- data
+  if (!is.null(formula)) res$formula <- formula
   return(res)
   ## TODO write a good "summary" function and wrap this all in S3 class
 }
