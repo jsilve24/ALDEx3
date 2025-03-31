@@ -24,8 +24,14 @@
 ##'   below.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
-##' @param robust.se (default FALSE) should White's Heteroscedasticity-robust
-##'   Standard Errors be used rather then the traditional approach. (slower)
+##' @param test (default t.HC3), "t", t test is performed for each covariate
+##'   (fast); "t.HC0" Heteroskedasticsity-Robust Standard Errors used (HC0;
+##'   White's; slower); "t.HC3" (default) Heteroskedasticsity-Robust Standard
+##'   Errors used (HC3; unlike HC0, this includes a leverage adjustment and is
+##'   better for small sample sizes or when there are data with high leverage;
+##'   slowest). To learn more about these, loko at Long and Ervin (2000) Using
+##'   Heteroscedasticity Consistent Standard Errors in the Linear Regression
+##'   Model, The American Statistician. 
 ##' @return a list with elements controled by parameter resturn.pars. Options
 ##'   include:
 ##'   - X: P x N covariate matrix 
@@ -45,7 +51,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
                   streamsize=8000,
                   return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj",
                                 "logWpara", "logWperp"),
-                  return.samples=FALSE, p.adjust.method="BH", robust.se = FALSE) {
+                  return.samples=FALSE, p.adjust.method="BH",
+                  test="t.HC3") {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -75,7 +82,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  GAMMA=NULL,
   }
   while (nsample.remaining > 0) {
     nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, GAMMA, stream, robust.se)
+    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, GAMMA, stream, test)
     iter <- iter+1
   }
   ## combine output of the different streams
