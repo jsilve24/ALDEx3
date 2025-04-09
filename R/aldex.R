@@ -98,7 +98,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   nsample.remaining <- nsample
   iter <- 1
   if (stream) {
-    nsample.local <- floor(streamsize*1000000/(N*D*8))
+    nsample.local <- floor(streamsize*100000/(N*D*8))
     if (nsample.local < 1) stop("streamsize too small")
   } else {
     nsample.local <- nsample
@@ -106,29 +106,39 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   while (nsample.remaining > 0) {
     nsample.remaining <- nsample.remaining - nsample.local
     out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test,
-                                     scale.args)
+                                     scale.args, return.pars)
     iter <- iter+1
   }
   ## combine output of the different streams
   out <- combine.streams(out)
 
+
   #### p-value calculations, accounting for sign changes ####
   p.lower <- array(pmin(1, 2 * out$p.lower), dim = dim(out$p.lower))
+  out$p.lower <- NULL # free up memory
   p.upper <- array(pmin(1, 2 * out$p.upper), dim = dim(out$p.upper))
+  out$p.upper <- NULL # free up memory
+
   p.lower.adj <- apply(p.lower, c(1,3), function(item) {
     p.adjust(item, method=p.adjust.method)
   })
   p.upper.adj <- apply(p.upper, c(1,3), function(item) {
     p.adjust(item, method=p.adjust.method)
   })
+
   p.lower.mean <- apply(p.lower, c(2,1), mean)
   p.upper.mean <- apply(p.upper, c(2,1), mean)
+  rm(p.lower, p.upper)
+
+
   p.res <- c()
   for(col_i in 1:ncol(p.lower.mean)) {
     tmp_mat <- cbind(p.lower.mean[,col_i],
                      p.upper.mean[,col_i])
     p.res <- rbind(p.res, apply(tmp_mat, 1, min))
   }
+  rm(p.lower.mean, p.upper.mean)
+
   p.lower.mean.adj <- apply(p.lower.adj, c(1,2), mean)
   p.upper.mean.adj <- apply(p.upper.adj, c(1,2), mean)
   p.adj.res <- c()
@@ -137,17 +147,24 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                      p.upper.mean.adj[,col_i])
     p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
   }
+  rm(p.lower.mean.adj, p.upper.mean.adj)
   #### END p value computation
 
   res <- list()
   res$streaming <- stream
   res$X <- X
   if ("estimate" %in% return.pars) res$estimate <- out$estimate
+  out$estimate <- NULL
   if ("std.error" %in% return.pars) res$std.error <- out$std.error
+  out$std.error <- NULL
   if ("p.val" %in% return.pars) res$p.val <- p.res
+  rm(p.res)
   if ("p.val.adj" %in% return.pars) res$p.val.adj <- p.adj.res
+  rm(p.adj.res)
   if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
+  out$logWperp <- NULL
   if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
+  out$logWpara <- NULL
   if (!is.null(data)) res$data <- data
   if (!is.null(formula)) res$formula <- formula
   return(res)
@@ -156,8 +173,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
 
 
 aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream,
-                              robust.se=FALSE,
-                              scale.args) {
+                              test, scale.args, return.pars) {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -187,15 +203,18 @@ aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream,
   ## compute scaled abundances (W)
   logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
 
+  ## memory management
+  if (!("logWperp" %in% return.pars)) rm(logWperp)
+  if (!("logWpara" %in% return.pars)) rm(logWpara)
+
   ## fit linear model
-  out <- fflm(aperm(logW, c(2,1,3)),t(X), robust.se) # TODO change fflm so it
-                                          # gives correct output dimensions and
-                                          # takes correct inputs dimensions --
-                                          # without needing aperm
-  if (!stream){
-    out$logWpara <- logWpara
+  out <- fflm(aperm(logW, c(2,1,3)),t(X), test) 
+
+  if (!stream & ("logWperp" %in% return.pars)){
     out$logWperp <- logWperp
   }
-
+  if (!stream & ("logWpara" %in% return.pars)){
+    out$logWpara <- logWpara
+  }
   return(out)
  }
