@@ -81,7 +81,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
 
   ## calculate streaming threshold
   stream <- FALSE
-  if (N*D*nsample*8/1000000 > streamsize) stream <- TRUE
+  if (N*D*nsample*8/100000 > streamsize) stream <- TRUE
 
   ## compute model matrix
   if (inherits(X, "formula")) {

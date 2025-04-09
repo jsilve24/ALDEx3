@@ -37,10 +37,10 @@ fflm <- function(Y, X, test="t.HC3") {
    ## Y <- Y[,,1]
    ## Now compute OLS solution 
    A <- t(X) %*% X
-
    b <- t(X) %*% Y
    Theta <- solve(A, b)
    sqerr <- (Y - X %*% Theta)^2
+
    if (test=="t") {
      sigmaSq <- colSums(sqerr)/(N-P)
      dvcov <- diag( chol2inv(chol(t(X) %*% X)))
