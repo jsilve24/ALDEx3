@@ -48,21 +48,40 @@ fflm <- function(Y, X, test="t.HC3") {
    } else if (test=="t.HC0") {
      ## use white's robust standard errors instead of the more common standard
      ## errors implemented above.
-     ## I want you to write the implmentation here. 
-     XtXinvXt2 <- (chol2inv(chol(t(X) %*% X)) %*% t(X))^2
-     stderr <- matrix(0, P, D*S)
-     for (i in 1:(D*S)) {
-       stderr[,i] <- sqrt(rowSums(sweep(XtXinvXt2, 2, sqerr[,i], FUN=`*`)))
-     }
+     ## older -- slower, easier to read
+     ## XtXinvXt2 <- (chol2inv(chol(t(X) %*% X)) %*% t(X))^2
+     ## stderr <- matrix(0, P, D*S)
+     ## for (i in 1:(D*S)) {
+     ##   stderr[,i] <- sqrt(rowSums(sweep(XtXinvXt2, 2, sqerr[,i], FUN=`*`)))
+     ## }
+
+     ## optimizes / vectorized
+     # Precompute XtXinvXt squared
+     XtXinvXt2 <- (chol2inv(chol(t(X) %*% X)) %*% t(X))^2  # elementwise square
+     # Matrix multiplication instead of looping
+     stderr <- sqrt(XtXinvXt2 %*% sqerr)
    } else if (test=="t.HC3") {
+     ## old version 
+     ## XtXinvXt <- chol2inv(chol(t(X) %*% X)) %*% t(X)
+     ## leverage.correction <- (1-diag(X %*% XtXinvXt))^2
+     ## XtXinvXt <- XtXinvXt^2
+     ## stderr <- matrix(0, P, D*S)
+     ## for (i in 1:(D*S)) {
+     ##   stderr[,i] <- sqrt(rowSums(sweep(XtXinvXt, 2,
+     ##                                    sqerr[,i]/leverage.correction,FUN=`*`)))
+     ## }
+
+     # vectorized version
      XtXinvXt <- chol2inv(chol(t(X) %*% X)) %*% t(X)
-     leverage.correction <- (1-diag(X %*% XtXinvXt))^2
-     XtXinvXt <- XtXinvXt^2
-     stderr <- matrix(0, P, D*S)
-     for (i in 1:(D*S)) {
-       stderr[,i] <- sqrt(rowSums(sweep(XtXinvXt, 2,
-                                        sqerr[,i]/leverage.correction,FUN=`*`)))
-     }
+     leverage.correction <- (1 - diag(X %*% XtXinvXt))^2
+     XtXinvXt_sq <- XtXinvXt^2  # elementwise square, reused
+
+     # Vectorized computation
+     # Divide sqerr by leverage correction (broadcasting over rows)
+     adjusted_sqerr <- sweep(sqerr, 1, leverage.correction, `/`)
+
+     # Multiply XtXinvXt_sq %*% adjusted_sqerr and take sqrt
+     stderr <- sqrt(XtXinvXt_sq %*% adjusted_sqerr)
    }
    t <- Theta / stderr
    dof <- N-P
