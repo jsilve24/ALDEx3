@@ -71,28 +71,44 @@ of the log scale from the scale model - logWpara: (D x N x S) array,
 samples of the log composition from the multinomial-Dirichlet - streaming:
 boolean, detnote if streaming was used. Note, logWperp and logWpara are
 not returned if streaming is active
-@examples
-\dontrun{
+@example
 Y <- matrix(1:110, 10, 11)
 condition <- c(rep(0, 5), rep(1, 6))
 data <- data.frame(condition=condition)
-## demonstrate formula interface and passing optional argument (gamma) to
-## the scale model (clr)
-res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
+\subsection{demonstrate formula interface and passing optional argument (gamma) to}{
+}
 
-## demonstrating how to write a custom scale model, I will write a model that
-## generalizes total sum scaling (where we assume no change between 
-## conditions)
-## Functions can include parameters X (model matrix), Y, and logWpara.
-## If included in the function definition, those parameters will be passed
-## dynamically when aldex is running. Other optional parameters (gamma)
-## can be passed as additional arguments to the aldex function
+\subsection{the scale model (clr)}{
+
+res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
+}
+
+\subsection{demonstrating how to write a custom scale model, I will write a model that}{
+}
+
+\subsection{generalizes total sum scaling (where we assume no change between}{
+}
+
+\subsection{conditions)}{
+}
+
+\subsection{Functions can include parameters X (model matrix), Y, and logWpara.}{
+}
+
+\subsection{If included in the function definition, those parameters will be passed}{
+}
+
+\subsection{dynamically when aldex is running. Other optional parameters (gamma)}{
+}
+
+\subsection{can be passed as additional arguments to the aldex function}{
+
 tss <- function(X, logWpara, gamma=0.5) {
-  P <- nrow(X)
-  nsample <- dim(logWpara)[3]
-  Lambdaperp <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
-  logWperp <- t(X)%*% Lambdaperp
-  return(logWperp)
+P <- nrow(X)
+nsample <- dim(logWpara)\link{3}
+Lambdaperp <- matrix(rnorm(P\emph{nsample,0,gamma), P, nsample)
+logWperp <- t(X)\%}\% Lambdaperp
+return(logWperp)
 }
 res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
 }
