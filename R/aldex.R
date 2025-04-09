@@ -42,7 +42,8 @@
 ##'   samples of the log composition from the multinomial-Dirichlet - streaming:
 ##'   boolean, detnote if streaming was used. Note, logWperp and logWpara are
 ##'   not returned if streaming is active
-##'  @example
+##' @examples
+##' \dontrun{
 ##' Y <- matrix(1:110, 10, 11)
 ##' condition <- c(rep(0, 5), rep(1, 6))
 ##' data <- data.frame(condition=condition)
@@ -65,6 +66,7 @@
 ##'   return(logWperp)
 ##' }
 ##' res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
+##' }
 ##' @export
 ##' @author Justin Silverman
 aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
