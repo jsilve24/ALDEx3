@@ -2,7 +2,7 @@
 ##'
 ##' 
 ##' @title ALDEx3 Linear Modles
-##' @param counts an (D x N) matrix of sequence count, N is number of samples, D
+##' @param Y an (D x N) matrix of sequence count, N is number of samples, D
 ##'   is number of taxa or genes
 ##' @param X either a formula (in which case DATA must be non-null) or a model
 ##'   matrix of dimension P x N (P is number of linear model covariates). If a
@@ -76,13 +76,6 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                   return.samples=FALSE, p.adjust.method="BH", test="t.HC3", ...) {
   scale.args <- list(...)
 
-  N <- ncol(Y)
-  D <- nrow(Y)
-
-  ## calculate streaming threshold
-  stream <- FALSE
-  if (N*D*nsample*8/100000 > streamsize) stream <- TRUE
-
   ## compute model matrix
   if (inherits(X, "formula")) {
     if (is.null(data)) stop("data should not be null if X is a formula")
@@ -93,74 +86,30 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     formula <- NULL
   }
 
-  ## perform streaming 
   out <- list()
-  nsample.remaining <- nsample
   iter <- 1
-  if (stream) {
-    nsample.local <- floor(streamsize*100000/(N*D*8))
-    if (nsample.local < 1) stop("streamsize too small")
-  } else {
-    nsample.local <- nsample
+  chunk.sizes <- aldex.getchunksizes(Y, X, nsample, streamsize)
+  for(chunk.size in chunk.sizes) {
+    chunk <- aldex.chunk(Y, X, chunk.size, scale, scale.args,
+                         return.pars)
+    chunk <- c(chunk, fflm(aperm(chunk$logW, c(2,1,3)), t(X), test))
+    out[[iter]] <- chunk
+    iter <- iter + 1
   }
-  while (nsample.remaining > 0) {
-    nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test,
-                                     scale.args, return.pars)
-    iter <- iter+1
-  }
-  ## combine output of the different streams
   out <- combine.streams(out)
-
-
-  #### p-value calculations, accounting for sign changes ####
-  p.lower <- array(pmin(1, 2 * out$p.lower), dim = dim(out$p.lower))
-  out$p.lower <- NULL # free up memory
-  p.upper <- array(pmin(1, 2 * out$p.upper), dim = dim(out$p.upper))
-  out$p.upper <- NULL # free up memory
-
-  p.lower.adj <- apply(p.lower, c(1,3), function(item) {
-    p.adjust(item, method=p.adjust.method)
-  })
-  p.upper.adj <- apply(p.upper, c(1,3), function(item) {
-    p.adjust(item, method=p.adjust.method)
-  })
-
-  p.lower.mean <- apply(p.lower, c(2,1), mean)
-  p.upper.mean <- apply(p.upper, c(2,1), mean)
-  rm(p.lower, p.upper)
-
-
-  p.res <- c()
-  for(col_i in 1:ncol(p.lower.mean)) {
-    tmp_mat <- cbind(p.lower.mean[,col_i],
-                     p.upper.mean[,col_i])
-    p.res <- rbind(p.res, apply(tmp_mat, 1, min))
-  }
-  rm(p.lower.mean, p.upper.mean)
-
-  p.lower.mean.adj <- apply(p.lower.adj, c(1,2), mean)
-  p.upper.mean.adj <- apply(p.upper.adj, c(1,2), mean)
-  p.adj.res <- c()
-  for(col_i in 1:ncol(p.lower.mean.adj)) {
-    tmp_mat <- cbind(p.lower.mean.adj[,col_i],
-                     p.upper.mean.adj[,col_i])
-    p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
-  }
-  rm(p.lower.mean.adj, p.upper.mean.adj)
-  #### END p value computation
+  pval.l <- aldex.pvals(out$p.lower, out$p.upper,
+                        p.adjust.method)
 
   res <- list()
-  res$streaming <- stream
+  res$streaming <- length(chunk.sizes)>1
   res$X <- X
   if ("estimate" %in% return.pars) res$estimate <- out$estimate
   out$estimate <- NULL
   if ("std.error" %in% return.pars) res$std.error <- out$std.error
   out$std.error <- NULL
-  if ("p.val" %in% return.pars) res$p.val <- p.res
-  rm(p.res)
-  if ("p.val.adj" %in% return.pars) res$p.val.adj <- p.adj.res
-  rm(p.adj.res)
+  if ("p.val" %in% return.pars) res$p.val <- pval.l$p.res
+  if ("p.val.adj" %in% return.pars) res$p.val.adj <- pval.l$p.adj.res
+  rm(pval.l)
   if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
   out$logWperp <- NULL
   if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
@@ -171,50 +120,3 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   ## TODO write a good "summary" function and wrap this all in S3 class
 }
 
-
-aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream,
-                              test, scale.args, return.pars) {
-  N <- ncol(Y)
-  D <- nrow(Y)
-
-  
-  ## dirichlet sample
-  logWpara <- array(NA, c(D, N, nsample))
-  for (i in 1:N) {
-    logWpara[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
-  }
-
-  ## sample from scale model
-  if (is.null(scale)){
-    stop("You probably want a scale model :)")
-  } else if (is.matrix(scale)) {
-    stopifnot(dim(scale)==c(N, nsample))
-    logWperp <- scale
-  } else if (is.function(scale)) {
-    req.args <- formalArgs(scale)
-    scale.args <- scale.args[intersect(names(scale.args), req.args)]
-    if ("logWpara" %in% req.args) scale.args$logWpara <- logWpara
-    if ("X" %in% req.args) scale.args$X <- X
-    if ("Y" %in% req.args) scale.args$Y <- Y
-    logWperp <- do.call(scale, scale.args)
-    ## some error checking to make sure whats returned has right dimensions
-  } 
-
-  ## compute scaled abundances (W)
-  logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
-
-  ## memory management
-  if (!("logWperp" %in% return.pars)) rm(logWperp)
-  if (!("logWpara" %in% return.pars)) rm(logWpara)
-
-  ## fit linear model
-  out <- fflm(aperm(logW, c(2,1,3)),t(X), test) 
-
-  if (!stream & ("logWperp" %in% return.pars)){
-    out$logWperp <- logWperp
-  }
-  if (!stream & ("logWpara" %in% return.pars)){
-    out$logWpara <- logWpara
-  }
-  return(out)
- }

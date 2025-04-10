@@ -18,6 +18,6 @@ clr <- function(X, logWpara, gamma=0.5) {
 
   tmp <- P*nsample
   Lambdaperp <- matrix(rnorm(tmp,0,gamma), P, nsample)
-  logWperp <- logWperp + t(X)%*% Lambdaperp
+  logWperp <- logWperp + t(X)%*%Lambdaperp
   return(logWperp)
 }
