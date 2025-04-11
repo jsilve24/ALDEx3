@@ -104,8 +104,9 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     nsample.local <- nsample
   }
   while (nsample.remaining > 0) {
-    nsample.remaining <- nsample.remaining - nsample.local
-    out[[iter]] <- aldex.lm.internal(Y, X, nsample.local, scale, stream, test,
+    sample.size <- min(nsample.local, nsample.remaining)
+    nsample.remaining <- nsample.remaining - sample.size
+    out[[iter]] <- aldex.lm.internal(Y, X, sample.size, scale, stream, test,
                                      scale.args, return.pars)
     iter <- iter+1
   }

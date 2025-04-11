@@ -26,9 +26,11 @@ test_that("test-aldex.R errors with too small streaming",{
 
 test_that("test-aldex.R correct mean estimate when streaming",{
   set.seed(4985)
-  sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex(sim$Y, sim$X, scale=clr, streamsize=10)
+  sim <- aldex.lm.sim.clr(N=100, depth=10000)
+  res <- aldex(sim$Y, sim$X, scale=clr, streamsize=10,nsample=2001)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
+  expect_true(res$streaming)
+  expect_equal(dim(res$estimate)[3],2001)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
 
