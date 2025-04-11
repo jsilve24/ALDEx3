@@ -104,10 +104,13 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     nsample.local <- nsample
   }
   while (nsample.remaining > 0) {
+    ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
     nsample.remaining <- nsample.remaining - sample.size
-    out[[iter]] <- aldex.lm.internal(Y, X, sample.size, scale, stream, test,
-                                     scale.args, return.pars)
+
+    ## stream
+    out[[iter]] <- aldex.internal(Y, X, sample.size, scale, stream, test,
+                                  scale.args, return.pars)
     iter <- iter+1
   }
   ## combine output of the different streams
@@ -173,8 +176,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
 }
 
 
-aldex.lm.internal <- function(Y, X, nsample, scale=NULL, stream,
-                              test, scale.args, return.pars) {
+aldex.internal <- function(Y, X, nsample, scale=NULL, stream,
+                           test, scale.args, return.pars) {
   N <- ncol(Y)
   D <- nrow(Y)
 
