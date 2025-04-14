@@ -21,32 +21,52 @@
 cohensd <- function(m, var) {
   expr <- substitute(var)
   if (is.numeric(expr)) {
-    ## don't need to do anything, var is already numeric
-  } else { # assume unquoted string
+    # already numeric
+  } else {
     var <- deparse(expr)
-    var <- which(rownames(m$X)==var)
+    var <- which(rownames(m$X) == var)
   }
-  diff.mean <- m$estimate[var,,]
-   D <- dim(m$estimate)[2] # number of taxa
-   S <- dim(m$estimate)[3] # number of samples
-   x <- m$X[var,]
-   x0idx <- which(x==0)
-   x1idx <- which(x==1)
-   n0 <- length(x0idx) # number in group 0
-   n1 <- length(x1idx) # number in group 1
-   ## we need estimate of scaled abundande
-   if (!all(c("logWpara", "logWperp") %in% names(m))) {
-     stop("m must contain logWpara and logWperp samples")
-   } else {
-     logW <- sweep(m$logWpara, c(2,3), m$logWperp, FUN=`+`)
-   }
-   cohensd <- matrix(NA, D, S)
-   for (d in 1:D) { # for each taxa
-     for (s in 1:S) { # for each sample
-       var0 <- var(logW[d,x0idx,s])
-       var1 <- var(logW[d,x1idx,s])
-       cohensd[d,s] <- diff.mean[d,s]/sqrt(((n0-1)*var0+(n1-1)*var1)/(n0+n1-2))
-     }
-   }
+
+  diff.mean <- m$estimate[var,,]  # D x S
+  D <- dim(m$estimate)[2]
+  S <- dim(m$estimate)[3]
+
+  x <- m$X[var,]
+  x0idx <- which(x == 0)
+  x1idx <- which(x == 1)
+  n0 <- length(x0idx)
+  n1 <- length(x1idx)
+
+  if (!all(c("logWpara", "logWperp") %in% names(m))) {
+    stop("m must contain logWpara and logWperp samples")
+  }
+
+  logW <- sweep(m$logWpara, c(2,3), m$logWperp, FUN = `+`)  # D x N x S
+
+  # subset over group 0 and group 1
+  logW0 <- logW[, x0idx, , drop = FALSE]  # D x n0 x S
+  logW1 <- logW[, x1idx, , drop = FALSE]  # D x n1 x S
+
+  # We need to compute var0[d, s] = var(logW[d, x0idx, s])
+  # We'll do this by reshaping into matrices D*S x n0 and D*S x n1
+
+  reshape_and_compute_var <- function(logWg, n) {
+    D <- dim(logWg)[1]
+    n_samples <- dim(logWg)[2]
+    S <- dim(logWg)[3]
+    # D x n x S -> (D*S) x n
+    mat <- matrix(aperm(logWg, c(1,3,2)), nrow = D*S, ncol = n)
+    # Compute row variances (sample variance with Bessel's correction)
+    row_vars <- matrixStats::rowVars(mat)
+    matrix(row_vars, nrow = D, ncol = S)
+  }
+
+  var0 <- reshape_and_compute_var(logW0, n0)
+  var1 <- reshape_and_compute_var(logW1, n1)
+
+  # Pooled variance
+  pooled_var <- ((n0 - 1) * var0 + (n1 - 1) * var1) / (n0 + n1 - 2)
+  cohensd <- diff.mean / sqrt(pooled_var)
+
   return(cohensd)
- }
+}
