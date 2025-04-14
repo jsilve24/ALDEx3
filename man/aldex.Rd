@@ -94,8 +94,8 @@ res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
 tss <- function(X, logComp, gamma=0.5) {
   P <- nrow(X)
   nsample <- dim(logComp)[3]
-  Lambdaperp <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
-  logScale <- t(X)\%*\% Lambdaperp
+  LambdaScale <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
+  logScale <- t(X)\%*\% LambdaScale
   return(logScale)
 }
 res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)

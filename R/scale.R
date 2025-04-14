@@ -17,7 +17,7 @@ clr <- function(X, logComp, gamma=0.5) {
   logScale <- -colMeans(logComp, dims=1)
 
   tmp <- P*nsample
-  Lambdaperp <- matrix(rnorm(tmp,0,gamma), P, nsample)
-  logScale <- logScale + t(X)%*% Lambdaperp
+  LambdaScale <- matrix(rnorm(tmp,0,gamma), P, nsample)
+  logScale <- logScale + t(X)%*% LambdaScale
   return(logScale)
 }
