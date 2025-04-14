@@ -51,8 +51,8 @@
 ##' ## the scale model (clr)
 ##' res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
 ##' 
-##' ## demonstrating how to write a custom scale model, I will write a model that
-##' ## generalizes total sum scaling (where we assume no change between 
+##' ## demonstrating how to write a custom scale model, I will write a model
+##' ## that generalizes total sum scaling (where we assume no change between 
 ##' ## conditions)
 ##' ## Functions can include parameters X (model matrix), Y, and logWpara.
 ##' ## If included in the function definition, those parameters will be passed
@@ -71,9 +71,10 @@
 ##' @author Justin Silverman
 aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                   streamsize=8000,
-                  return.pars=c("X", "estimate", "std.error", "p.val", "p.val.adj",
-                                "logWpara", "logWperp"),
-                  return.samples=FALSE, p.adjust.method="BH", test="t.HC3", ...) {
+                  return.pars=c("X", "estimate", "std.error", "p.val",
+                                "p.val.adj", "logWpara", "logWperp"),
+                  return.samples=FALSE, p.adjust.method="BH", test="t.HC3",
+                  ...) {
   scale.args <- list(...)
 
   N <- ncol(Y)
@@ -139,7 +140,6 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   if (!is.null(data)) res$data <- data
   if (!is.null(formula)) res$formula <- formula
   return(res)
-  ## TODO write a good "summary" function and wrap this all in S3 class
 }
 
 
