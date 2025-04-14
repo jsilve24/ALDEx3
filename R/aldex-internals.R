@@ -1,5 +1,4 @@
-aldex.internal <- function(Y, X, nsample, scale=NULL, stream,
-                           test, scale.args, return.pars) {
+aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
   N <- ncol(Y)
   D <- nrow(Y)
 
@@ -26,22 +25,13 @@ aldex.internal <- function(Y, X, nsample, scale=NULL, stream,
     ## some error checking to make sure whats returned has right dimensions
   } 
 
+  out <- list()
   ## compute scaled abundances (W)
-  logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
+  out$logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
 
-  ## memory management
-  if (!("logWperp" %in% return.pars)) rm(logWperp)
-  if (!("logWpara" %in% return.pars)) rm(logWpara)
+  if ("logWperp" %in% return.pars) out$logWperp <- logWperp
+  if ("logWpara" %in% return.pars) out$logWpara <- logWpara
 
-  ## fit linear model
-  out <- fflm(aperm(logW, c(2,1,3)),t(X), test) 
-
-  if (!stream & ("logWperp" %in% return.pars)){
-    out$logWperp <- logWperp
-  }
-  if (!stream & ("logWpara" %in% return.pars)){
-    out$logWpara <- logWpara
-  }
   return(out)
  }
 

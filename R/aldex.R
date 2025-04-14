@@ -97,6 +97,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   if (stream) {
     nsample.local <- floor(streamsize*100000/(N*D*8))
     if (nsample.local < 1) stop("streamsize too small")
+    ## override if logWpara and logWperp were requested 
+    return.pars <- return.pars[!(return.pars %in% c("logWpara", "logWperp"))]
   } else {
     nsample.local <- nsample
   }
@@ -104,8 +106,13 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
     nsample.remaining <- nsample.remaining - sample.size
-    out[[iter]] <- aldex.internal(Y, X, sample.size, scale, stream, test,
-                                  scale.args, return.pars)
+    out[[iter]] <- aldex.sampler(Y, X, sample.size, scale, scale.args,
+                                 return.pars)
+    ## fit linear model
+    res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)),t(X), test)
+    ## while ugly, the following loop should avoid shallow copy of logW and
+    ## logWpara currently in out[[iter]], that could be memory intensive. 
+    for (name in names(res)) { out[[iter]][[name]] <- res[[name]] }
     iter <- iter+1
   }
   ## combine output of the different streams
