@@ -37,11 +37,11 @@ cohensd <- function(m, var) {
   n0 <- length(x0idx)
   n1 <- length(x1idx)
 
-  if (!all(c("logWpara", "logWperp") %in% names(m))) {
-    stop("m must contain logWpara and logWperp samples")
+  if (!all(c("logComp", "logScale") %in% names(m))) {
+    stop("m must contain logComp and logScale samples")
   }
 
-  logW <- sweep(m$logWpara, c(2,3), m$logWperp, FUN = `+`)  # D x N x S
+  logW <- sweep(m$logComp, c(2,3), m$logScale, FUN = `+`)  # D x N x S
 
   # subset over group 0 and group 1
   logW0 <- logW[, x0idx, , drop = FALSE]  # D x n0 x S

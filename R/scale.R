@@ -1,8 +1,8 @@
 ## scale models
 
-center <- function(logWpara) {
-  g <- apply(logWpara, c(2,3), FUN=`mean`)
-  return(sweep(logWpara, c(2,3), g, FUN=`-`))
+center <- function(logComp) {
+  g <- apply(logComp, c(2,3), FUN=`mean`)
+  return(sweep(logComp, c(2,3), g, FUN=`-`))
  }
 
 ##' Default scale model discussed in Nixon et al. Beyond Normalizations
@@ -11,13 +11,13 @@ center <- function(logWpara) {
 ##'   here as well)
 ##' @return N x nsample matrix
 ##' @author Justin Silverman
-clr <- function(X, logWpara, gamma=0.5) {
+clr <- function(X, logComp, gamma=0.5) {
   P <- nrow(X)
-  nsample <- dim(logWpara)[3]
-  logWperp <- -colMeans(logWpara, dims=1)
+  nsample <- dim(logComp)[3]
+  logScale <- -colMeans(logComp, dims=1)
 
   tmp <- P*nsample
   Lambdaperp <- matrix(rnorm(tmp,0,gamma), P, nsample)
-  logWperp <- logWperp + t(X)%*% Lambdaperp
-  return(logWperp)
+  logScale <- logScale + t(X)%*% Lambdaperp
+  return(logScale)
 }

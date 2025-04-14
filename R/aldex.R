@@ -37,10 +37,10 @@
 ##'   of linear model estimates - std.error: (P x D x nsample) array of standard
 ##'   error for the estimates - p.val: (P x D) matrix, unadjusted p-value for
 ##'   two-sided t-test - p.val.adj: (P x D) matrix, p-value for two-sided t-test
-##'   adjusted according to `p.adj.method` - logWperp: (N x S) matrix, samples
-##'   of the log scale from the scale model - logWpara: (D x N x S) array,
+##'   adjusted according to `p.adj.method` - logScale: (N x S) matrix, samples
+##'   of the log scale from the scale model - logComp: (D x N x S) array,
 ##'   samples of the log composition from the multinomial-Dirichlet - streaming:
-##'   boolean, detnote if streaming was used. Note, logWperp and logWpara are
+##'   boolean, detnote if streaming was used. Note, logScale and logComp are
 ##'   not returned if streaming is active
 ##' @examples
 ##' \dontrun{
@@ -54,16 +54,16 @@
 ##' ## demonstrating how to write a custom scale model, I will write a model
 ##' ## that generalizes total sum scaling (where we assume no change between 
 ##' ## conditions)
-##' ## Functions can include parameters X (model matrix), Y, and logWpara.
+##' ## Functions can include parameters X (model matrix), Y, and logComp.
 ##' ## If included in the function definition, those parameters will be passed
 ##' ## dynamically when aldex is running. Other optional parameters (gamma)
 ##' ## can be passed as additional arguments to the aldex function
-##' tss <- function(X, logWpara, gamma=0.5) {
+##' tss <- function(X, logComp, gamma=0.5) {
 ##'   P <- nrow(X)
-##'   nsample <- dim(logWpara)[3]
+##'   nsample <- dim(logComp)[3]
 ##'   Lambdaperp <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
-##'   logWperp <- t(X)%*% Lambdaperp
-##'   return(logWperp)
+##'   logScale <- t(X)%*% Lambdaperp
+##'   return(logScale)
 ##' }
 ##' res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
 ##' }
@@ -72,7 +72,7 @@
 aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                   streamsize=8000,
                   return.pars=c("X", "estimate", "std.error", "p.val",
-                                "p.val.adj", "logWpara", "logWperp"),
+                                "p.val.adj", "logComp", "logScale"),
                   return.samples=FALSE, p.adjust.method="BH", test="t.HC3",
                   ...) {
   scale.args <- list(...)
@@ -98,8 +98,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   if (stream) {
     nsample.local <- floor(streamsize*100000/(N*D*8))
     if (nsample.local < 1) stop("streamsize too small")
-    ## override if logWpara and logWperp were requested 
-    return.pars <- return.pars[!(return.pars %in% c("logWpara", "logWperp"))]
+    ## override if logComp and logScale were requested 
+    return.pars <- return.pars[!(return.pars %in% c("logComp", "logScale"))]
   } else {
     nsample.local <- nsample
   }
@@ -111,9 +111,9 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                                  return.pars)
     ## fit linear model
     res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)),t(X), test)
-    out[[iter]]$logW <- NULL # don't duplicate info in logWpara and logWperp 
+    out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 
     ## while ugly, the following loop should avoid shallow copy of logW and
-    ## logWpara currently in out[[iter]], that could be memory intensive. 
+    ## logComp currently in out[[iter]], that could be memory intensive. 
     for (name in names(res)) { out[[iter]][[name]] <- res[[name]] }
     iter <- iter+1
   }
@@ -134,10 +134,10 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   pval.l$p.res <- NULL
   if ("p.val.adj" %in% return.pars) res$p.val.adj <- pval.l$p.adj.res
   pval.l$p.adj.res <- NULL
-  if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
-  out$logWperp <- NULL
-  if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
-  out$logWpara <- NULL
+  if ("logScale" %in% return.pars) res$logScale <- out$logScale
+  out$logScale <- NULL
+  if ("logComp" %in% return.pars) res$logComp <- out$logComp
+  out$logComp <- NULL
   if (!is.null(data)) res$data <- data
   if (!is.null(formula)) res$formula <- formula
   return(res)

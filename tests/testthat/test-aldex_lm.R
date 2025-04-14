@@ -56,7 +56,7 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
   sim_A <- 2^sim_A
   sim_Y <- apply(sim_A, 2, function(col) rmultinom(
                                            1, 10000, col/sum(col)))
-  gamma_func <- function(X, Y, logWpara) {
+  gamma_func <- function(X, Y, logComp) {
     z <- replicate(mc.samples, {
       rnorm(1, 0.5, 0.5)*X[2,]
     })
@@ -96,12 +96,12 @@ test_that("aldex retrns posterior samples when it should", {
   sim <- aldex.lm.sim.clr(N=10, depth=100)
   res <- aldex(sim$Y, sim$X, scale=clr,
                return.pars=c("X", "estimate", "std.error", "p.val",
-                                "p.val.adj", "logWpara"))
-  expect_true("logWpara" %in% names(res))
+                                "p.val.adj", "logComp"))
+  expect_true("logComp" %in% names(res))
   expect_true("estimate" %in% names(res))
   expect_true("std.error" %in% names(res))
   expect_true("p.val" %in% names(res))
   expect_true("p.val.adj" %in% names(res))
-  expect_false("logWperp" %in% names(res))
+  expect_false("logScale" %in% names(res))
 })
 

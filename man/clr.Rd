@@ -4,7 +4,7 @@
 \alias{clr}
 \title{Default scale model discussed in Nixon et al. Beyond Normalizations}
 \usage{
-clr(X, logWpara, gamma = 0.5)
+clr(X, logComp, gamma = 0.5)
 }
 \arguments{
 \item{gamma}{variance in scale, documented in Nixon et al. (TODO document

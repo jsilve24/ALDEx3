@@ -4,9 +4,9 @@ aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
 
   
   ## dirichlet sample
-  logWpara <- array(NA, c(D, N, nsample))
+  logComp <- array(NA, c(D, N, nsample))
   for (i in 1:N) {
-    logWpara[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
+    logComp[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
   }
 
   ## sample from scale model
@@ -14,23 +14,23 @@ aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
     stop("You probably want a scale model :)")
   } else if (is.matrix(scale)) {
     stopifnot(dim(scale)==c(N, nsample))
-    logWperp <- scale
+    logScale <- scale
   } else if (is.function(scale)) {
     req.args <- formalArgs(scale)
     scale.args <- scale.args[intersect(names(scale.args), req.args)]
-    if ("logWpara" %in% req.args) scale.args$logWpara <- logWpara
+    if ("logComp" %in% req.args) scale.args$logComp <- logComp
     if ("X" %in% req.args) scale.args$X <- X
     if ("Y" %in% req.args) scale.args$Y <- Y
-    logWperp <- do.call(scale, scale.args)
+    logScale <- do.call(scale, scale.args)
     ## some error checking to make sure whats returned has right dimensions
   } 
 
   out <- list()
   ## compute scaled abundances (W)
-  out$logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
+  out$logW <- sweep(logComp, c(2,3), logScale, FUN=`+`)
 
-  if ("logWperp" %in% return.pars) out$logWperp <- logWperp
-  if ("logWpara" %in% return.pars) out$logWpara <- logWpara
+  if ("logScale" %in% return.pars) out$logScale <- logScale
+  if ("logComp" %in% return.pars) out$logComp <- logComp
 
   return(out)
  }

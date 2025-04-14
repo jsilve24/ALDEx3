@@ -23,7 +23,7 @@ test_that("cohensd correct", {
   ## check a[2,5] for brevity
   s <- 5
   d <- 2
-  logW <- sweep(foo$logWpara, c(2,3), foo$logWperp, FUN=`+`)[2,,5]
+  logW <- sweep(foo$logComp, c(2,3), foo$logScale, FUN=`+`)[2,,5]
   x0 <- logW[condition==0]
   x1 <- logW[condition==1]
   mean0 <- mean(x0)
