@@ -6,7 +6,7 @@ aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
   ## dirichlet sample
   logComp <- array(NA, c(D, N, nsample))
   for (i in 1:N) {
-    logComp[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
+    logComp[,i,] <- rLogDirichlet(nsample, Y[,i]+0.5)
   }
 
   ## sample from scale model
