@@ -105,7 +105,7 @@ summary.aldex <- function(object, ignore.intercept=TRUE, ...) {
     res <- res[res$parameter != "(Intercept)",]
   }
   rownames(res) <- NULL
-  return(res)
+  return(res[,c("parameter", "entity", "estimate", "std.error", "p.val.adj")])
 }
 
 array_to_df <- function(arr) {

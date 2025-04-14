@@ -36,13 +36,11 @@ test_that("cohensd correct", {
 
 test_that("summary.aldex works", {
   Y <- matrix(1:110, 10, 11)
-  condition <- c(rep(0, 5), rep(1, 6))
-  X <- formula(~condition)
-  data <- data.frame(condition=condition)
+  data <- data.frame(disease=c(rep(0, 5), rep(1, 6)))
   nsample <- 2000
-  foo <- aldex(Y, X, data, nsample=nsample, scale=clr)
+  foo <- aldex(Y, ~condition, data, nsample=nsample, scale=clr)
   class(foo) <- "aldex"
   bar <- summary(foo)
-  expect_equal(colnames(bar), c("parameter", "entity", "p.val.adj", "estimate",
-                                "std.error"))
+  expect_equal(colnames(bar), c("parameter", "entity",  "estimate",
+                                "std.error", "p.val.adj"))
 })
