@@ -6,6 +6,19 @@ test_that("aldex runs", {
   nsample <- 2000
   foo <- aldex(Y, X, data, nsample=nsample, scale=clr, gamma=0.5)
   expect_true(TRUE)
+  expect_equal(class(foo), "aldex")
+  expect_equal(rownames(foo$logComp), paste0("entity_", 1:10))
+})
+
+test_that("names are respected", {
+  Y <- matrix(1:110, 10, 11)
+  Y <- provideDimnames(Y)
+  condition <- c(rep(0, 5), rep(1, 6))
+  X <- formula(~condition)
+  data <- data.frame(condition=condition)
+  nsample <- 2000
+  foo <- aldex(Y, X, data, nsample=nsample, scale=clr, gamma=0.5)
+  expect_equal(colnames(foo$logComp), colnames(Y))
 })
 
 test_that("test-aldex.R correct mean estimate",{

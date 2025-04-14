@@ -31,5 +31,5 @@ test_that("cohensd correct", {
   n0 <- sum(condition==0)
   n1 <- sum(condition==1)
   denom <- sqrt(((n0-1)*var(x0) + (n1-1)*var(x1))/(n0+n1-2))
-  expect_equal(a[2,5], (mean1-mean0)/denom)
+  expect_equal(unname(a[2,5]), (mean1-mean0)/denom)
 })

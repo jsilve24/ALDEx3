@@ -123,23 +123,64 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   ## p-value calculations, accounting for sign changes
   pval.l <- aldex.pvals(out$p.lower, out$p.upper, p.adjust.method)
 
+  ## collect names to make output nicer
+  if (is.null(colnames(Y))) {
+    sample.names <- paste0("sample_", 1:N)
+  } else {
+    sample.names <- colnames(Y)
+  }
+  if (is.null(rownames(Y))) {
+    entity.names <- paste0("entity_", 1:D)
+  } else {
+    entity.names <- rownames(Y)
+  }
+  if (is.null(rownames(X))) {
+    parameter.names <- paste0("parameter_", 1:nrow(X))
+  } else {
+    parameter.names <- rownames(X)
+  }
+ 
   res <- list()
   res$streaming <- stream
   res$X <- X
-  if ("estimate" %in% return.pars) res$estimate <- out$estimate
+  if ("estimate" %in% return.pars) {
+    res$estimate <- out$estimate
+    rownames(res$estimate) <- parameter.names
+    colnames(res$estimate) <- entity.names
+  }
   out$estimate <- NULL
-  if ("std.error" %in% return.pars) res$std.error <- out$std.error
+  if ("std.error" %in% return.pars) {
+    res$std.error <- out$std.error
+    rownames(res$std.error) <- parameter.names
+    colnames(res$std.error) <- entity.names
+  }
   out$std.error <- NULL
-  if ("p.val" %in% return.pars) res$p.val <- pval.l$p.res
+  if ("p.val" %in% return.pars) {
+    res$p.val <- pval.l$p.res
+    rownames(res$p.val) <- parameter.names
+    colnames(res$p.val) <- entity.names
+  }
   pval.l$p.res <- NULL
-  if ("p.val.adj" %in% return.pars) res$p.val.adj <- pval.l$p.adj.res
+  if ("p.val.adj" %in% return.pars) {
+    res$p.val.adj <- pval.l$p.adj.res
+    rownames(res$p.val.adj) <- parameter.names
+    colnames(res$p.val.adj) <- entity.names
+  }
   pval.l$p.adj.res <- NULL
-  if ("logScale" %in% return.pars) res$logScale <- out$logScale
+  if ("logScale" %in% return.pars) {
+    res$logScale <- out$logScale
+    rownames(res$logScale) <- sample.names
+  }
   out$logScale <- NULL
-  if ("logComp" %in% return.pars) res$logComp <- out$logComp
+  if ("logComp" %in% return.pars) {
+    res$logComp <- out$logComp
+    rownames(res$logComp) <- entity.names
+    colnames(res$logComp) <- sample.names
+  }
   out$logComp <- NULL
   if (!is.null(data)) res$data <- data
   if (!is.null(formula)) res$formula <- formula
+  attr(res, "class") <- "aldex"
   return(res)
 }
 
