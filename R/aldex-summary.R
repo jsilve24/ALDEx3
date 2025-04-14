@@ -70,3 +70,47 @@ cohensd <- function(m, var) {
 
   return(cohensd)
 }
+
+
+## summary <- function(object, ...) {
+##   UseMethod("summary", object)
+## }
+
+##' Summarize an ALDEx3 result object
+##'
+##' Provides a summary of the adjusted p-values, estimates, and standard errors
+##' from an ALDEx3 result object.
+##'
+##' This method extracts adjusted p-values from `object$p.val.adj`, along with
+##' posterior estimates and standard errors averaged across Monte Carlo samples.
+##' The result is returned as a long-format data.frame suitable for downstream
+##' analysis or visualization.
+##' 
+##' @title Summary Method for ALDEx3 Objects
+##' @param object An object of class \code{aldex}, typically returned by
+##'   \code{aldex2()} or related functions.
+##' @param ignore.intercept (default=TRUE), ignore intercept when creating
+##'   summary table
+##' @param ... Additional arguments (currently ignored).
+##' @return A \code{data.frame} with columns \code{parameter}, \code{entity},
+##'   \code{p.val.adjusted}, \code{estimate}, and \code{std.error}.
+##' @export
+##' @author Justin Silverman
+summary.aldex <- function(object, ignore.intercept=TRUE, ...) {
+  res <- array_to_df(object$p.val.adj)
+  colnames(res) <- c("parameter", "entity", "p.val.adj")
+  res$estimate <- array_to_df(rowMeans(object$estimate, dims=2))$value
+  res$std.error <- array_to_df(rowMeans(object$std.error, dims=2))$value
+  if (ignore.intercept) {
+    res <- res[res$parameter != "(Intercept)",]
+  }
+  rownames(res) <- NULL
+  return(res)
+}
+
+array_to_df <- function(arr) {
+  dimn <- dimnames(arr)
+  idx_grid <- expand.grid(dimn, KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  idx_grid$value <- as.vector(arr)
+  return(idx_grid)
+}

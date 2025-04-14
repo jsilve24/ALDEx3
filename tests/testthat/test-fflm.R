@@ -1,3 +1,6 @@
+require(lmtest, warn.conflicts=FALSE)
+require(sandwich, warn.conflicts=FALSE)
+
 test_that("fflm correctness", {
   N <- 10
   D <- 10
@@ -21,8 +24,6 @@ test_that("fflm correctness", {
 
 
 test_that("fflm, robust correctness HC0", {
-  require(lmtest)
-  require(sandwich)
   N <- 10
   D <- 10
   S <- 200
@@ -47,8 +48,6 @@ test_that("fflm, robust correctness HC0", {
 
 
 test_that("fflm, robust correctness HC3", {
-  require(lmtest)
-  require(sandwich)
   N <- 10
   D <- 10
   S <- 200

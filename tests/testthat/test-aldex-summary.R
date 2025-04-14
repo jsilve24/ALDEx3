@@ -33,3 +33,16 @@ test_that("cohensd correct", {
   denom <- sqrt(((n0-1)*var(x0) + (n1-1)*var(x1))/(n0+n1-2))
   expect_equal(unname(a[2,5]), (mean1-mean0)/denom)
 })
+
+test_that("summary.aldex works", {
+  Y <- matrix(1:110, 10, 11)
+  condition <- c(rep(0, 5), rep(1, 6))
+  X <- formula(~condition)
+  data <- data.frame(condition=condition)
+  nsample <- 2000
+  foo <- aldex(Y, X, data, nsample=nsample, scale=clr)
+  class(foo) <- "aldex"
+  bar <- summary(foo)
+  expect_equal(colnames(bar), c("parameter", "entity", "p.val.adj", "estimate",
+                                "std.error"))
+})
