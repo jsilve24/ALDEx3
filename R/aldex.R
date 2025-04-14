@@ -111,6 +111,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
                                  return.pars)
     ## fit linear model
     res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)),t(X), test)
+    out[[iter]]$logW <- NULL # don't duplicate info in logWpara and logWperp 
     ## while ugly, the following loop should avoid shallow copy of logW and
     ## logWpara currently in out[[iter]], that could be memory intensive. 
     for (name in names(res)) { out[[iter]][[name]] <- res[[name]] }

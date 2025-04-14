@@ -84,8 +84,8 @@ data <- data.frame(condition=condition)
 ## the scale model (clr)
 res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
 
-## demonstrating how to write a custom scale model, I will write a model that
-## generalizes total sum scaling (where we assume no change between 
+## demonstrating how to write a custom scale model, I will write a model
+## that generalizes total sum scaling (where we assume no change between 
 ## conditions)
 ## Functions can include parameters X (model matrix), Y, and logWpara.
 ## If included in the function definition, those parameters will be passed
