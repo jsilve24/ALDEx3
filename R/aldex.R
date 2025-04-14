@@ -79,10 +79,6 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   N <- ncol(Y)
   D <- nrow(Y)
 
-  ## calculate streaming threshold
-  stream <- FALSE
-  if (N*D*nsample*8/100000 > streamsize) stream <- TRUE
-
   ## compute model matrix
   if (inherits(X, "formula")) {
     if (is.null(data)) stop("data should not be null if X is a formula")
@@ -97,6 +93,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   out <- list()
   nsample.remaining <- nsample
   iter <- 1
+  stream <- ifelse(N*D*nsample*8/100000 > streamsize, TRUE, FALSE)
   if (stream) {
     nsample.local <- floor(streamsize*100000/(N*D*8))
     if (nsample.local < 1) stop("streamsize too small")
@@ -107,8 +104,6 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
     nsample.remaining <- nsample.remaining - sample.size
-
-    ## stream
     out[[iter]] <- aldex.internal(Y, X, sample.size, scale, stream, test,
                                   scale.args, return.pars)
     iter <- iter+1
@@ -116,43 +111,8 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   ## combine output of the different streams
   out <- combine.streams(out)
 
-
-  #### p-value calculations, accounting for sign changes ####
-  p.lower <- array(pmin(1, 2 * out$p.lower), dim = dim(out$p.lower))
-  out$p.lower <- NULL # free up memory
-  p.upper <- array(pmin(1, 2 * out$p.upper), dim = dim(out$p.upper))
-  out$p.upper <- NULL # free up memory
-
-  p.lower.adj <- apply(p.lower, c(1,3), function(item) {
-    p.adjust(item, method=p.adjust.method)
-  })
-  p.upper.adj <- apply(p.upper, c(1,3), function(item) {
-    p.adjust(item, method=p.adjust.method)
-  })
-
-  p.lower.mean <- apply(p.lower, c(2,1), mean)
-  p.upper.mean <- apply(p.upper, c(2,1), mean)
-  rm(p.lower, p.upper)
-
-
-  p.res <- c()
-  for(col_i in 1:ncol(p.lower.mean)) {
-    tmp_mat <- cbind(p.lower.mean[,col_i],
-                     p.upper.mean[,col_i])
-    p.res <- rbind(p.res, apply(tmp_mat, 1, min))
-  }
-  rm(p.lower.mean, p.upper.mean)
-
-  p.lower.mean.adj <- apply(p.lower.adj, c(1,2), mean)
-  p.upper.mean.adj <- apply(p.upper.adj, c(1,2), mean)
-  p.adj.res <- c()
-  for(col_i in 1:ncol(p.lower.mean.adj)) {
-    tmp_mat <- cbind(p.lower.mean.adj[,col_i],
-                     p.upper.mean.adj[,col_i])
-    p.adj.res <- rbind(p.adj.res, apply(tmp_mat, 1, min))
-  }
-  rm(p.lower.mean.adj, p.upper.mean.adj)
-  #### END p value computation
+  ## p-value calculations, accounting for sign changes
+  pval.l <- aldex.pvals(out$p.lower, out$p.upper, p.adjust.method)
 
   res <- list()
   res$streaming <- stream
@@ -161,10 +121,10 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   out$estimate <- NULL
   if ("std.error" %in% return.pars) res$std.error <- out$std.error
   out$std.error <- NULL
-  if ("p.val" %in% return.pars) res$p.val <- p.res
-  rm(p.res)
-  if ("p.val.adj" %in% return.pars) res$p.val.adj <- p.adj.res
-  rm(p.adj.res)
+  if ("p.val" %in% return.pars) res$p.val <- pval.l$p.res
+  pval.l$p.res <- NULL
+  if ("p.val.adj" %in% return.pars) res$p.val.adj <- pval.l$p.adj.res
+  pval.l$p.adj.res <- NULL
   if ("logWperp" %in% return.pars) res$logWperp <- out$logWperp
   out$logWperp <- NULL
   if ("logWpara" %in% return.pars) res$logWpara <- out$logWpara
@@ -176,49 +136,3 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
 }
 
 
-aldex.internal <- function(Y, X, nsample, scale=NULL, stream,
-                           test, scale.args, return.pars) {
-  N <- ncol(Y)
-  D <- nrow(Y)
-
-  
-  ## dirichlet sample
-  logWpara <- array(NA, c(D, N, nsample))
-  for (i in 1:N) {
-    logWpara[,i,] <- log2(rDirichlet(nsample, Y[,i]+0.5))
-  }
-
-  ## sample from scale model
-  if (is.null(scale)){
-    stop("You probably want a scale model :)")
-  } else if (is.matrix(scale)) {
-    stopifnot(dim(scale)==c(N, nsample))
-    logWperp <- scale
-  } else if (is.function(scale)) {
-    req.args <- formalArgs(scale)
-    scale.args <- scale.args[intersect(names(scale.args), req.args)]
-    if ("logWpara" %in% req.args) scale.args$logWpara <- logWpara
-    if ("X" %in% req.args) scale.args$X <- X
-    if ("Y" %in% req.args) scale.args$Y <- Y
-    logWperp <- do.call(scale, scale.args)
-    ## some error checking to make sure whats returned has right dimensions
-  } 
-
-  ## compute scaled abundances (W)
-  logW <- sweep(logWpara, c(2,3), logWperp, FUN=`+`)
-
-  ## memory management
-  if (!("logWperp" %in% return.pars)) rm(logWperp)
-  if (!("logWpara" %in% return.pars)) rm(logWpara)
-
-  ## fit linear model
-  out <- fflm(aperm(logW, c(2,1,3)),t(X), test) 
-
-  if (!stream & ("logWperp" %in% return.pars)){
-    out$logWperp <- logWperp
-  }
-  if (!stream & ("logWpara" %in% return.pars)){
-    out$logWpara <- logWpara
-  }
-  return(out)
- }
