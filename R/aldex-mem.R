@@ -12,7 +12,7 @@
 ##'   posterior sample (S)
 ##' @importFrom lmerTest lmer
 ##' @importFrom lme4 VarCorr
-##' @importFrom parallel parLapply makeCluster stopCluster clusterExport
+##' @importFrom parallel parLapply makeCluster stopCluster clusterExport clusterEvalQ
 ##' @author Kyle McGovern
 aldex.mem <- function(logW, formula, data, n.cores) {
   N <- dim(logW)[1]
@@ -25,6 +25,10 @@ aldex.mem <- function(logW, formula, data, n.cores) {
   if(n.cores>1) {
     cl <- makeCluster(n.cores)
     on.exit(stopCluster(cl), add=TRUE)
+    clusterEvalQ(cl, {
+      library(lmerTest)
+      library(lme4)
+    })
 
     ## Trick to avoid code repeat
     lapply_func <- function(X, FUN) parLapply(cl, X, FUN)
@@ -33,8 +37,8 @@ aldex.mem <- function(logW, formula, data, n.cores) {
   }
 
   ## Process Cols (i.e., per-taxa)
-  results <- lapply_func(1:ncol(logWm), function(j) {
-    y <- logWm[,j]
+  logWm_list <- split(logWm, col(logWm))
+  results <- lapply_func(logWm_list, function(y) {
     data_temp <- data
     data_temp$y <- y
     fit <- suppressMessages(lmer(update(formula, y~.), data=data_temp))
@@ -46,7 +50,7 @@ aldex.mem <- function(logW, formula, data, n.cores) {
     colnames(coefs) <- c("estimate", "std.error", "df", "p.lower", "p.upper")
 
     ## Random Effects
-    re_df <- as.data.frame(lme4::VarCorr(fit))
+    re_df <- as.data.frame(VarCorr(fit))
     re_df$var1[is.na(re_df$var1)] <- "(Intercept)"
     re_df$var2[is.na(re_df$var2)] <- "(Intercept)"
     re_df <- re_df[re_df$var1 == re_df$var2, ]
@@ -59,8 +63,26 @@ aldex.mem <- function(logW, formula, data, n.cores) {
   ## To array, get names, build return list
   P <- nrow(results[[1]]$fixed_coefs)
   Pr <- ncol(results[[1]]$random_coefs)
-  fixed_arr <- do.call(rbind, lapply(results, function(x) x$fixed_coefs))
-  random_arr <- do.call(rbind, lapply(results, function(x) x$random_coefs))
+
+  n_rows <- length(results)*P
+  n_cols <- ncol(results[[1]]$fixed_coefs)
+  fixed_arr <- matrix(NA, nrow = n_rows, ncol = n_cols)
+  colnames(fixed_arr) <- colnames(results[[1]]$fixed_coefs)
+  n_cols <- ncol(results[[1]]$random_coefs)
+  random_arr <- matrix(NA, nrow = n_rows, ncol = n_cols)
+  colnames(random_arr) <- colnames(results[[1]]$random_coefs)
+
+  current_row_f <- 1
+  current_row_r <- 1
+  for (i in seq_along(results)) {
+    fixed_arr[current_row_f:(current_row_f + P - 1), ] <-
+      results[[i]]$fixed_coefs
+    random_arr[current_row_r:(current_row_r + Pr - 1), ] <-
+      results[[i]]$random_coefs
+    current_row_f <- current_row_f + P
+    current_row_r <- current_row_r + Pr
+  }
+
   fnames <- row.names(results[[1]]$fixed_coefs)
   rnames <- colnames(results[[1]]$random_coefs)
   fixed_dn <- list(fnames, NULL, NULL)
