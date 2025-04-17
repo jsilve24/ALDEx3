@@ -4,7 +4,7 @@ test_that("aldex runs", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data, nsample=nsample, scale=clr, gamma=0.5)
+  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr, gamma=0.5)
   expect_true(TRUE)
   expect_equal(class(foo), "aldex")
   expect_equal(rownames(foo$logComp), paste0("entity_", 1:10))
@@ -17,7 +17,7 @@ test_that("names are respected", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data, nsample=nsample, scale=clr, gamma=0.5)
+  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr, gamma=0.5)
   expect_equal(colnames(foo$logComp), colnames(Y))
 })
 
