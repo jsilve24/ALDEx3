@@ -129,8 +129,8 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     if (method=="lm") {
       res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)), t(X), test)
     } else if (method=="lme4") {
-      res <- aldex.mem(aperm(out[[iter]]$logW, c(2,1,3)), formula,
-                       data, n.cores)
+      res <- sr.mem(aperm(out[[iter]]$logW, c(2,1,3)), formula,
+                    data, n.cores)
     }
     out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 
     ## while ugly, the following loop should avoid shallow copy of logW and

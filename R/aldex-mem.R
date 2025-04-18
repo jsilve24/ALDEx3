@@ -14,7 +14,7 @@
 ##' @importFrom lme4 VarCorr
 ##' @importFrom parallel parLapply makeCluster stopCluster clusterExport clusterEvalQ
 ##' @author Kyle McGovern
-aldex.mem <- function(logW, formula, data, n.cores) {
+sr.mem <- function(logW, formula, data, n.cores) {
   N <- dim(logW)[1]
   D <- dim(logW)[2]
   S <- dim(logW)[3]
@@ -41,7 +41,7 @@ aldex.mem <- function(logW, formula, data, n.cores) {
   results <- lapply_func(logWm_list, function(y) {
     data_temp <- data
     data_temp$y <- y
-    fit <- suppressMessages(lmer(update(formula, y~.), data=data_temp))
+    fit <- suppressMessages(lmerTest::lmer(update(formula, y~.), data=data_temp))
 
     ## Fixed Effects
     coefs <- coef(summary(fit))[,1:3]
