@@ -5,7 +5,7 @@
 \title{Simulation function soley for testing and exploring ALDEx3, Truth is in CLR
 Coordinates.}
 \usage{
-aldex.lm.sim.clr(D = 10, N = 11, P = 2, depth = 10000)
+aldex.lm.sim.clr(D = 10, N = 11, P = 2, depth = 10000, subjects = 0)
 }
 \arguments{
 \item{D}{number of taxa/genes}
@@ -15,6 +15,9 @@ aldex.lm.sim.clr(D = 10, N = 11, P = 2, depth = 10000)
 \item{P}{number of covariates}
 
 \item{depth}{sum of counts for each multinomial draw}
+
+\item{subjects}{the number of subjects if simulating random
+effects 0 means no random effects, must go into N}
 }
 \value{
 a list with elements Y, X, W, and Lambda
@@ -24,5 +27,5 @@ Not designed to create realistic data. Does not add any noise to linear
 regression! True W is in CLR Corrdinates
 }
 \author{
-Justin Silverman
+Justin Silverman, Kyle McGovern
 }

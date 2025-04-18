@@ -8,9 +8,11 @@ aldex(
   Y,
   X,
   data = NULL,
+  method = "lm",
   nsample = 2000,
   scale = NULL,
   streamsize = 8000,
+  n.cores = detectCores() - 1,
   return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj", "logComp",
     "logScale"),
   return.samples = FALSE,
@@ -23,9 +25,13 @@ aldex(
 \item{X}{either a formula (in which case DATA must be non-null) or a model
 matrix of dimension P x N (P is number of linear model covariates). If a
 formula is passed it should not include the target Y, e.g., should simply
-be "~condition-1" (note the lack of the left hand side).}
+be "~condition-1" (note the lack of the left hand side). If using lme4,
+this should be the formula including random effects.}
 
 \item{data}{a data frame for use with formula, must have N rows}
+
+\item{method}{(default lm) The regression method; "lm": linear regression,
+"lme4": linear mixed effects regression with lme4.}
 
 \item{nsample}{number of monte carlo replicates}
 
@@ -38,6 +44,9 @@ streaming chunk. If D\emph{N}nsample*8/1000000 is less than streamsize then no
 streaming will be performed. Note, to conserve memory, samples from the
 Dirichlet and scale models will not be returned if streaming is used.
 Streaming can be turned off by setting streamsize=Inf.}
+
+\item{n.cores}{(default detectCores()-1) If method is 'lme4', use this many
+cores for running mixed effects models in parallel.}
 
 \item{return.pars}{what results should be returned, see return section
 below.}
@@ -69,8 +78,9 @@ two-sided t-test - p.val.adj: (P x D) matrix, p-value for two-sided t-test
 adjusted according to \code{p.adj.method} - logScale: (N x S) matrix, samples
 of the log scale from the scale model - logComp: (D x N x S) array,
 samples of the log composition from the multinomial-Dirichlet - streaming:
-boolean, detnote if streaming was used. Note, logScale and logComp are
-not returned if streaming is active
+boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
+using mixed effects models, return all Pr randome effects. Note, logScale
+and logComp are not returned if streaming is active.
 }
 \description{
 ALDEx3 Linear Models

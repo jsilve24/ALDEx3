@@ -1,6 +1,6 @@
 Package: ALDEx3
 Title: Linear Models for Sequence Count Data 
-Version: 0.2.0
+Version: 0.3.0
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
@@ -19,6 +19,9 @@ Suggests:
     sandwich
 Config/testthat/edition: 3
 Imports: 
-    purrr, 
+    purrr,
+    lme4,
+    lmerTest,
+    parallel,
     abind
 

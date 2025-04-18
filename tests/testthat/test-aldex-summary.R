@@ -4,7 +4,7 @@ test_that("cohensd runs", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data, nsample=nsample, scale=clr)
+  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr)
   a <- cohensd(foo, condition)
   b <- cohensd(foo, 2)
   expect_equal(a, b)
@@ -38,7 +38,7 @@ test_that("summary.aldex works", {
   Y <- matrix(1:110, 10, 11)
   data <- data.frame(disease=c(rep(0, 5), rep(1, 6)))
   nsample <- 2000
-  foo <- aldex(Y, ~condition, data, nsample=nsample, scale=clr)
+  foo <- aldex(Y, ~disease, data=data, nsample=nsample, scale=clr)
   class(foo) <- "aldex"
   bar <- summary(foo)
   expect_equal(colnames(bar), c("parameter", "entity",  "estimate",
