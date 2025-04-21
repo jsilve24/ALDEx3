@@ -7,8 +7,11 @@
 ##' @param X either a formula (in which case DATA must be non-null) or a model
 ##'   matrix of dimension P x N (P is number of linear model covariates). If a
 ##'   formula is passed it should not include the target Y, e.g., should simply
-##'   be "~condition-1" (note the lack of the left hand side).
+##'   be "~condition-1" (note the lack of the left hand side). If using lme4,
+##'   this should be the formula including random effects.
 ##' @param data a data frame for use with formula, must have N rows
+##' @param method (default lm) The regression method; "lm": linear regression,
+##'   "lme4": linear mixed effects regression with lme4.
 ##' @param nsample number of monte carlo replicates
 ##' @param scale the scale model, can be a function or an N x nsample matrix.
 ##'   The API for writing your own scale models is documented below in examples.
@@ -18,6 +21,8 @@
 ##'   streaming will be performed. Note, to conserve memory, samples from the
 ##'   Dirichlet and scale models will not be returned if streaming is used.
 ##'   Streaming can be turned off by setting streamsize=Inf.
+##' @param n.cores (default detectCores()-1) If method is 'lme4', use this many
+##'   cores for running mixed effects models in parallel.
 ##' @param return.pars what results should be returned, see return section
 ##'   below.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
@@ -40,8 +45,9 @@
 ##'   adjusted according to `p.adj.method` - logScale: (N x S) matrix, samples
 ##'   of the log scale from the scale model - logComp: (D x N x S) array,
 ##'   samples of the log composition from the multinomial-Dirichlet - streaming:
-##'   boolean, detnote if streaming was used. Note, logScale and logComp are
-##'   not returned if streaming is active
+##'   boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
+##'   using mixed effects models, return all Pr randome effects. Note, logScale
+##'   and logComp are not returned if streaming is active.
 ##' @examples
 ##' \dontrun{
 ##' Y <- matrix(1:110, 10, 11)
@@ -67,10 +73,12 @@
 ##' }
 ##' res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
 ##' }
+##' @importFrom lme4 nobars
+##' @importFrom parallel detectCores
 ##' @export
 ##' @author Justin Silverman
-aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
-                  streamsize=8000,
+aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
+                  streamsize=8000, n.cores=detectCores()-1,
                   return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logComp", "logScale"),
                   return.samples=FALSE, p.adjust.method="BH", test="t.HC3",
@@ -80,11 +88,19 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   N <- ncol(Y)
   D <- nrow(Y)
 
+  ## Checks for mixed effects modeling
+  if (method=="lme4") {
+    if(is.null(data)) stop("data should not be null if method=\"lme4\"")
+    if(!inherits(X, "formula")) stop("X should be a mixed effects ",
+                                     "formula id method=\"lme4\"")
+  }
+
   ## compute model matrix
   if (inherits(X, "formula")) {
     if (is.null(data)) stop("data should not be null if X is a formula")
     formula <- X
-    X <- t(model.matrix(X, data))
+    ## nobars removes random effects
+    X <- t(model.matrix(nobars(X), data))
     ## some error checking to make sure whats returned has right dimensions
   } else {
     formula <- NULL
@@ -110,7 +126,12 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     out[[iter]] <- aldex.sampler(Y, X, sample.size, scale, scale.args,
                                  return.pars)
     ## fit linear model
-    res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)),t(X), test)
+    if (method=="lm") {
+      res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)), t(X), test)
+    } else if (method=="lme4") {
+      res <- sr.mem(aperm(out[[iter]]$logW, c(2,1,3)), formula,
+                    data, n.cores)
+    }
     out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 
     ## while ugly, the following loop should avoid shallow copy of logW and
     ## logComp currently in out[[iter]], that could be memory intensive. 
@@ -139,7 +160,7 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
   } else {
     parameter.names <- rownames(X)
   }
- 
+
   res <- list()
   res$streaming <- stream
   res$X <- X
@@ -178,6 +199,12 @@ aldex <- function(Y, X, data=NULL, nsample=2000,  scale=NULL,
     colnames(res$logComp) <- sample.names
   }
   out$logComp <- NULL
+  if ("random.effects" %in% return.pars) {
+    res$random.effects <- out$random.eff
+    colnames(res$random.effects) <- entity.names
+  }
+  out$random.eff <- NULL
+
   if (!is.null(data)) res$data <- data
   if (!is.null(formula)) res$formula <- formula
   attr(res, "class") <- "aldex"
