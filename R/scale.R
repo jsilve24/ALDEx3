@@ -84,7 +84,7 @@ sample.sm <- function(X, logComp, s.mu=NULL, s.var=NULL, s.cor=NULL) {
 ##' @return N x nsample matrix
 ##' @importFrom MASS mvrnorm
 ##' @author Kyle McGovern
-##' @export
+##' @export coef.sm
 coef.sm <- function(X, logComp, c.mu=NULL, c.cor=NULL) {
   N <- ncol(X)
   P <- nrow(X)
