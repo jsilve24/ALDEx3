@@ -4,7 +4,7 @@ test_that("aldex runs", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr, gamma=0.5)
+  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr.sm, gamma=0.5)
   expect_true(TRUE)
   expect_equal(class(foo), "aldex")
   expect_equal(rownames(foo$logComp), paste0("entity_", 1:10))
@@ -17,14 +17,14 @@ test_that("names are respected", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
-  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr, gamma=0.5)
+  foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr.sm, gamma=0.5)
   expect_equal(colnames(foo$logComp), colnames(Y))
 })
 
 test_that("test-aldex.R correct mean estimate",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  res <- aldex(sim$Y, sim$X, scale=clr)
+  res <- aldex(sim$Y, sim$X, scale=clr.sm)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.05)
 })
@@ -33,14 +33,14 @@ test_that("test-aldex.R correct mean estimate",{
 test_that("test-aldex.R errors with too small streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
-  expect_error(aldex(sim$Y, sim$X, scale=clr, streamsize=0.001))
+  expect_error(aldex(sim$Y, sim$X, scale=clr.sm, streamsize=0.001))
 })
 
 
 test_that("test-aldex.R correct mean estimate when streaming",{
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=100, depth=10000)
-  res <- aldex(sim$Y, sim$X, scale=clr, streamsize=10,nsample=2001)
+  res <- aldex(sim$Y, sim$X, scale=clr.sm, streamsize=10,nsample=2001)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_true(res$streaming)
   expect_equal(dim(res$estimate)[3],2001)
@@ -107,7 +107,7 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
 
 test_that("aldex retrns posterior samples when it should", {
   sim <- aldex.lm.sim.clr(N=10, depth=100)
-  res <- aldex(sim$Y, sim$X, scale=clr,
+  res <- aldex(sim$Y, sim$X, scale=clr.sm,
                return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logComp"))
   expect_true("logComp" %in% names(res))

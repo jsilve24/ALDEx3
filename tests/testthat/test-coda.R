@@ -8,6 +8,6 @@ test_that("miniclo correct", {
 test_that("center correct", {
   set.seed(165548)
   x <- array(rnorm(24), c(3, 4, 5))
-  expect_equal(center(x)[,2,3], x[,2,3]-mean(x[,2,3]))
+  expect_equal(center.sm(x)[,2,3], x[,2,3]-mean(x[,2,3]))
 })
 

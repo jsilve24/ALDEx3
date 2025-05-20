@@ -23,5 +23,6 @@ Imports:
     lme4,
     lmerTest,
     parallel,
+    MASS,
     abind
 
