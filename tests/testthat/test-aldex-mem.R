@@ -7,7 +7,7 @@ test_that("aldex mem runs", {
                      subjects=subjects)
   nsample <- 10
   foo <- aldex(Y, formula, data=data, method="lme4",
-          nsample=nsample, gamma=0.5, scale=clr,
+          nsample=nsample, gamma=0.5, scale=clr.sm,
           n.cores=1)
   expect_true(TRUE)
   expect_equal(class(foo), "aldex")
@@ -18,10 +18,10 @@ test_that("aldex mem expected errors", {
   set.seed(4985)
   sim <- aldex.lm.sim.clr(N=1000, depth=10000)
   expect_error(aldex(sim$Y, sim$X, data=sim$X, method="lme4",
-          nsample=nsample, gamma=0.5, scale=clr,
+          nsample=nsample, gamma=0.5, scale=clr.sm,
           n.cores=1), "X should be a mixed effects formula")
   expect_error(aldex(sim$Y, sim$X, data=NULL, method="lme4",
-          nsample=nsample, gamma=0.5, scale=clr,
+          nsample=nsample, gamma=0.5, scale=clr.sm,
           n.cores=1), "data should not be null")
 })
 
@@ -35,7 +35,7 @@ test_that("aldex mem correct naming", {
                      subjects=subjects)
   nsample <- 10
   foo <- aldex(Y, formula, data=data, method="lme4",
-               nsample=nsample, gamma=0.5, scale=clr,
+               nsample=nsample, gamma=0.5, scale=clr.sm,
                n.cores=2,
                return.pars=c("X", "estimate", "std.error", "p.val",
                              "p.val.adj", "logComp", "logScale",
@@ -54,7 +54,7 @@ test_that("aldex mem correct mean estimate",{
     apply(sim$Z, 2, function(i) which(i==1))))
   data <- cbind(data, subjects)
   colnames(data) <- c("A", "B", "subjects")
-  res <- aldex(sim$Y, formula, data=data, scale=clr, method="lme4",
+  res <- aldex(sim$Y, formula, data=data, scale=clr.sm, method="lme4",
                nsample=1000)
   mean.estimate <- apply(res$estimate, c(1,2), FUN=`mean`)
   expect_equal(unname(mean.estimate), unname(sim$Lambda), tolerance=0.1)

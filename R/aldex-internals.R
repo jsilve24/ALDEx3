@@ -63,7 +63,6 @@ aldex.pvals <- function(p.lower, p.upper, p.adjust.method) {
   p.upper.mean <- apply(p.upper.local, c(2,1), mean)
   rm(p.lower.local, p.upper.local)
 
-
   p.res <- c()
   for(col_i in 1:ncol(p.lower.mean)) {
     tmp_mat <- cbind(p.lower.mean[,col_i],
