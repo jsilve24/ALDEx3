@@ -31,7 +31,10 @@ this should be the formula including random effects.}
 \item{data}{a data frame for use with formula, must have N rows}
 
 \item{method}{(default lm) The regression method; "lm": linear regression,
-"lme4": linear mixed effects regression with lme4.}
+"lme4": linear mixed effects regression with lme4; "nlme": linear mixed
+effects models with nlme, REQUIRES "random" argument representing random
+effects be passed into \code{aldex} function, can also pass "correlation" as
+argument (see nlme documentation for how to use "correlation" argument).}
 
 \item{nsample}{number of monte carlo replicates}
 
@@ -64,7 +67,7 @@ Heteroscedasticity Consistent Standard Errors in the Linear Regression
 Model, The American Statistician.}
 
 \item{...}{parameters to be passed to the scale model (if a function is
-provided)}
+provided), may also be random or correlation arguments for nlme.}
 
 \item{counts}{an (D x N) matrix of sequence count, N is number of samples, D
 is number of taxa or genes}
@@ -79,7 +82,7 @@ adjusted according to \code{p.adj.method} - logScale: (N x S) matrix, samples
 of the log scale from the scale model - logComp: (D x N x S) array,
 samples of the log composition from the multinomial-Dirichlet - streaming:
 boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
-using mixed effects models, return all Pr randome effects. Note, logScale
+using mixed effects models, return all Pr random effects. Note, logScale
 and logComp are not returned if streaming is active.
 }
 \description{
@@ -112,5 +115,5 @@ res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
 }
 }
 \author{
-Justin Silverman
+Justin Silverman, Kyle McGovern
 }

@@ -11,7 +11,10 @@
 ##'   this should be the formula including random effects.
 ##' @param data a data frame for use with formula, must have N rows
 ##' @param method (default lm) The regression method; "lm": linear regression,
-##'   "lme4": linear mixed effects regression with lme4.
+##'   "lme4": linear mixed effects regression with lme4; "nlme": linear mixed
+##'    effects models with nlme, REQUIRES "random" argument representing random
+##'    effects be passed into `aldex` function, can also pass "correlation" as
+##'    argument (see nlme documentation for how to use "correlation" argument).
 ##' @param nsample number of monte carlo replicates
 ##' @param scale the scale model, can be a function or an N x nsample matrix.
 ##'   The API for writing your own scale models is documented below in examples.
@@ -36,7 +39,7 @@
 ##'   Heteroscedasticity Consistent Standard Errors in the Linear Regression
 ##'   Model, The American Statistician.
 ##' @param ... parameters to be passed to the scale model (if a function is
-##'   provided)
+##'   provided), may also be random or correlation arguments for nlme.
 ##' @return a list with elements controled by parameter resturn.pars. Options
 ##'   include: - X: P x N covariate matrix - estimate: (P x D x nsample) array
 ##'   of linear model estimates - std.error: (P x D x nsample) array of standard
@@ -46,7 +49,7 @@
 ##'   of the log scale from the scale model - logComp: (D x N x S) array,
 ##'   samples of the log composition from the multinomial-Dirichlet - streaming:
 ##'   boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
-##'   using mixed effects models, return all Pr randome effects. Note, logScale
+##'   using mixed effects models, return all Pr random effects. Note, logScale
 ##'   and logComp are not returned if streaming is active.
 ##' @examples
 ##' \dontrun{
@@ -76,7 +79,7 @@
 ##' @importFrom lme4 nobars
 ##' @importFrom parallel detectCores
 ##' @export
-##' @author Justin Silverman
+##' @author Justin Silverman, Kyle McGovern
 aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
                   streamsize=8000, n.cores=detectCores()-1,
                   return.pars=c("X", "estimate", "std.error", "p.val",
@@ -85,14 +88,27 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
                   ...) {
   scale.args <- list(...)
 
+  mem.args <- list()
+  # Elements to move
+  to_remove <- c("random", "correlation")
+  for(to_move in to_remove) {
+    # Check and move
+    if (to_move %in% names(scale.args)) {
+      mem.args[[to_move]] <- scale.args[[to_move]]
+      scale.args[[to_move]] <- NULL
+    }
+  }
+
   N <- ncol(Y)
   D <- nrow(Y)
 
   ## Checks for mixed effects modeling
-  if (method=="lme4") {
+  if ((method=="lme4")|(method=="nlme")) {
     if(is.null(data)) stop("data should not be null if method=\"lme4\"")
     if(!inherits(X, "formula")) stop("X should be a mixed effects ",
-                                     "formula id method=\"lme4\"")
+                                     "formula if method=\"lme4\" ",
+                                     "or a fixed effects formula ",
+                                     "if method=\"nlme\"")
   }
 
   ## compute model matrix
@@ -128,9 +144,9 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     ## fit linear model
     if (method=="lm") {
       res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)), t(X), test)
-    } else if (method=="lme4") {
+    } else if ((method=="lme4")|method=="nlme") {
       res <- sr.mem(aperm(out[[iter]]$logW, c(2,1,3)), formula,
-                    data, n.cores)
+                    data, n.cores, method, mem.args)
     }
     out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 
     ## while ugly, the following loop should avoid shallow copy of logW and

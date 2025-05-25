@@ -2,9 +2,9 @@
 % Please edit documentation in R/sr-mem.R
 \name{sr.mem}
 \alias{sr.mem}
-\title{Implementation of SR-MEM: scale reliant mixed effects models.}
+\title{Implementation of SR-MEM: scale-reliant mixed effects models.}
 \usage{
-sr.mem(logW, formula, data, n.cores)
+sr.mem(logW, formula, data, n.cores, method, mem.args)
 }
 \arguments{
 \item{logW}{a numeric array (N x D X S) where D is the number of taxa,
@@ -16,15 +16,20 @@ N is the number of samples, and S is the number of posterior samples}
 
 \item{n.cores}{The number of cores for parallelization. If n.cores=1, no
 parallelization is used}
+
+\item{method}{The mem method to use: either nlme or lme4}
+
+\item{mem.args}{Additional arguments including random or correlation}
 }
 \value{
 A list of (P x D x S)-arrays with the fixed effect point estimates,
 the standard errors, degrees of freedom and the lower and upper p-values
 for each coefficient (P), of each model fit to each taxa (D) and each
-posterior sample (S)
+posterior sample (S) and a (Pr x D x S)-array with (Pr) random
+effects.
 }
 \description{
-Implementation of SR-MEM: scale reliant mixed effects models.
+Implementation of SR-MEM: scale-reliant mixed effects models.
 }
 \author{
 Kyle McGovern
