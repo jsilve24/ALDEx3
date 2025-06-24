@@ -23,32 +23,6 @@ clr.sm <- function(X, logComp, gamma=0.5) {
   return(logScale)
 }
 
-##' This is a function to pass in a custom logScale
-##' matrix. Useful for advanced users defining any
-##' scale model they want or for testing where the
-##' scale is known. Matrix should be on log2 scale.
-##'
-##' @param custom.logScale A N x nsample matrix of
-##'   log2 scale values
-##' @return The same N x nsample matrix passed in
-##'   if it passes tests, otherwise an error is thrown.
-##' @author Kyle McGovern
-##' @export
-matrix.sm <- function(X, logComp, custom.logScale) {
-  N <- ncol(X)
-  P <- nrow(X)
-  nsample <- dim(logComp)[3]
-
-  if(any(dim(custom.logScale)!=c(N, nsample))) {
-    stop("custom.logScale must be dim c(N, nsample)")
-  }
-  if (!all(is.finite(custom.logScale))) {
-    stop("elements of custom.logScale are infinite or NA")
-  }
-
-  return(custom.logScale)
-}
-
 ##' Scale model where the user may specify the mean and variance of the
 ##' log2 of the scale for each individual sample.
 ##'

@@ -81,29 +81,3 @@ test_that("sample.sm expected output", {
     mean(col[4:6])-mean(col[1:3])
   })), 4, tolerance=0.25)
 })
-
-test_that("matrix.sm expected output/errors", {
-  set.seed(43643)
-  X <- rbind(c(1, 1, 1, 1, 1, 1),
-             c(0, 0, 0, 1, 1, 1),
-             c(0.9, 1.2, 1, 0.8, 1.2, 1.3))
-  logComp <- array(0, c(5, 6, 5000))
-
-  wrong.matrix <- replicate(5000, rnorm(5, 0, 1))
-  wrong.matrix.2 <- replicate(4999, rnorm(6, 0, 1))
-  wrong.matrix.3 <- replicate(5000, rnorm(6, 0, 1))
-  wrong.matrix.3[4, 4] <- NA
-  wrong.matrix.4 <- replicate(5000, rnorm(6, 0, 1))
-  wrong.matrix.4[4, 4] <- Inf
-  correct.matrix <- replicate(5000, rnorm(6, 0, 1))
-  expect_error(matrix.sm(X, logComp, wrong.matrix),
-               "custom.logScale must be dim")
-  expect_error(matrix.sm(X, logComp, wrong.matrix.2),
-               "custom.logScale must be dim")
-  expect_error(matrix.sm(X, logComp, wrong.matrix.3),
-               "elements of custom.logScale are infinite or NA")
-  expect_error(matrix.sm(X, logComp, wrong.matrix.4),
-               "elements of custom.logScale are infinite or NA")
-  expect_true(all(
-    dim(matrix.sm(X, logComp, correct.matrix))==c(6,5000)))
-})

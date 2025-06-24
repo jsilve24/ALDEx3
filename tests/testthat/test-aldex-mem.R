@@ -69,8 +69,7 @@ test_that("aldex mem nlme correct results", {
   custom.logScale <- replicate(nsample, true.S)
   aldex.res <- aldex(sim$Y, ~treatment, random=~1|subject_ids,
                      data=sim$meta, method="nlme", n.cores=1,
-                     nsample=nsample, scale=matrix.sm,
-                     custom.logScale=custom.logScale,
+                     nsample=nsample, scale=custom.logScale,
                      correlation=corAR1(form=~time|subject_ids),
                      return.pars=c("X", "estimate", "std.error", "p.val",
                                    "p.val.adj", "logComp", "logScale",
@@ -93,8 +92,7 @@ test_that("aldex mem lme4 correct results", {
   aldex.res <- aldex(sim$Y,
                      ~treatment+(1|subject_ids)+(1|location_ids),
                      data=sim$meta, method="lme4", n.cores=1,
-                     nsample=nsample, scale=matrix.sm,
-                     custom.logScale=custom.logScale,
+                     nsample=nsample, scale=custom.logScale,
                      return.pars=c("X", "estimate", "std.error", "p.val",
                                    "p.val.adj", "logComp", "logScale",
                                    "random.effects"))

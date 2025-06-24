@@ -102,6 +102,16 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   N <- ncol(Y)
   D <- nrow(Y)
 
+  ## Checks if scale is matrix
+  if(is.matrix(scale)) {
+    if(any(dim(scale)!=c(N, nsample))) {
+      stop("When scale is a matrix it must be dim c(N, nsample)")
+    }
+    if (!all(is.finite(scale))) {
+      stop("Some elements of scale matrix are infinite or NA")
+    }
+  }
+
   ## Checks for mixed effects modeling
   if ((method=="lme4")|(method=="nlme")) {
     if(is.null(data)) stop("data should not be null if method=\"lme4\"")
@@ -139,8 +149,17 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
     nsample.remaining <- nsample.remaining - sample.size
-    out[[iter]] <- aldex.sampler(Y, X, sample.size, scale, scale.args,
-                                 return.pars)
+    if(is.matrix(scale)) {
+      ## Subset scale matrix
+      matrix.start <- nsample-nsample.remaining-sample.size+1
+      matrix.end <- nsample-nsample.remaining
+      out[[iter]] <- aldex.sampler(Y, X, sample.size,
+                                   scale[,matrix.start:matrix.end,drop=FALSE],
+                                   scale.args, return.pars)
+    } else {
+      out[[iter]] <- aldex.sampler(Y, X, sample.size, scale, scale.args,
+                                   return.pars)
+    }
     ## fit linear model
     if (method=="lm") {
       res <- fflm(aperm(out[[iter]]$logW, c(2,1,3)), t(X), test)
