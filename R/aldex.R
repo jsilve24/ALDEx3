@@ -55,7 +55,7 @@
 ##' data <- data.frame(condition=condition)
 ##' ## demonstrate formula interface and passing optional argument (gamma) to
 ##' ## the scale model (clr)
-##' res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
+##' res <- aldex(Y, ~condition, data, nsample=2000, scale=clr.sm, gamma=0.5)
 ##' 
 ##' ## demonstrating how to write a custom scale model, I will write a model
 ##' ## that generalizes total sum scaling (where we assume no change between 
