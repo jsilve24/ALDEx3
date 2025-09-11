@@ -24,5 +24,6 @@ Imports:
     lmerTest,
     parallel,
     MASS,
-    abind
+    abind,
+    matrixStats
 

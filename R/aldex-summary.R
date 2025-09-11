@@ -15,6 +15,7 @@
 ##'   `data` argument should have been specified) then `var` can be set to
 ##'   the unquoted name of the binary condition variable (e.g.,
 ##'   `var=condition`).
+##' @import matrixStats
 ##' @return A (D x nsample)-matrix of Cohen's D statistics for the variable of
 ##'   interest
 ##' @author Justin Silverman
