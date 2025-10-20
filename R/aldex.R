@@ -13,8 +13,10 @@
 ##' @param method (default lm) The regression method; "lm": linear regression,
 ##'   "lme4": linear mixed effects regression with lme4.
 ##' @param nsample number of monte carlo replicates
-##' @param scale the scale model, can be a function or an N x nsample matrix.
-##'   The API for writing your own scale models is documented below in examples.
+##' @param scale the scale model, can be a function or an N x nsample matrix
+##'   (samples should be given on log2-scale; e.g., samples should be of log of
+##'   system scale). The API for writing your own scale models is documented
+##'   below in examples.
 ##' @param streamsize (default 8000) memory footprint (approximate) at which to
 ##'   use streaming. This should be thought of as the number of Mb for each
 ##'   streaming chunk. If D*N*nsample*8/1000000 is less than streamsize then no
@@ -119,11 +121,18 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   } else {
     nsample.local <- nsample
   }
+  samples.processed <- 0
   while (nsample.remaining > 0) {
     ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
     nsample.remaining <- nsample.remaining - sample.size
-    out[[iter]] <- aldex.sampler(Y, X, sample.size, scale, scale.args,
+    if (is.matrix(scale)) {
+      scale.local <- scale[,(samples.processed+1):(samples.processed+sample.size)] 
+    } else {
+      scale.local <- scale
+    }
+    samples.processed <- samples.processed+sample.size
+    out[[iter]] <- aldex.sampler(Y, X, sample.size, scale.local, scale.args,
                                  return.pars)
     ## fit linear model
     if (method=="lm") {

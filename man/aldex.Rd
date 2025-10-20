@@ -35,8 +35,10 @@ this should be the formula including random effects.}
 
 \item{nsample}{number of monte carlo replicates}
 
-\item{scale}{the scale model, can be a function or an N x nsample matrix.
-The API for writing your own scale models is documented below in examples.}
+\item{scale}{the scale model, can be a function or an N x nsample matrix
+(samples should be given on log2-scale; e.g., samples should be of log of
+system scale). The API for writing your own scale models is documented
+below in examples.}
 
 \item{streamsize}{(default 8000) memory footprint (approximate) at which to
 use streaming. This should be thought of as the number of Mb for each
