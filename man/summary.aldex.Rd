@@ -7,8 +7,7 @@
 \method{summary}{aldex}(object, ignore.intercept = TRUE, ...)
 }
 \arguments{
-\item{object}{An object of class \code{aldex}, typically returned by
-\code{aldex2()} or related functions.}
+\item{object}{An object of class \code{aldex}}
 
 \item{ignore.intercept}{(default=TRUE), ignore intercept when creating
 summary table}

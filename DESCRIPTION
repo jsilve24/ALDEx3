@@ -11,7 +11,7 @@ Description: Provides scalable generalized linear and mixed effects models tailo
 License: GPL (>=3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Suggests: 
     rBeta2009,
     testthat (>= 3.0.0),
@@ -25,5 +25,5 @@ Imports:
     parallel,
     MASS,
     nlme,
-    abind
-
+    abind,
+    matrixStats

@@ -16,8 +16,10 @@
 ##'    effects be passed into `aldex` function, can also pass "correlation" as
 ##'    argument (see nlme documentation for how to use "correlation" argument).
 ##' @param nsample number of monte carlo replicates
-##' @param scale the scale model, can be a function or an N x nsample matrix.
-##'   The API for writing your own scale models is documented below in examples.
+##' @param scale the scale model, can be a function or an N x nsample matrix
+##'   (samples should be given on log2-scale; e.g., samples should be of log of
+##'   system scale). The API for writing your own scale models is documented
+##'   below in examples.
 ##' @param streamsize (default 8000) memory footprint (approximate) at which to
 ##'   use streaming. This should be thought of as the number of Mb for each
 ##'   streaming chunk. If D*N*nsample*8/1000000 is less than streamsize then no
@@ -58,7 +60,7 @@
 ##' data <- data.frame(condition=condition)
 ##' ## demonstrate formula interface and passing optional argument (gamma) to
 ##' ## the scale model (clr)
-##' res <- aldex(Y, ~condition, data, nsample=2000 scale=clr, gamma=0.5)
+##' res <- aldex(Y, ~condition, data, nsample=2000, scale=clr.sm, gamma=0.5)
 ##' 
 ##' ## demonstrating how to write a custom scale model, I will write a model
 ##' ## that generalizes total sum scaling (where we assume no change between 
@@ -145,6 +147,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   } else {
     nsample.local <- nsample
   }
+  samples.processed <- 0
   while (nsample.remaining > 0) {
     ## update sample sizes
     sample.size <- min(nsample.local, nsample.remaining)
