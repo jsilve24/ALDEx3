@@ -104,8 +104,7 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
    expect_true(all(abs(round(aldex3.res$p.val.adj[2,], 4)-aldex2.adj.pvals)<0.015))
 })
 
-
-test_that("aldex retrns posterior samples when it should", {
+test_that("aldex returns posterior samples when it should", {
   sim <- aldex.lm.sim.clr(N=10, depth=100)
   res <- aldex(sim$Y, sim$X, scale=clr.sm,
                return.pars=c("X", "estimate", "std.error", "p.val",
@@ -118,3 +117,32 @@ test_that("aldex retrns posterior samples when it should", {
   expect_false("logScale" %in% names(res))
 })
 
+test_that("aldex throws correct errors when scale is matrix", {
+ sim <- aldex.lm.sim.clr(D=300, N=100, depth=10000)
+ scale.m <- replicate(100, rnorm(101, 0, 1))
+ expect_error(aldex(sim$Y, sim$X, scale=scale.m, nsample=100,
+                    return.pars=c("X", "estimate", "std.error",
+                                  "p.val", "p.val.adj", "logComp")),
+              "When scale is a matrix it must be dim")
+ scale.m <- replicate(101, rnorm(100, 0, 1))
+ expect_error(aldex(sim$Y, sim$X, scale=scale.m, nsample=100,
+                    return.pars=c("X", "estimate", "std.error",
+                                  "p.val", "p.val.adj", "logComp")),
+              "When scale is a matrix it must be dim")
+ scale.m <- replicate(100, rnorm(100, 0, 1))
+ scale.m[5,5] <- -Inf
+ expect_error(aldex(sim$Y, sim$X, scale=scale.m, nsample=100,
+                    return.pars=c("X", "estimate", "std.error",
+                                  "p.val", "p.val.adj", "logComp")),
+              "Some elements of scale matrix are infinite or NA")
+
+})
+
+test_that("aldex throws correct errors when scale is matrix", {
+  sim <- aldex.lm.sim.clr(D=300, N=100, depth=10000)
+  scale.m <- replicate(1000, rnorm(100, 0, 1))
+  expect_no_error(aldex(sim$Y, sim$X, scale=scale.m, nsample=1000,
+                        streamsize=200,
+                     return.pars=c("X", "estimate", "std.error",
+                                   "p.val", "p.val.adj", "logComp")))
+})
