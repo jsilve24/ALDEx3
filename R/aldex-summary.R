@@ -88,8 +88,7 @@ cohensd <- function(m, var) {
 ##' analysis or visualization.
 ##' 
 ##' @title Summary Method for ALDEx3 Objects
-##' @param object An object of class \code{aldex}, typically returned by
-##'   \code{aldex2()} or related functions.
+##' @param object An object of class \code{aldex}
 ##' @param ignore.intercept (default=TRUE), ignore intercept when creating
 ##'   summary table
 ##' @param ... Additional arguments (currently ignored).

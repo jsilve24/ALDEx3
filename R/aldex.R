@@ -2,7 +2,7 @@
 ##'
 ##' 
 ##' @title ALDEx3 Linear Modles
-##' @param counts an (D x N) matrix of sequence count, N is number of samples, D
+##' @param Y an (D x N) matrix of sequence count, N is number of samples, D
 ##'   is number of taxa or genes
 ##' @param X either a formula (in which case DATA must be non-null) or a model
 ##'   matrix of dimension P x N (P is number of linear model covariates). If a

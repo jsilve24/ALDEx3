@@ -22,6 +22,9 @@ aldex(
 )
 }
 \arguments{
+\item{Y}{an (D x N) matrix of sequence count, N is number of samples, D
+is number of taxa or genes}
+
 \item{X}{either a formula (in which case DATA must be non-null) or a model
 matrix of dimension P x N (P is number of linear model covariates). If a
 formula is passed it should not include the target Y, e.g., should simply
