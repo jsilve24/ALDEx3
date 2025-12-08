@@ -73,9 +73,6 @@ Model, The American Statistician.}
 
 \item{...}{parameters to be passed to the scale model (if a function is
 provided), may also be random or correlation arguments for nlme.}
-
-\item{counts}{an (D x N) matrix of sequence count, N is number of samples, D
-is number of taxa or genes}
 }
 \value{
 a list with elements controled by parameter resturn.pars. Options
