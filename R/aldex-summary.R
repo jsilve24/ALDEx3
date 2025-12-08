@@ -97,6 +97,7 @@ cohensd <- function(m, var) {
 ##' @export
 ##' @author Justin Silverman
 summary.aldex <- function(object, ignore.intercept=TRUE, ...) {
+  req(object, c("p.val.adj", "estimate", "std.error"))
   res <- array_to_df(object$p.val.adj)
   colnames(res) <- c("parameter", "entity", "p.val.adj")
   res$estimate <- array_to_df(rowMeans(object$estimate, dims=2))$value

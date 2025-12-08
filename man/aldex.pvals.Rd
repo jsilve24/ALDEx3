@@ -6,7 +6,7 @@
 et al. (2024) in Beyond Normalization: Incorporating Scale Uncertainty
 in Microbiome and Gene Expression Analysis (internal only)}
 \usage{
-aldex.pvals(p.lower, p.upper, p.adjust.method)
+aldex.pvals(p.lower, p.upper, p.adjust.method, onesided = FALSE)
 }
 \arguments{
 \item{p.lower}{A P x D x S matrix for P covariates, D taxa/genes, and S
@@ -16,6 +16,10 @@ monte carlo samples representing the lower tail p.values}
 monte carlo samples representing the upper tail p.values}
 
 \item{p.adjust.method}{An adjutment method for p.adjust}
+
+\item{onesided}{(default: FALSE) if sided return p-values for two-sided
+test. Otherwise if "lower" or "upper" return one-sided test corresponding
+to test that estimate is negative or positive respectively.}
 }
 \value{
 A list with P x D matrices with the non-adjusted and adjusted

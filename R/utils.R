@@ -16,3 +16,16 @@ combine.streams <- function(l) {
    return(l)
  }
 
+
+
+##' Test object contains elements
+##'
+##' @param obj object (list type) 
+##' @param names names of elements required to be in the list 
+##' @author Justin Silverman
+req <- function(obj, names){
+  present <- sapply(obj[names], is.null)
+  if(any(present)){
+    stop("object does not contain required components:", names[present])
+  }
+}

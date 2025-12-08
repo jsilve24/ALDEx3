@@ -53,6 +53,9 @@
 ##'   boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
 ##'   using mixed effects models, return all Pr random effects. Note, logScale
 ##'   and logComp are not returned if streaming is active.
+##' @param onesided (default: FALSE) if sided return p-values for two-sided
+##'   test. Otherwise if "lower" or "upper" return one-sided test corresponding
+##'   to test that estimate is negative or positive respectively.
 ##' @examples
 ##' \dontrun{
 ##' Y <- matrix(1:110, 10, 11)
@@ -87,6 +90,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
                   return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logComp", "logScale"),
                   return.samples=FALSE, p.adjust.method="BH", test="t.HC3",
+                  onesided=FALSE,
                   ...) {
   scale.args <- list(...)
 
@@ -180,7 +184,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   out <- combine.streams(out)
 
   ## p-value calculations, accounting for sign changes
-  pval.l <- aldex.pvals(out$p.lower, out$p.upper, p.adjust.method)
+  pval.l <- aldex.pvals(out$p.lower, out$p.upper, p.adjust.method,onesided)
 
   ## collect names to make output nicer
   if (is.null(colnames(Y))) {

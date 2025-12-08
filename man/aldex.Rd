@@ -18,6 +18,7 @@ aldex(
   return.samples = FALSE,
   p.adjust.method = "BH",
   test = "t.HC3",
+  onesided = FALSE,
   ...
 )
 }
@@ -70,6 +71,10 @@ better for small sample sizes or when there are data with high leverage;
 slowest). To learn more about these, loko at Long and Ervin (2000) Using
 Heteroscedasticity Consistent Standard Errors in the Linear Regression
 Model, The American Statistician.}
+
+\item{onesided}{(default: FALSE) if sided return p-values for two-sided
+test. Otherwise if "lower" or "upper" return one-sided test corresponding
+to test that estimate is negative or positive respectively.}
 
 \item{...}{parameters to be passed to the scale model (if a function is
 provided), may also be random or correlation arguments for nlme.}
