@@ -2,7 +2,7 @@
 
 ## Overview
 
-ALDEx3 is the successor to ALDEx2. ALDEx3 enables both fixed and mixed effects modeling of relative and absolute abundances from sequence count data (e.g., RNA-seq or 16S rRNA-seq data). ALDEx3 additionally offers improved computational efficiency over ALDEx2. Like ALDEx2, ALDEx3 accounts for zeros by modeling sequence count data with a multinomial-Dirichlet model. This model treats zeros as low abundance observations, and accounts for counting uncertainty (i.e., the fact there is more uncertainty in the true proportion of each taxon in each sample when a count of $1$ is observed vs.\ a count of $1000$). ALDEx3 can model either relative or absolute abundances.
+ALDEx3 is the successor to ALDEx2. ALDEx3 enables both fixed and mixed effects modeling of relative and absolute abundances from sequence count data (e.g., RNA-seq or 16S rRNA-seq data). ALDEx3 additionally offers improved computational efficiency over ALDEx2. Like ALDEx2, ALDEx3 accounts for zeros by modeling sequence count data with a multinomial-Dirichlet model. This model treats zeros as low abundance observations, and accounts for counting uncertainty (i.e., the fact there is more uncertainty in the true proportion of each taxon in each sample when a count of $1$ is observed vs. a count of $1000$). ALDEx3 can model either relative or absolute abundances.
 
 For modeling relative abundances, ALDEx3 uses the Centered Log Ration (CLR) transformation because it preserves distances when mapping compositions (i.e., proportions) to the Euclidean space. Absolute abundances are unmeasured by sequence count data because the _scale_ is unmeasured. The term _scale_ refers, for instance, to the total microbial load (or total cellular transcription, etc.) from the biological system from which a sequencing sample was collected. The scale depends on the experiment and scientific question of interest. For example, in an oral microbiome study, the scale might be the total microbial load per $\mu$L of saliva, or in RNA-seq the total mRNA produced by a cell.
 
@@ -43,7 +43,7 @@ head(aldex.gut.summary)
 
 ## Mixed Effects Models (SR-MEM)
 
-Here is an example data analysis using the published [SR-MEM method]{https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1} (Scale Reliant Mixed Effects Models). Mixed effects modeling can be peformed in ALDEx3 with either the lme4 or nlme interfaces.
+Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be peformed in ALDEx3 with either the lme4 or nlme interfaces.
 
 ``` r
 library(ALDEx3)
@@ -66,14 +66,11 @@ head(aldex.mouthwash.summary)
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
-In the Quickstart we considered changes in relative abundances of taxa in the guts of patients with Crohn's Disease (CD) vs.\ Control. Here we will infer changes in **absolute abundances** using three different approaches to **scale models**. Everything here can also be applied to mixed effects modeling.
+In the Quickstart we considered changes in relative abundances of taxa in the guts of patients with Crohn's Disease (CD) vs. Control. Here we will infer changes in **absolute abundances** using three different approaches to **scale models**. Everything here can also be applied to mixed effects modeling.
 
 ### Weak Prior Biological Knowledge
 
-Consider based on prior studies we believe individuals with Crohns (CD) have, on average, 2 $\log_2$-fold lower total microbial load (i.e., scale) on average. However, we are not certain about this belief, and want to account for potential error. Let $\theta^\text{tot}_\text{CD}$ be the average $\log_2$-fold change in gut microbial load in samples CD vs.\ Control. We believe that $\theta^\text{tot}_\text{CD}=-2$. However to account for uncertainty in the assumption we will define our scale model using a standard deviation of $0.5$ around this assumption:
-$$
-\theta^\text{tot}_{\text{CD}} \sim \mathcal{N}\left(-2, 0.5\right).
-$$
+Consider based on prior studies we believe individuals with Crohns (CD) have, on average, 2 log2-fold lower total microbial load (i.e., scale) on average. However, we are not certain about this belief, and want to account for potential error. Let θ<sup>tot</sup><sub>CD</sub> be the average log2-fold change in gut microbial load in samples CD vs. Control. We believe that θ<sup>tot</sup><sub>CD</sub>=-2. However to account for uncertainty in the assumption we will define our scale model using a standard deviation of $0.5$ around this assumption: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5).
 We can do this using the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
 
 ``` r
@@ -130,7 +127,7 @@ head(aldex.gut.abs.summary)
 
 ## Normalization Uncertainty
 
-In the Quickstart the CLR transform was used to infer changes in absolute abundances. While not the most powerful approach, we can actually just define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al.\ show for this exact dataset that this approach can still substantially reduce false positives]{https://link.springer.com/article/10.1186/s13059-025-03609-3}. 
+In the Quickstart the CLR transform was used to infer changes in absolute abundances. While not the most powerful approach, we can actually just define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al. showed for this dataset that accounting for scale uncertainty can substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
 
 ``` r
 # Load Data
@@ -170,4 +167,4 @@ The output is a data.frame which includes:
 - entity: The taxon or gene name for that result (corresponding to `row.names` of input counts `Y`)
 - estimate: The average regression coefficient across Monte Carlo draws
 - std.err: The average regression standard error across Monte Carlo draws
-- p.val.adj: The BH adjusted p-values combined from Monte Carlo draws using special procedure (see ALDEx3 model section)
+- p.val.adj: The BH adjusted p-values combined from Monte Carlo draws using special procedure
