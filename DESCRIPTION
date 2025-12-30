@@ -27,3 +27,6 @@ Imports:
     nlme,
     abind,
     matrixStats
+Depends: 
+    R (>= 3.5)
+LazyData: true
