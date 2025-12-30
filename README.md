@@ -2,11 +2,11 @@
 
 ## Overview
 
-ALDEx3 is the successor to ALDEx2. ALDEx3 enables both fixed and mixed effects modeling of relative and absolute abundances from sequence count data (e.g., RNA-seq or 16S rRNA-seq data). ALDEx3 additionally offers improved computational efficiency over ALDEx2. Like ALDEx2, ALDEx3 accounts for zeros by modeling sequence count data with a multinomial-Dirichlet model. This model treats zeros as low abundance observations, and accounts for counting uncertainty (i.e., the fact there is more uncertainty in the true proportion of each taxon in each sample when a count of $1$ is observed vs. a count of $1000$). ALDEx3 can model either relative or absolute abundances.
+ALDEx3 is the successor to ALDEx2. If offers imporved efficiency, both fixed and mixed effects modeling, and both relative and absolute abundances modeling from sequence count data (e.g., RNA-seq or 16S rRNA-seq data).  Like ALDEx2, ALDEx3 accounts for zeros by modeling these data with a multinomial-Dirichlet model, treating zeros as low abundance observations.
 
-For modeling relative abundances, ALDEx3 uses the Centered Log Ration (CLR) transformation because it preserves distances when mapping compositions (i.e., proportions) to the Euclidean space. Absolute abundances are unmeasured by sequence count data because the _scale_ is unmeasured. The term _scale_ refers, for instance, to the total microbial load (or total cellular transcription, etc.) from the biological system from which a sequencing sample was collected. The scale depends on the experiment and scientific question of interest. For example, in an oral microbiome study, the scale might be the total microbial load per $\mu$L of saliva, or in RNA-seq the total mRNA produced by a cell.
+For modeling relative abundances, ALDEx3 uses the Centered Log Ratio (CLR) transformation because it preserves distances when mapping compositions (i.e., proportions) to the Euclidean space. [See wikipedia for more information](https://en.wikipedia.org/wiki/Compositional_data).
 
-ALDEx3 enables modeling of absolute abundances using _scale models_. A _scale model_ is a probability distribution over the unmeasured scale. The advantage of using a probability distribution rather than typical normalization or bias-correction approaches is that it can explicitly account for uncertainty in the unmeasured scale. Scale models can be defined in a variety of ways such as distributions representing uncertainty in normalizations (e.g., normalizing to housekeeping genes, TSS normalization, etc.), distributions based on secondary measurements of scale (e.g., flow cytometry or qPCR measurements), or just weak biological knowledge from previous studies (e.g., assuming an antibiotic kills between 20-80\% of all microbes). See Defining Scale Models for full details.
+However, absolute abundances are unmeasured by sequencing data because the _scale_ is unmeasured. Here _scale_ refers, for example, to total gut microbial load, or total cellular transcription, etc. ALDEx3 addresses this problem using _scale models_: probability distributions representing uncertainty in the unmeasured scale. Scale models can be defined in a variety of ways including: (1) as uncertainty in normalizations (e.g., CLR or TSS normalization, etc.), (2) with measurements of scale (e.g., with flow cytometry or qPCR), or (3) through weak biological knowledge (e.g., assuming an antibiotic kills between 20-80\% of all gut microbes).
 
 ## Installation
 
@@ -21,22 +21,31 @@ devtools::install_github("jsilve24/ALDEx3")
 
 ``` r
 library(ALDEx3)
-# Load Data
+set.seed(42)
+# Load Crohn's Disease vs. Control Data
 data(gut_crohns_data)
-# Genus Counts x Samples
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
 Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
 # Metadata Samples x Metadata Values
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
                            levels=c("Control", "CD"))
-# Fit Crohns Disease (CD) vs. Control
-# relative abundance changes in gut
+
+# Relative Abundances CD vs. Control
 aldex.gut.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
                        scale=clr.sm,   # CLR transform
-                       gamma=0)        # Gamma=0 no uncertainty in CLR
+                       gamma=0)        # Gamma=0 no ClR uncertainty
 aldex.gut.summary <- summary.aldex(aldex.gut.raw)
 head(aldex.gut.summary)
 ```
@@ -47,37 +56,54 @@ Here is an example data analysis using the published [SR-MEM method](https://www
 
 ``` r
 library(ALDEx3)
+set.seed(42)
 # Load Data
 data(oral_mouthwash_data)
+
+# 75% Sparsity Filter
 Y <- oral_mouthwash_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
 X <- oral_mouthwash_data$metadata
+
 # Fixed Effects: Interaction between Treatment and Discrete Time Point
 # Random Effects: Random intercept for each study participant
 aldex.mouthwash.raw <- aldex(Y,
                              ~treat*timec+(1|participant_id),
                              X,
                              method="lme4",   # Required
-                             nsample=250, 
+                             nsample=250,
                              scale=clr.sm,    # Relative Abundances
-                             gamma=0)
+                             gamma=0)         # Gamma=0 no CLR uncertainty
 aldex.mouthwash.summary <- summary.aldex(aldex.mouthwash.raw)
 head(aldex.mouthwash.summary)
 ```
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
-In the Quickstart we considered changes in relative abundances of taxa in the guts of patients with Crohn's Disease (CD) vs. Control. Here we will infer changes in **absolute abundances** using three different approaches to **scale models**. Everything here can also be applied to mixed effects modeling.
+The Quickstart considered the relative abundances of taxa in the guts of patients with Crohn's Disease (CD) vs. Control. Here **absolute abundances** are modeled using three different approaches to **scale models**.
 
 ### Weak Prior Biological Knowledge
 
-Consider based on prior studies we believe individuals with Crohns (CD) have, on average, 2 log2-fold lower total microbial load (i.e., scale) on average. However, we are not certain about this belief, and want to account for potential error. Let θ<sup>tot</sup><sub>CD</sub> be the average log2-fold change in gut microbial load in samples CD vs. Control. We believe that θ<sup>tot</sup><sub>CD</sub>=-2. However to account for uncertainty in the assumption we will define our scale model using a standard deviation of $0.5$ around this assumption: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5).
-We can do this using the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
+Consider prior studies suggest individuals with CD have on average 2 log2-fold lower total gut microbial load. If θ<sup>tot</sup><sub>CD</sub> is the average log2-fold change in gut microbial load in CD vs. Control, we assume θ<sup>tot</sup><sub>CD</sub>=-2. However, to account for potential uncertainty in this assumption, we define a scale model as a Normal distribution with standard deviation of $0.5$: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5<sup>2</sup>). In ALDEx3 this is done with the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
 
 ``` r
+library(ALDEx3)
+set.seed(42)
 # Load Data
 data(gut_crohns_data)
-# Genus Counts x Samples
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
 Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
 # Metadata Samples x Metadata Values
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
@@ -88,8 +114,8 @@ aldex.gut.abs.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
-                       scale=coef.sm,         # coef scale model
-                       c.mu=c(0, -2),
+                       scale=coef.sm,   # coef scale model
+                       c.mu=c(0, -2),   # c(intercept, CD)
                        c.cor=rbind(c(0, 0), c(0, 0.5**2)))
 
 aldex.gut.abs.summary <- summary.aldex(aldex.gut.abs.raw)
@@ -98,13 +124,23 @@ head(aldex.gut.abs.summary)
 
 ### External Scale Measurements (Ideal)
 
-In the Crohn's dataset, we actually have flow cytometry measurements of microbial load from the collected fecal samples. If this data exists this is usually the ideal approach. To include these measurements in ALDEx3, here we use the `sample.sm` scale model which takes `s.mu` and `s.var` (it can also techincally take a correlation matrix `s.cor`) as arguments. As an example of `s.mu`, consider we have three samples with qPCR $\log_2$ microbial load measurements of `s.mu=c(10.6, 9.5, 11.2)`. We might assume a variance of $0.25$ per sample to account for technical noise. For this dataset we can do:
+In the Crohn's dataset we have flow cytometry measurements of fecal microbial load for each sample. If w<sup>tot</sup><sub>n</sub> and q<sub>n</sub> are the scale and flow cytometry measurement for sample n, respectively, we define the scale model as w<sup>tot</sup><sub>n</sub> ~ *N* (log2 q<sub>n</sub>, 0.5<sup>2</sup>). In ALDEx3, here we use the `sample.sm` scale model which takes `s.mu` and `s.var` as arguments:
 
 ``` r
+library(ALDEx3)
+set.seed(42)
 # Load Data
 data(gut_crohns_data)
-# Genus Counts x Samples
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
 Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
 # Metadata Samples x Metadata Values
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
@@ -127,13 +163,23 @@ head(aldex.gut.abs.summary)
 
 ## Normalization Uncertainty
 
-In the Quickstart the CLR transform was used to infer changes in absolute abundances. While not the most powerful approach, we can actually just define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al. showed for this dataset that accounting for scale uncertainty can substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
+The Quickstart used the CLR to infer changes in relative abundances. While not the most powerful approach, we can define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al. show for this exact dataset that this approach can still substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
 
 ``` r
+library(ALDEx3)
+set.seed(42)
 # Load Data
 data(gut_crohns_data)
-# Genus Counts x Samples
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
 Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
 # Metadata Samples x Metadata Values
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
