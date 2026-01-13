@@ -1,3 +1,24 @@
+---
+title: "ALDEx3-Quickstart"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ALDEx3-Quickstart}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+options(warn = -1)
+```
+
+```{r setup}
+library(ALDEx3)
+```
+
 # ALDEx3
 
 ## Overview
@@ -10,7 +31,7 @@ However, absolute abundances are unmeasured by sequencing data because the _scal
 
 ## Installation
 
-``` r
+```r
 if (!require("devtools", quietly = TRUE)) {
   install.packages("devtools")
 }
@@ -19,8 +40,7 @@ devtools::install_github("jsilve24/ALDEx3")
 
 ## Quickstart (Inference with Relative Abundances)
 
-``` r
-library(ALDEx3)
+```{r}
 set.seed(42)
 # Load Crohn's Disease vs. Control Data
 data(gut_crohns_data)
@@ -54,8 +74,7 @@ head(aldex.gut.summary)
 
 Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be peformed in ALDEx3 with either the lme4 or nlme interfaces.
 
-``` r
-library(ALDEx3)
+```{r}
 set.seed(42)
 # Load Data
 data(oral_mouthwash_data)
@@ -73,6 +92,7 @@ X <- oral_mouthwash_data$metadata
 aldex.mouthwash.raw <- aldex(Y,
                              ~treat*timec+(1|participant_id),
                              X,
+                             n.cores=2,
                              method="lme4",   # Required
                              nsample=250,
                              scale=clr.sm,    # Relative Abundances
@@ -89,8 +109,7 @@ The Quickstart considered the relative abundances of taxa in the guts of patient
 
 Consider prior studies suggest individuals with CD have on average 2 log2-fold lower total gut microbial load. If θ<sup>tot</sup><sub>CD</sub> is the average log2-fold change in gut microbial load in CD vs. Control, we assume θ<sup>tot</sup><sub>CD</sub>=-2. However, to account for potential uncertainty in this assumption, we define a scale model as a Normal distribution with standard deviation of $0.5$: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5<sup>2</sup>). In ALDEx3 this is done with the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
 
-``` r
-library(ALDEx3)
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
@@ -126,8 +145,7 @@ head(aldex.gut.abs.summary)
 
 In the Crohn's dataset we have flow cytometry measurements of fecal microbial load for each sample. If w<sup>tot</sup><sub>n</sub> and q<sub>n</sub> are the scale and flow cytometry measurement for sample n, respectively, we define the scale model as w<sup>tot</sup><sub>n</sub> ~ *N* (log2 q<sub>n</sub>, 0.5<sup>2</sup>). In ALDEx3, here we use the `sample.sm` scale model which takes `s.mu` and `s.var` as arguments:
 
-``` r
-library(ALDEx3)
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
@@ -165,8 +183,7 @@ head(aldex.gut.abs.summary)
 
 The Quickstart used the CLR to infer changes in relative abundances. While not the most powerful approach, we can define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al. show for this exact dataset that this approach can still substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
 
-``` r
-library(ALDEx3)
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
