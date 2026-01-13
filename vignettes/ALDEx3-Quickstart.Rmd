@@ -23,11 +23,29 @@ library(ALDEx3)
 
 ## Overview
 
-ALDEx3 is the successor to ALDEx2. If offers imporved efficiency, both fixed and mixed effects modeling, and both relative and absolute abundances modeling from sequence count data (e.g., RNA-seq or 16S rRNA-seq data).  Like ALDEx2, ALDEx3 accounts for zeros by modeling these data with a multinomial-Dirichlet model, treating zeros as low abundance observations.
+**ALDEx3** is the successor to **ALDEx2**, providing improved computational efficiency and support for both fixed- and mixed-effects models. It enables statistically principled inference on both **relative** and **absolute** abundances from sequencing count data (e.g., RNA-seq or 16S rRNA gene sequencing).
 
-For modeling relative abundances, ALDEx3 uses the Centered Log Ratio (CLR) transformation because it preserves distances when mapping compositions (i.e., proportions) to the Euclidean space. [See wikipedia for more information](https://en.wikipedia.org/wiki/Compositional_data).
+Like ALDEx2, ALDEx3 models sequencing counts using a **Dirichlet–multinomial** framework, which accounts for sampling variability and naturally accommodates zero counts by treating them as low-abundance observations rather than structural absences.
 
-However, absolute abundances are unmeasured by sequencing data because the _scale_ is unmeasured. Here _scale_ refers, for example, to total gut microbial load, or total cellular transcription, etc. ALDEx3 addresses this problem using _scale models_: probability distributions representing uncertainty in the unmeasured scale. Scale models can be defined in a variety of ways including: (1) as uncertainty in normalizations (e.g., CLR or TSS normalization, etc.), (2) with measurements of scale (e.g., with flow cytometry or qPCR), or (3) through weak biological knowledge (e.g., assuming an antibiotic kills between 20-80\% of all gut microbes).
+High-throughput sequencing data contain only **relative information**: the overall biological *scale* is unobserved. Here, *scale* refers to quantities such as total microbial load, total cellular RNA content, or total biomass. Standard normalization-based workflows implicitly fix this unmeasured scale using strong and often untestable assumptions. When these assumptions are violated, normalization can induce substantial bias, inflate false discovery rates, or mask true biological effects.
+
+ALDEx3 addresses this limitation by explicitly modeling **scale uncertainty**. Rather than fixing scale through normalization, ALDEx3 uses **scale models**—probability distributions that represent uncertainty in the unobserved scale and propagate that uncertainty into downstream inference. This approach generalizes normalization while making its assumptions explicit and testable.
+
+Scale models can be specified in several ways, including:
+1. As uncertainty induced by normalization procedures (e.g., total-sum scaling or log-ratio–based approaches),
+2. Using external measurements of scale (e.g., flow cytometry, qPCR, or spike-ins), or
+3. Through weak biological prior information (e.g., assuming an antibiotic reduces total microbial load by 20–80%).
+
+By treating scale as a latent random variable rather than a fixed normalization constant, ALDEx3 enables coherent inference for both relative and absolute effects and supports complex experimental designs via mixed-effects modeling.
+
+Before using ALDEx3, users are **strongly encouraged** to read:
+
+> **Nixon, Gloor, and Silverman (2025).**  
+> *Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization*.  
+> **Genome Biology**.  
+> https://link.springer.com/article/10.1186/s13059-025-03609-3
+
+This article provides the theoretical motivation for scale models, explains why normalization implicitly fixes unmeasured scale, and demonstrates how explicitly modeling scale uncertainty improves robustness and reproducibility in differential abundance and expression analyses.
 
 ## Installation
 
