@@ -2,7 +2,7 @@
 % Please edit documentation in R/aldex.R
 \name{aldex}
 \alias{aldex}
-\title{ALDEx3 Linear Modles}
+\title{ALDEx3 Linear Models}
 \usage{
 aldex(
   Y,
@@ -77,8 +77,6 @@ to test that estimate is negative or positive respectively.}
 
 \item{...}{parameters to be passed to the scale model (if a function is
 provided), may also be random or correlation arguments for nlme.}
-
-\item{return.samples}{}
 }
 \value{
 a list with elements controled by parameter resturn.pars. Options

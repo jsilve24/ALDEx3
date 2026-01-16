@@ -2,19 +2,52 @@
 % Please edit documentation in R/scale.R
 \name{clr.sm}
 \alias{clr.sm}
-\title{Default scale model discussed in Nixon et al. Beyond Normalizations}
+\title{Default CLR-based scale model (with optional scale uncertainty)}
 \usage{
 clr.sm(X, logComp, gamma = 0.5)
 }
 \arguments{
-\item{gamma}{variance in scale, documented in Nixon et al. (TODO document
-here as well)}
+\item{X}{A numeric design matrix used to model scale variation across
+samples. This is the covariate/design matrix passed internally by
+\code{aldex()} to the scale model. Rows correspond to regression
+coefficients (e.g., intercept and covariates after contrasts/encoding) and
+columns correspond to samples. If the analysis includes only an intercept
+(no covariates), \code{X} is typically a 1 x N matrix of ones. (This
+parameter is automatically passed by aldex)}
+
+\item{logComp}{A numeric array of Monte Carlo log-compositions with
+dimensions \code{features x samples x nsample}. This is produced
+internally by ALDEx3 from Dirichlet-multinomial Monte Carlo sampling and
+log-ratio representation. ##'   (This parameter is automatically passed by aldex)}
+
+\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian
+perturbation that relaxes the CLR assumption about scale. \code{gamma = 0}
+yields the pure CLR assumption; recommended default values in the
+scale-uncertainty literature are often around \code{0.5}, but appropriate
+values depend on how strongly you trust the CLR scale assumption in the
+current study.}
 }
 \value{
-N x nsample matrix
+A numeric matrix of dimension \code{N x nsample} giving Monte Carlo samples
+of the log-scale for each sample (rows) and each Monte Carlo draw (columns).
 }
 \description{
-Default scale model discussed in Nixon et al. Beyond Normalizations
+Implements the default scale model described in Nixon et al. (Beyond
+Normalizations / scale-uncertainty framework). This model generalizes the
+centered log-ratio (CLR) normalization by treating the (log) scale as a
+latent random variable and allowing additive uncertainty around the
+CLR-implied scale differences via a Gaussian term with standard deviation
+\code{gamma}.
+}
+\details{
+In the limit \code{gamma = 0}, this reduces to the CLR assumption (no scale
+uncertainty beyond the CLR-implied scale). Larger \code{gamma} values
+represent increasing uncertainty about the CLR-implied scale differences.
+}
+\references{
+Nixon, Gloor, and Silverman. Incorporating scale uncertainty in
+microbiome and gene expression analysis as an extension of normalization.
+Genome Biology (2025).
 }
 \author{
 Justin Silverman

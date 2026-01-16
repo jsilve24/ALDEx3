@@ -1,7 +1,7 @@
 ##' ALDEx3 Linear Models
 ##'
 ##' 
-##' @title ALDEx3 Linear Modles
+##' @title ALDEx3 Linear Models
 ##' @param Y an (D x N) matrix of sequence count, N is number of samples, D
 ##'   is number of taxa or genes
 ##' @param X either a formula (in which case DATA must be non-null) or a model
@@ -30,7 +30,6 @@
 ##'   cores for running mixed effects models in parallel.
 ##' @param return.pars what results should be returned, see return section
 ##'   below.
-##' @param return.samples 
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
 ##' @param test (default t.HC3), "t", t test is performed for each covariate

@@ -2,28 +2,55 @@
 % Please edit documentation in R/scale.R
 \name{tss.sm}
 \alias{tss.sm}
-\title{Scale model centered on TSS normalization and using log-normal to account
-for uncertainty}
+\title{TSS-centered scale model (with optional scale uncertainty)}
 \usage{
 tss.sm(X, logComp, gamma = 0.5)
 }
 \arguments{
-\item{gamma}{variance in scale, documented in Nixon et al. (TODO document
-here as well)}
+\item{X}{A numeric design matrix passed internally by \code{aldex()} to the
+scale model. Rows correspond to fixed-effect coefficients/covariates
+(\code{P = nrow(X)}) and columns correspond to samples
+(\code{N = ncol(X)}). (Automatically supplied by \code{aldex()}.)}
+
+\item{logComp}{A numeric array of Monte Carlo log-compositions with
+dimensions \code{features x samples x nsample}. This scale model uses
+\code{nsample} (the number of Monte Carlo draws) but does not otherwise use
+\code{logComp}. (Automatically supplied by \code{aldex()}.)}
+
+\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian
+perturbation applied to the scale-model coefficients (in log2 space).
+\code{gamma = 0} implies no scale uncertainty (all draws are centered at
+zero effect); larger values allow greater departures from the TSS-centered
+assumption.}
 }
 \value{
-N x nsample matrix
+A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
+draws of the log2 scale for each sample (rows) across \code{nsample} draws
+(columns).
 }
 \description{
-This scale model is identical to the default scale model in Nixon et al.
-Beyond Normalizations but is centered on the TSS normalization rather than
-the CLR normalization. In practice this equates to an assumption that there
-is no change in scale between conditions. The uncertainty in that assumption
-is controled by the parameter gamma which is the standard deviation of a
-normal distribution.
+Implements a total-sum-scaling (TSS)-centered variant of the default
+scale-uncertainty model described in Nixon et al. (Beyond Normalizations /
+scale-uncertainty framework). Unlike \code{\link{clr.sm}}, which is centered
+on the CLR-implied scale, this model is centered on the TSS assumption that
+there is no systematic change in scale across.
 }
 \details{
-Further documentation will be provided in future versions.
+Scale uncertainty is introduced via an additive Gaussian perturbation on the
+(log2) fixed effects. For each Monte Carlo draw, a coefficient vector is
+sampled as \eqn{b^{(m)} \sim N(0, \gamma^2 I)}, and the per-sample log2 scale
+is computed as \eqn{b^{(m)T} X}. Larger values of \code{gamma} correspond to
+weaker confidence in the TSS-centered assumption (more allowed scale
+variation); \code{gamma = 0} yields no scale variation beyond the model
+center.
+
+Note: \code{logComp} is included to match the ALDEx3 scale-model interface
+and to determine \code{nsample}, but it is not otherwise used by this model.
+}
+\references{
+Nixon, Gloor, and Silverman. Incorporating scale uncertainty in
+microbiome and gene expression analysis as an extension of normalization.
+Genome Biology (2025).
 }
 \author{
 Justin Silverman

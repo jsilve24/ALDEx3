@@ -28,7 +28,9 @@ Imports:
     MASS,
     nlme,
     abind,
-    matrixStats
+    matrixStats,
+    methods,
+    stats
 Depends: 
     R (>= 3.5)
 LazyData: true

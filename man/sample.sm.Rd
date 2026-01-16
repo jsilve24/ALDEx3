@@ -2,30 +2,52 @@
 % Please edit documentation in R/scale.R
 \name{sample.sm}
 \alias{sample.sm}
-\title{Scale model where the user may specify the mean and variance of the
-log2 of the scale for each individual sample.}
+\title{Sample-specific scale model with user-specified mean and variance/covariance}
 \usage{
 sample.sm(X, logComp, s.mu = NULL, s.var = NULL, s.cor = NULL)
 }
 \arguments{
-\item{s.mu}{A vector of length N (# samples; ncol(X))
-representing the log2 mean of each sample's scale (cannot be NULL)}
+\item{X}{A numeric design matrix passed internally by \code{aldex()} to the
+scale model. Columns correspond to samples (\code{N = ncol(X)}). This scale
+model does not use \code{X} directly, but \code{N} is inferred from it.
+(Automatically supplied by \code{aldex()}.)}
 
-\item{s.var}{A vector of length N (# samples; ncol(X))
-representing the variance of each sample in log2 space (cannot be
-NULL if s.cor is NULL)}
+\item{logComp}{A numeric array of Monte Carlo log-compositions with dimensions
+\code{features x samples x nsample}. This scale model uses \code{nsample}
+to determine the number of Monte Carlo draws, but does not otherwise use
+\code{logComp}. (Automatically supplied by \code{aldex()}.)}
 
-\item{s.cor}{A NxN vector where N is # of samples (ncol(X)) representing
-the covariance matrix in log2 space (cannot be NULL if s.var is NULL)}
+\item{s.mu}{Numeric vector of length \code{N} giving the mean of the log2
+scale for each sample. Must not be \code{NULL}.}
+
+\item{s.var}{Numeric vector of length \code{N} giving the marginal variance of
+the log2 scale for each sample. Use this when assuming samples' log2 scales
+are independent. Must be \code{NULL} if \code{s.cor} is provided.}
+
+\item{s.cor}{Numeric \code{N x N} covariance matrix for the log2 scale across
+samples. Use this when encoding correlations between samples' log2 scales.
+Must be \code{NULL} if \code{s.var} is provided.}
 }
 \value{
-N x nsample matrix
+A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
+draws of the log2 scale for each sample (rows) across \code{nsample} draws
+(columns).
 }
 \description{
-Use this scale model if you want to specify the mean and (co)variance
-of the log2 scale. This scale model is particularly useful if you have
-paired qPCR or flow cytometry measurements of scale. Broadly useful if
-you want to specify the scale for each individual sample.
+Draws Monte Carlo samples of the log2 scale for each sample using user-supplied
+moments. This scale model is useful when external measurements (e.g., qPCR,
+flow cytometry, spike-ins) provide information about absolute scale, or when
+you want to encode prior information about scale on a per-sample basis.
+}
+\details{
+Exactly one of \code{s.var} or \code{s.cor} must be provided:
+\itemize{
+\item \code{s.var}: independent per-sample log2-scale variance (diagonal covariance)
+\item \code{s.cor}: full \code{N x N} log2-scale covariance matrix
+}
+
+The returned matrix has \code{N} rows (samples) and \code{nsample} columns
+(Monte Carlo draws), consistent with the ALDEx3 scale-model interface.
 }
 \author{
 Kyle McGovern

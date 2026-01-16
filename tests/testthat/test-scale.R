@@ -44,7 +44,7 @@ test_that("sample.sm expected output", {
                tolerance=0.01)
 })
 
-test_that("coef.sm expected error thrown", {
+test_that("coefficient.sm expected error thrown", {
   X <- rbind(c(1, 1, 1, 1, 1, 1),
              c(0, 0, 0, 1, 1, 1),
              c(0.2, 0.1, 1, 0.8, 1.2, 1.4))
@@ -54,12 +54,12 @@ test_that("coef.sm expected error thrown", {
   c.cor <- diag(0.25, 3)
   c.cor.wrong <- diag(0.25, 6)
 
-  expect_error(coef.sm(X, logComp), "c.mu cannot be NULL")
-  expect_error(coef.sm(X, logComp, c.mu=c.mu),
+  expect_error(coefficient.sm(X, logComp), "c.mu cannot be NULL")
+  expect_error(coefficient.sm(X, logComp, c.mu=c.mu),
                "c.cor cannot be NULL")
-  expect_error(coef.sm(X, logComp, c.mu=c.mu.wrong, c.cor=c.cor),
+  expect_error(coefficient.sm(X, logComp, c.mu=c.mu.wrong, c.cor=c.cor),
                        "c.mu should have length of P")
-  expect_error(coef.sm(X, logComp, c.mu=c.mu, c.cor=c.cor.wrong),
+  expect_error(coefficient.sm(X, logComp, c.mu=c.mu, c.cor=c.cor.wrong),
                        "c.cor should be a PxP")
 })
 
@@ -74,7 +74,7 @@ test_that("sample.sm expected output", {
   c.cor <- diag(0.25, 3)
   c.cor.wrong <- diag(0.25, 6)
 
-  res_1 <- coef.sm(X, logComp,
+  res_1 <- coefficient.sm(X, logComp,
                    c.mu=c.mu, c.cor=c.cor)
   expect_setequal(dim(res_1), c(6, 5000))
   expect_equal(mean(apply(res_1, 2, function(col) {

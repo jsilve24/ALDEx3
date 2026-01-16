@@ -151,7 +151,7 @@ aldex.gut.abs.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
-                       scale=coef.sm,   # coef scale model
+                       scale=coefficient.sm,   # coef scale model
                        c.mu=c(0, -2),   # c(intercept, CD)
                        c.cor=rbind(c(0, 0), c(0, 0.5**2)))
 
