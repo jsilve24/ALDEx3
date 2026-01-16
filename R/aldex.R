@@ -83,6 +83,8 @@
 ##' }
 ##' @importFrom lme4 nobars
 ##' @importFrom parallel detectCores
+##' @importFrom methods formalArgs
+##' @import stats
 ##' @export
 ##' @author Justin Silverman, Kyle McGovern
 aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
