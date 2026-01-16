@@ -30,6 +30,7 @@
 ##'   cores for running mixed effects models in parallel.
 ##' @param return.pars what results should be returned, see return section
 ##'   below.
+##' @param return.samples 
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
 ##' @param test (default t.HC3), "t", t test is performed for each covariate
@@ -40,6 +41,9 @@
 ##'   slowest). To learn more about these, loko at Long and Ervin (2000) Using
 ##'   Heteroscedasticity Consistent Standard Errors in the Linear Regression
 ##'   Model, The American Statistician.
+##' @param onesided (default: FALSE) if sided return p-values for two-sided
+##'   test. Otherwise if "lower" or "upper" return one-sided test corresponding
+##'   to test that estimate is negative or positive respectively.
 ##' @param ... parameters to be passed to the scale model (if a function is
 ##'   provided), may also be random or correlation arguments for nlme.
 ##' @return a list with elements controled by parameter resturn.pars. Options
@@ -53,9 +57,6 @@
 ##'   boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
 ##'   using mixed effects models, return all Pr random effects. Note, logScale
 ##'   and logComp are not returned if streaming is active.
-##' @param onesided (default: FALSE) if sided return p-values for two-sided
-##'   test. Otherwise if "lower" or "upper" return one-sided test corresponding
-##'   to test that estimate is negative or positive respectively.
 ##' @examples
 ##' \dontrun{
 ##' Y <- matrix(1:110, 10, 11)
@@ -91,7 +92,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
                   streamsize=8000, n.cores=detectCores()-1,
                   return.pars=c("X", "estimate", "std.error", "p.val",
                                 "p.val.adj", "logComp", "logScale"),
-                  return.samples=FALSE, p.adjust.method="BH", test="t.HC3",
+                  p.adjust.method="BH", test="t.HC3",
                   onesided=FALSE,
                   ...) {
   scale.args <- list(...)

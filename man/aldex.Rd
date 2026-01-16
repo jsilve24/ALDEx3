@@ -15,7 +15,6 @@ aldex(
   n.cores = detectCores() - 1,
   return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj", "logComp",
     "logScale"),
-  return.samples = FALSE,
   p.adjust.method = "BH",
   test = "t.HC3",
   onesided = FALSE,
@@ -78,6 +77,8 @@ to test that estimate is negative or positive respectively.}
 
 \item{...}{parameters to be passed to the scale model (if a function is
 provided), may also be random or correlation arguments for nlme.}
+
+\item{return.samples}{}
 }
 \value{
 a list with elements controled by parameter resturn.pars. Options
