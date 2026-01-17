@@ -3,20 +3,27 @@
 \docType{data}
 \name{gut_crohns_data}
 \alias{gut_crohns_data}
-\title{Gut Crohn's example dataset}
+\title{Gut Crohn's microbiome dataset (list)}
 \format{
-A data frame with \if{html}{\out{<N>}} rows and \if{html}{\out{<K>}} variables:
+A named list of one matrix and a dataframe:
 \describe{
-\item{...}{...}
+\item{\code{counts}}{A matrix with read counts with 195 rows and 95 columns)}
+\item{\code{metadata}}{A data frame with 95 rows and 7 columns containing subject-level covariates.}
 }
 }
 \source{
-<where you got it / how generated>
+Vandeputte, D. et al. Quantitative microbiome profiling links gut community variation to microbial load. Nature 551, 507–511 (2017).
 }
 \usage{
 gut_crohns_data
 }
 \description{
-Example dataset used in vignettes and examples.
+This dataset contains a matrix and a data frame: genus-level microbiome profiles and
+corresponding sample metadata from a Crohn's disease case–control cohort.
+The dataset is used in examples and vignettes throughout the package.
+}
+\details{
+The \code{counts} matrix has one row per sample and one column per genus.
+The \code{metadata} data frame has one row per sample with metadata, critically Health.status either CD or Control, and Average cell count per gram frozen feces.
 }
 \keyword{datasets}
