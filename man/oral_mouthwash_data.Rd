@@ -3,7 +3,7 @@
 \docType{data}
 \name{oral_mouthwash_data}
 \alias{oral_mouthwash_data}
-\title{Gut Crohn's microbiome dataset (list)}
+\title{Oral microbiome perturbation dataset (list)}
 \format{
 A named list of one matrix and a dataframe:
 \describe{

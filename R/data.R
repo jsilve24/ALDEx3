@@ -17,7 +17,7 @@
 #' @source Vandeputte, D. et al. Quantitative microbiome profiling links gut community variation to microbial load. Nature 551, 507–511 (2017).
 "gut_crohns_data"
 
-#' Gut Crohn's microbiome dataset (list)
+#' Oral microbiome perturbation dataset (list)
 #'
 #' This dataset contains a matrix and a data frame: genus-level microbiome profiles and
 #' corresponding sample metadata from an oral microbiome perturbation study.
