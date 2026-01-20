@@ -1,12 +1,11 @@
 Package: ALDEx3
 Title: Linear Models for Sequence Count Data 
-Version: 0.4.0
+Version: 1.0.0
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
       person("Kyle", "McGovern", email = "kvm6065@psu.edu", role = c("aut", "ctb")))
-Description: Provides scalable generalized linear and mixed effects models tailored for sequence count data analysis (e.g., analysis of 16S or RNA-seq data).  
-    Uses Dirichlet-multinomial sampling to quantify uncertainty in relative abundance or relative expression conditioned on observed count data. 
+Description: Provides scalable generalized linear and mixed effects models tailored for sequence count data analysis (e.g., analysis of 16S or RNA-seq data). Uses Dirichlet-multinomial sampling to quantify uncertainty in relative abundance or relative expression conditioned on observed count data. 
     Implements scale models as a generalization of normalizations which account for uncertainty in scale (e.g., total abundances). 
 License: MIT + file LICENSE
 Encoding: UTF-8
