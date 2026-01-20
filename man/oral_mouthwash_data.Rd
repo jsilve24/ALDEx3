@@ -3,20 +3,29 @@
 \docType{data}
 \name{oral_mouthwash_data}
 \alias{oral_mouthwash_data}
-\title{Oral mouthwash example dataset}
+\title{Oral microbiome perturbation dataset (list)}
 \format{
-A data frame with \if{html}{\out{<N>}} rows and \if{html}{\out{<K>}} variables:
+A named list of one matrix and a dataframe:
 \describe{
-\item{...}{...}
+\item{\code{counts}}{A matrix with read counts with 116 rows and 81 columns)}
+\item{\code{metadata}}{A data frame with 81 rows and 38 columns containing sample-level covariates.}
 }
 }
 \source{
-<where you got it / how generated>
+Marotz, C. et al. Quantifying live microbial load in human saliva samples over time reveals stable composition and dynamic load. mSystems 6 (2021).
 }
 \usage{
 oral_mouthwash_data
 }
 \description{
-Example dataset used in vignettes and examples.
+This dataset contains a matrix and a data frame: genus-level microbiome profiles and
+corresponding sample metadata from an oral microbiome perturbation study.
+28 participants' oral microbiomes were measured before, 15 minutes after, and 2 hours
+after perturbation with either a water control, antiseptic mouthwash, alchohol-free mouthwash,
+or soda. The dataset is used in examples and vignettes throughout the package.
+}
+\details{
+The \code{counts} matrix has one row per sample and one column per genus.
+The \code{metadata} data frame has one row per sample with metadata, critically the participant ID, flow cytometry average (and replicate) cells, time_c (time points), and treat (the perturbations )
 }
 \keyword{datasets}
