@@ -1,1 +1,3 @@
 ^LICENSE\.md$
+rebuilt-long-vignettes.R
+vignettes/ALDEx3-Quickstart.Rmd.orig

@@ -7,10 +7,15 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+options(warn = -1)
+```
 
-
-
-``` r
+```{r setup}
 library(ALDEx3)
 ```
 
@@ -55,8 +60,7 @@ devtools::install_github("jsilve24/ALDEx3")
  
 *Note*: the following examples use the CLR scale model often with zero scale uncertainty `gamma=0`. This is generally a bad idea but is shown here just for backwards comparability with the defaults in ALDEx2. In general we strongly recommend carefully thinking about the choice of scale model (see https://link.springer.com/article/10.1186/s13059-025-03609-3 for a background on the subject). In the worst case scenario where the user is unwilling to carefully design a scale model, we recommend choosing `scale=tss.sm` and `gamma=0.5`as a default. 
 
-
-``` r
+```{r}
 set.seed(42)
 # Load Crohn's Disease vs. Control Data
 data(gut_crohns_data)
@@ -85,21 +89,13 @@ aldex.gut.raw <- aldex(Y,
                        gamma=0)        # Gamma=0 no scale uncertainty
 aldex.gut.summary <- summary(aldex.gut.raw)
 head(aldex.gut.summary)
-#>         parameter          entity   estimate std.error   p.val.adj
-#> 1 Health.statusCD    Agathobacter  3.4427036  1.500150 0.146352623
-#> 2 Health.statusCD     Akkermansia -0.9509523  1.119066 0.797674468
-#> 3 Health.statusCD       Alistipes -0.8547089  1.188096 0.868896117
-#> 4 Health.statusCD Anaerobutyricum  2.0096506  1.209952 0.411322714
-#> 5 Health.statusCD    Anaerostipes -1.0223508  1.010964 0.729975305
-#> 6 Health.statusCD     Bacteroides  5.3739786  1.362744 0.003758113
 ```
 
 ## Mixed Effects Models (SR-MEM)
 
 Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with either the lme4 or nlme interfaces. Note, while parallelization can make these model practical, they are still slower than the linear models (enhancements to come). 
 
-
-``` r
+```{r}
 set.seed(42)
 # Load Data
 data(oral_mouthwash_data)
@@ -124,13 +120,6 @@ aldex.mouthwash.raw <- aldex(Y,
                              gamma=0)         # Gamma=0 no scale uncertainty
 aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
 head(aldex.mouthwash.summary)
-#>                                    parameter         entity   estimate std.error  p.val.adj
-#> 1                  treatantiseptic-mouthwash g__Haemophilus  2.3758996 0.8194347 0.34395960
-#> 2                 treatalcoholfree-mouthwash g__Haemophilus  3.2202728 0.8194347 0.01730350
-#> 3                                  treatsoda g__Haemophilus  1.6586761 0.8194347 0.91485045
-#> 4                           timec15min-later g__Haemophilus  0.8264883 0.6341158 0.99985081
-#> 5                            timec2hrs-later g__Haemophilus  2.3811563 0.6341158 0.03716786
-#> 6 treatantiseptic-mouthwash:timec15min-later g__Haemophilus -2.3012944 0.8967751 0.40475473
 ```
 
 ## Inference with Absolute Abundances: Defining Scale Models 
@@ -141,8 +130,7 @@ The Quickstart considered the relative abundances of taxa in the guts of patient
 
 Consider prior studies suggest individuals with CD have on average 2 log2-fold lower total gut microbial load. If θ<sup>tot</sup><sub>CD</sub> is the average log2-fold change in gut microbial load in CD vs. Control, we assume θ<sup>tot</sup><sub>CD</sub>=-2. However, to account for potential uncertainty in this assumption, we define a scale model as a Normal distribution with standard deviation of $0.5$: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5<sup>2</sup>). In ALDEx3 this is done with the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
 
-
-``` r
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
@@ -169,20 +157,16 @@ aldex.gut.abs.raw <- aldex(Y,
                        scale=coefficient.sm,   # coef scale model
                        c.mu=c(0, -2),   # c(intercept, CD)
                        c.cor=rbind(c(0, 0), c(0, 0.5**2)))
-#> Error: object 'coefficient.sm' not found
 
 aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
-#> Error: object 'aldex.gut.abs.raw' not found
 head(aldex.gut.abs.summary)
-#> Error: object 'aldex.gut.abs.summary' not found
 ```
 
 ### External Scale Measurements (Ideal)
 
 In the Crohn's dataset we have flow cytometry measurements of fecal microbial load for each sample. If w<sup>tot</sup><sub>n</sub> and q<sub>n</sub> are the scale and flow cytometry measurement for sample n, respectively, we define the scale model as w<sup>tot</sup><sub>n</sub> ~ *N* (log2 q<sub>n</sub>, 0.5<sup>2</sup>). In ALDEx3, here we use the `sample.sm` scale model which takes `s.mu` and `s.var` as arguments:
 
-
-``` r
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
@@ -214,21 +198,13 @@ aldex.gut.abs.raw <- aldex(Y,
                        s.var=s.var)
 aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
 head(aldex.gut.abs.summary)
-#>         parameter          entity   estimate std.error    p.val.adj
-#> 1 Health.statusCD    Agathobacter -1.8036338  1.704191 3.585030e-01
-#> 2 Health.statusCD     Akkermansia -6.1972896  1.171886 1.341654e-05
-#> 3 Health.statusCD       Alistipes -6.1010462  1.306783 4.760054e-05
-#> 4 Health.statusCD Anaerobutyricum -3.2366868  1.403536 4.306112e-02
-#> 5 Health.statusCD    Anaerostipes -6.2686881  1.171873 8.778170e-06
-#> 6 Health.statusCD     Bacteroides  0.1276413  1.499862 9.689928e-01
 ```
 
 ## Normalization Uncertainty
 
 The Quickstart used the CLR to infer changes in relative abundances. While not the most powerful approach, we can define a scale model to account for uncertainty in how closely CLR transformed abundances match absolute abundances. [Nixon et al. show for this exact dataset that this approach can still substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
 
-
-``` r
+```{r}
 set.seed(42)
 # Load Data
 data(gut_crohns_data)
@@ -255,13 +231,6 @@ aldex.gut.raw <- aldex(Y,
                        gamma=1)       # Gamma=1: variance in CLR assumption 
 aldex.gut.summary <- summary(aldex.gut.raw)
 head(aldex.gut.summary)
-#>         parameter          entity   estimate std.error  p.val.adj
-#> 1 Health.statusCD    Agathobacter  3.4571869  1.500150 0.24152676
-#> 2 Health.statusCD     Akkermansia -0.9364690  1.119066 0.68923913
-#> 3 Health.statusCD       Alistipes -0.8402256  1.188096 0.72889977
-#> 4 Health.statusCD Anaerobutyricum  2.0241339  1.209952 0.45935038
-#> 5 Health.statusCD    Anaerostipes -1.0078675  1.010964 0.63593939
-#> 6 Health.statusCD     Bacteroides  5.3884619  1.362744 0.02308018
 ```
 
 ## Model Outputs
