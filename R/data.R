@@ -14,7 +14,10 @@
 #' The \code{counts} matrix has one row per sample and one column per genus.
 #' The \code{metadata} data frame has one row per sample with metadata, critically Health.status either CD or Control, and Average cell count per gram frozen feces.
 #'
-#' @source Vandeputte, D. et al. Quantitative microbiome profiling links gut community variation to microbial load. Nature 551, 507–511 (2017).
+#' @source
+#' Vandeputte D, Falony G, Vieira-Silva S, Wang J, Sailer M, Theis S, Raes J (2017).
+#' "Quantitative microbiome profiling links gut community variation to microbial load".
+#' Nature, 551, 507--511. \doi{10.1038/nature24460}
 "gut_crohns_data"
 
 #' Oral microbiome perturbation dataset (list)
@@ -35,5 +38,8 @@
 #' The \code{counts} matrix has one row per sample and one column per genus.
 #' The \code{metadata} data frame has one row per sample with metadata, critically the participant ID, flow cytometry average (and replicate) cells, time_c (time points), and treat (the perturbations )
 #'
-#' @source Marotz, C. et al. Quantifying live microbial load in human saliva samples over time reveals stable composition and dynamic load. mSystems 6 (2021).
+#' @source
+#' Marotz C, Morton JT, Navarro P, Coker J, Belda-Ferre P, Knight R (2021).
+#' "Quantifying live microbial load in human saliva samples over time reveals stable composition and dynamic load".
+#' mSystems, 6(3), e01182-21. \doi{10.1128/mSystems.01182-21}
 "oral_mouthwash_data"

@@ -49,6 +49,9 @@ aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
 ##'   to test that estimate is negative or positive respectively.
 ##' @return A list with P x D matrices with the non-adjusted and adjusted
 ##'   p-values.
+##' @references Nixon G, Gloor GB, Silverman JD (2025).
+##'   "Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
+##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
 ##' @author Justin Silverman, Kyle McGovern
 aldex.pvals <- function(p.lower, p.upper, p.adjust.method, onesided=FALSE) {
   #### p-value calculations, accounting for sign changes ####

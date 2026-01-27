@@ -6,7 +6,7 @@ Authors@R:
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
       person("Kyle", "McGovern", email = "kvm6065@psu.edu", role = c("aut", "ctb")))
 Description: Provides scalable generalized linear and mixed effects models tailored for sequence count data analysis (e.g., analysis of 16S or RNA-seq data). Uses Dirichlet-multinomial sampling to quantify uncertainty in relative abundance or relative expression conditioned on observed count data. 
-    Implements scale models as a generalization of normalizations which account for uncertainty in scale (e.g., total abundances). 
+    Implements scale models as a generalization of normalizations which account for uncertainty in scale (e.g., total abundances) as described in Nixon et al. (2025) <doi:10.1186/s13059-025-03609-3> and McGovern et al. (2025) <doi:10.1101/2025.08.05.668734>. 
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

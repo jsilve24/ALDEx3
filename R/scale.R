@@ -41,10 +41,10 @@ center.sm <- function(logComp) {
 ##' @return A numeric matrix of dimension \code{N x nsample} giving Monte Carlo samples
 ##'   of the log-scale for each sample (rows) and each Monte Carlo draw (columns).
 ##'
-##' @references Nixon, Gloor, and Silverman. Incorporating scale uncertainty in
-##'   microbiome and gene expression analysis as an extension of normalization.
-##'   Genome Biology (2025).
-##'
+##' @references Nixon G, Gloor GB, Silverman JD (2025).
+##'   "Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
+##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
+##' 
 ##' @author Justin Silverman
 ##' @export
 clr.sm <- function(X, logComp, gamma=0.5) {
@@ -234,9 +234,9 @@ coefficient.sm <- function(X, logComp, c.mu=NULL, c.cor=NULL) {
 ##'   draws of the log2 scale for each sample (rows) across \code{nsample} draws
 ##'   (columns).
 ##'
-##' @references Nixon, Gloor, and Silverman. Incorporating scale uncertainty in
-##'   microbiome and gene expression analysis as an extension of normalization.
-##'   Genome Biology (2025).
+##' @references Nixon G, Gloor GB, Silverman JD (2025).
+##'   "Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
+##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
 ##'
 ##' @author Justin Silverman
 ##' @export
