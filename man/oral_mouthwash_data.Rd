@@ -14,7 +14,7 @@ A named list of one matrix and a dataframe:
 \source{
 Marotz C, Morton JT, Navarro P, Coker J, Belda-Ferre P, Knight R (2021).
 "Quantifying live microbial load in human saliva samples over time reveals stable composition and dynamic load".
-mSystems, 6(3), e01182-21. \doi{10.1128/mSystems.01182-21}
+mSystems, 6(3), e01182-21. \doi{10.1128/mSystems.01182-20}
 }
 \usage{
 oral_mouthwash_data
