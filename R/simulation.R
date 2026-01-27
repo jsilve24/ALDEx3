@@ -47,7 +47,7 @@ aldex.lm.sim.clr <- function(D=10, N=11, P=2, depth=10000) {
 ##'   time-correlation.
 ##' @author Kyle McGovern
 aldex.mem.sim <- function(D, days, subjects, depth=10000, location=1,
-                          random_slope=F, corr=0, rho_ar1=0,
+                          random_slope=FALSE, corr=0, rho_ar1=0,
                           sd_resid=0.1) {
   N <- days*subjects
   if(subjects < 1) {
@@ -55,8 +55,8 @@ aldex.mem.sim <- function(D, days, subjects, depth=10000, location=1,
   }
   subject_ids <- rep(1:subjects, each=days)
   time <- rep(1:days, times=subjects)
-  location_ids <- sample(1:location, N, replace=T)
-  treatment <- sample(c(0, 1), N, replace=T)
+  location_ids <- sample(1:location, N, replace=TRUE)
+  treatment <- sample(c(0, 1), N, replace=TRUE)
   X <- cbind(1, treatment)
   meta <- data.frame(cbind(treatment, subject_ids, time,
                            location_ids))

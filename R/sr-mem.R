@@ -78,7 +78,7 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args) {
 
     ## Fixed Effects for both lme4 & nlme
     coefs <- coef(summary(fit))[,1:3]
-    coefs <- cbind(coefs, pt(coefs[,1]/coefs[,2], coefs[,3], lower.tail=T))
+    coefs <- cbind(coefs, pt(coefs[,1]/coefs[,2], coefs[,3], lower.tail=TRUE))
     coefs <- cbind(coefs, 1-coefs[,4])
     colnames(coefs) <- c("estimate", "std.error", "df",
                          "p.lower", "p.upper")

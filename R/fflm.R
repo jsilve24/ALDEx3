@@ -85,7 +85,7 @@ fflm <- function(Y, X, test="t.HC3") {
    }
    t <- Theta / stderr
    dof <- N-P
-   p.upper <- pt(t, dof, lower.tail=F)
+   p.upper <- pt(t, dof, lower.tail=FALSE)
    p.lower <- 1-p.upper
    return(list(estimate = array(Theta, c(P, D, S)),
                std.error = array(stderr, c(P, D, S)),
