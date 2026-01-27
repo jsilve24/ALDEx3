@@ -10,7 +10,7 @@ aldex.mem.sim(
   subjects,
   depth = 10000,
   location = 1,
-  random_slope = F,
+  random_slope = FALSE,
   corr = 0,
   rho_ar1 = 0,
   sd_resid = 0.1

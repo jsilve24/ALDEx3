@@ -30,6 +30,11 @@ Calculate p-values adjusting for changes in sign as described by Nixon
 et al. (2024) in Beyond Normalization: Incorporating Scale Uncertainty
 in Microbiome and Gene Expression Analysis (internal only)
 }
+\references{
+Nixon G, Gloor GB, Silverman JD (2025).
+"Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
+Genome Biology. \doi{10.1186/s13059-025-03609-3}
+}
 \author{
 Justin Silverman, Kyle McGovern
 }

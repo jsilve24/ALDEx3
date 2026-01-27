@@ -57,7 +57,7 @@
 ##'   using mixed effects models, return all Pr random effects. Note, logScale
 ##'   and logComp are not returned if streaming is active.
 ##' @examples
-##' \dontrun{
+##' \donttest{
 ##' Y <- matrix(1:110, 10, 11)
 ##' condition <- c(rep(0, 5), rep(1, 6))
 ##' data <- data.frame(condition=condition)

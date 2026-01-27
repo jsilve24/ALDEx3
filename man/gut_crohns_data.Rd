@@ -12,7 +12,9 @@ A named list of one matrix and a dataframe:
 }
 }
 \source{
-Vandeputte, D. et al. Quantitative microbiome profiling links gut community variation to microbial load. Nature 551, 507–511 (2017).
+Vandeputte D, Falony G, Vieira-Silva S, Wang J, Sailer M, Theis S, Raes J (2017).
+"Quantitative microbiome profiling links gut community variation to microbial load".
+Nature, 551, 507--511. \doi{10.1038/nature24460}
 }
 \usage{
 gut_crohns_data

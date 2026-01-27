@@ -45,9 +45,9 @@ uncertainty beyond the CLR-implied scale). Larger \code{gamma} values
 represent increasing uncertainty about the CLR-implied scale differences.
 }
 \references{
-Nixon, Gloor, and Silverman. Incorporating scale uncertainty in
-microbiome and gene expression analysis as an extension of normalization.
-Genome Biology (2025).
+Nixon G, Gloor GB, Silverman JD (2025).
+"Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
+Genome Biology. \doi{10.1186/s13059-025-03609-3}
 }
 \author{
 Justin Silverman
