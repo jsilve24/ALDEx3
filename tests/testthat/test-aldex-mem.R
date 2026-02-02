@@ -15,6 +15,7 @@ test_that("sr.mem expected errors", {
 })
 
 test_that("aldex mem runs parallel", {
+  set.seed(56841)
   Y <- matrix(1:20, 10, 12)
   formula <- ~ condition + (1|subjects)
   condition <- c(rep(0, 6), rep(1, 6))
@@ -31,6 +32,7 @@ test_that("aldex mem runs parallel", {
 })
 
 test_that("aldex mem lme4/nlme correct naming", {
+  set.seed(6841)
   Y <- matrix(1:120, 10, 12)
   Y <- provideDimnames(Y)
   formula <- ~ condition + (1|subjects)
