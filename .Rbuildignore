@@ -1,3 +1,5 @@
 ^LICENSE\.md$
 rebuilt-long-vignettes.R
 vignettes/ALDEx3-Quickstart.Rmd.orig
+maintainer-instructions.txt
+.github/*
