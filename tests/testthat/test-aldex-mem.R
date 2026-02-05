@@ -33,26 +33,23 @@ test_that("aldex mem runs parallel", {
 
 test_that("aldex mem lme4/nlme correct naming", {
   set.seed(6841)
-  Y <- matrix(1:120, 10, 12)
+  sim <- aldex.mem.sim(10, 10, 10, 100000, 1, FALSE, 0, 0, 0.25)
+  Y <- sim$Y
   Y <- provideDimnames(Y)
-  formula <- ~ condition + (1|subjects)
-  condition <- c(rep(0, 6), rep(1, 6))
-  subjects <- rep(1:6, each=2)
-  data <- data.frame(condition=condition,
-                     subjects=subjects)
+  meta <- sim$meta
   nsample <- 10
-  foo <- aldex(Y, formula, data=data, method="lme4",
-               nsample=nsample, gamma=0.5, scale=clr.sm,
-               n.cores=1,
+  foo <- aldex(Y, ~ treatment + (1|subject_ids), data=meta,
+               method="lme4", nsample=nsample, gamma=0.5,
+               scale=clr.sm, n.cores=1,
                return.pars=c("X", "estimate", "std.error", "p.val",
                              "p.val.adj", "logComp", "logScale",
                              "random.effects"))
   expect_equal(colnames(foo$estimate), row.names(Y))
-  expect_equal(row.names(foo$random.effects), c("subjects.(Intercept)",
+  expect_equal(row.names(foo$random.effects), c("subject_ids.(Intercept)",
                                                 "Residual"))
-  foo <- aldex(Y, ~condition, data=data, method="nlme",
+  foo <- aldex(Y, ~treatment, data=meta, method="nlme",
                nsample=nsample, gamma=0.5, scale=clr.sm,
-               n.cores=1, random=~1|subjects,
+               n.cores=1, random=~1|subject_ids,
                return.pars=c("X", "estimate", "std.error", "p.val",
                              "p.val.adj", "logComp", "logScale",
                              "random.effects"))
