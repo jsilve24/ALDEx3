@@ -315,7 +315,7 @@ Y <- rbind(Y0[keep_names, ], other = other)
 Y <- Y[c(seq_len(min(8, nrow(Y) - 1)), nrow(Y)), ]
 meta <- oral_mouthwash_data$metadata
 
-K <- 10
+K <- 1
 
 fit_args <- list(
   data = meta,
