@@ -121,7 +121,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   }
 
   ## Checks for mixed effects modeling
-  if ((method=="lme4")|(method=="nlme")) {
+  if ((method=="lme4")|(method=="nlme")|(method=="blmm")) {
     if(is.null(data)) stop("data should not be null if method=\"lme4\"")
     if(!inherits(X, "formula")) stop("X should be a mixed effects ",
                                      "formula if method=\"lme4\" ",
@@ -175,6 +175,9 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     } else if ((method=="lme4")|method=="nlme") {
       res <- sr.mem(aperm(out[[iter]]$logW, c(2,1,3)), formula,
                     data, n.cores, method, mem.args)
+    } else if (method=="blmm") {
+      res <- blmm(aperm(out[[iter]]$logW, c(2,1,3)), formula,
+                  data, n.cores)
     }
     out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 
     ## while ugly, the following loop should avoid shallow copy of logW and
