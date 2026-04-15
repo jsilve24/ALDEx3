@@ -266,6 +266,7 @@ same mixed-effects formula:
 
 ```{r eval = TRUE}
 set.seed(42)
+library(ALDEx3)
 data("oral_mouthwash_data", package = "ALDEx3")
 
 Y <- oral_mouthwash_data$counts
