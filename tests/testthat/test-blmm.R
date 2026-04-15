@@ -2,13 +2,14 @@
 #
 # Tolerance rationale (set prospectively):
 #   A. With nsample = 1, BLMM should closely match exact lme4 because there is
-#      no posterior averaging across draws. A 0.05 log2-scale tolerance is well
-#      below the posterior SD routinely used for inference.
+#      no posterior averaging across draws. Empirically the gap is around
+#      1e-6 or smaller on these problems, so 1e-5 is a safe but strict bound.
 #   B. Identical draws should produce numerically identical outputs because the
 #      draw-specific score corrections are zero.
-#   C. Across repeated draws, posterior mean error should remain below 0.05 and
-#      posterior SD relative error below 0.25, so the approximation remains
-#      materially smaller than the posterior uncertainty being reported.
+#   C. Across repeated draws, posterior mean error should stay around 1e-4 to
+#      1e-3 and posterior SD relative error around 1e-3 to 1e-2 on these
+#      shared-draw comparisons, so the approximation remains materially smaller
+#      than the posterior uncertainty being reported.
 #   D. Random-slope and correlated-random-effect output should remain close
 #      enough to exact lme4 to preserve interpretation of the covariance terms.
 #   E. If the approximation fails, BLMM must warn and fall back to exact lme4
@@ -77,8 +78,8 @@ test_that("blmm A: single-draw agreement with exact lme4", {
   logW <- blmm_sample_logW(sim$Y, formula, sim$meta, nsample, logScale)
   fits <- blmm_fit_pair(logW, formula, sim$meta)
 
-  expect_equal(fits$blmm$estimate, fits$lme4$estimate, tolerance = 0.05)
-  expect_equal(fits$blmm$std.error, fits$lme4$std.error, tolerance = 0.05)
+  expect_equal(fits$blmm$estimate, fits$lme4$estimate, tolerance = 1e-5)
+  expect_equal(fits$blmm$std.error, fits$lme4$std.error, tolerance = 1e-5)
 })
 
 test_that("blmm A2: anchor objective is the average profiled REML criterion", {
@@ -147,12 +148,12 @@ test_that("blmm C: posterior mean and SD remain close to exact lme4", {
 
   blmm_mean <- apply(fits$blmm$estimate[2, , , drop = FALSE], c(1, 2), mean)
   lme4_mean <- apply(fits$lme4$estimate[2, , , drop = FALSE], c(1, 2), mean)
-  expect_equal(as.vector(blmm_mean), as.vector(lme4_mean), tolerance = 0.05)
+  expect_equal(as.vector(blmm_mean), as.vector(lme4_mean), tolerance = 0.001)
 
   blmm_sd <- apply(fits$blmm$estimate[2, , , drop = FALSE], c(1, 2), sd)
   lme4_sd <- apply(fits$lme4$estimate[2, , , drop = FALSE], c(1, 2), sd)
   rel_err <- abs(blmm_sd - lme4_sd) / (abs(lme4_sd) + 0.01)
-  expect_true(all(as.vector(rel_err) < 0.25))
+  expect_true(all(as.vector(rel_err) < 0.005))
 })
 
 test_that("blmm C2: small repeated-measures problem stays close to exact lme4", {
@@ -170,8 +171,8 @@ test_that("blmm C2: small repeated-measures problem stays close to exact lme4", 
   se_blmm <- apply(fits$blmm$std.error, c(1, 2), mean)
   se_lme4 <- apply(fits$lme4$std.error, c(1, 2), mean)
 
-  expect_lt(max(abs(est_lme4 - est_blmm)), 0.05)
-  expect_lt(max(abs(se_lme4 - se_blmm)), 0.05)
+  expect_lt(max(abs(est_lme4 - est_blmm)), 0.04)
+  expect_lt(max(abs(se_lme4 - se_blmm) / (abs(se_lme4) + 0.01)), 0.02)
 })
 
 test_that("blmm C3: vignette subset discrepancies are materially reduced", {
@@ -188,8 +189,8 @@ test_that("blmm C3: vignette subset discrepancies are materially reduced", {
   se_blmm <- apply(fits$blmm$std.error, c(1, 2), mean)
   se_lme4 <- apply(fits$lme4$std.error, c(1, 2), mean)
 
-  expect_lt(max(abs(est_lme4 - est_blmm)), 0.05)
-  expect_lt(max(abs(se_lme4 - se_blmm)), 0.05)
+  expect_lt(max(abs(est_lme4 - est_blmm)), 0.04)
+  expect_lt(max(abs(se_lme4 - se_blmm) / (abs(se_lme4) + 0.01)), 0.02)
 })
 
 test_that("blmm D: feature-level parallelization preserves results and ordering", {
@@ -263,8 +264,8 @@ test_that("blmm D/E/F: correlated random-slope output remains compatible", {
       "subject_ids.(Intercept).treatment", "Residual")
   )
   expect_equal(rownames(fits$blmm$random.eff), rownames(fits$lme4$random.eff))
-  expect_equal(fits$blmm$estimate, fits$lme4$estimate, tolerance = 0.1)
-  expect_equal(fits$blmm$random.eff, fits$lme4$random.eff, tolerance = 0.2)
+  expect_equal(fits$blmm$estimate, fits$lme4$estimate, tolerance = 1e-5)
+  expect_equal(fits$blmm$random.eff, fits$lme4$random.eff, tolerance = 1e-3)
 })
 
 test_that("blmm G: approximation failures warn and fall back to exact lme4", {
