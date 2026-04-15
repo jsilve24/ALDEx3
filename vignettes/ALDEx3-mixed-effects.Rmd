@@ -56,65 +56,50 @@ This is the cleanest way to describe the method statistically.
 
 ## Implemented Profiled Formulation
 
-To keep the notation readable, fix one feature \(d\). For each Monte Carlo
-draw \(s\), let \(y_{ds}\in\mathbb{R}^N\) be the vector of latent
-log-abundances across the \(N\) samples for that feature and draw. In the
-formulas below, I write \(y_s\) instead of \(y_{ds}\) because the feature is
-already fixed; the sample index \(n\) is the coordinate inside that
-\(N\)-vector, so it does not appear separately.
-
-If you prefer a fully indexed view, think of the data as \(y_{dns}\), where
-\(n\) indexes samples, \(d\) indexes features, and \(s\) indexes Monte Carlo
-draws. This section fixes \(d\) and then works with the length-\(N\) vector
-\(y_{ds} = (y_{d1s}, \dots, y_{dNs})^T\) for each draw \(s\).
+To keep the notation manageable, fix one feature \(d\). For Monte Carlo draw
+\(s\), let \(y_{ds} \in \mathbb{R}^{N}\) denote the vector of latent
+log-abundances across the \(N\) samples. Since the feature is fixed throughout
+this section, I write \(y_s\) instead of \(y_{ds}\).
 
 For that fixed feature and draw, BLMM targets the same Gaussian linear mixed
 model as `lme4`:
-
 \[
-y_s = X \beta_s + Z u_s + \varepsilon_s,
+y_s = X\beta_s + Z u_s + \varepsilon_s,
 \qquad
 u_s \sim N(0, \sigma_s^2 \Sigma_{\theta_s}),
 \qquad
 \varepsilon_s \sim N(0, \sigma_s^2 I_N).
 \]
 
-Here \(X\) is the fixed-effects design matrix and \(Z\) is the random-effects
-design matrix for the \(N\) samples. The vector \(\beta_s\) contains the
-draw-specific fixed effects, and \(\theta_s\) denotes the covariance
-parameters for that draw. As in `lme4`, BLMM uses a relative covariance
-parameterisation in which \(\Sigma_{\theta_s}\) is encoded through a
-lower-triangular factor \(\Lambda_{\theta_s}\).
+Here \(X\) is the fixed-effects design matrix, \(Z\) is the random-effects
+design matrix, \(\beta_s\) is the draw-specific fixed-effects vector, and
+\(\theta_s\) denotes the top-level covariance parameters for draw \(s\). As in
+`lme4`, BLMM works with a relative covariance parameterisation in which
+\(\Sigma_{\theta_s}\) is represented through a lower-triangular factor
+\(\Lambda_{\theta_s}\).
 
 Write \(p = \mathrm{ncol}(X)\) for the number of fixed-effect coefficients and
 \(q = \mathrm{ncol}(Z)\) for the number of random-effect coefficients.
 
-BLMM uses the profiled `lme4`-style Gaussian LMM formulation rather than a
-dense \(N \times N\) covariance-matrix formulation. That is not a different
-statistical model; it is the algebraic form used to evaluate the same REML
-criterion efficiently. The profiled form is convenient because it lets us
-profile out the fixed effects and residual scale first, then work with smaller
-matrices that depend on the covariance parameters.
+BLMM is implemented in the profiled `lme4` formulation rather than through a
+dense \(N \times N\) covariance matrix. This does not change the statistical
+target. It is simply the algebraic form that makes repeated mixed-model fitting
+much more efficient.
 
-After profiling out the fixed effects and residual scale, the objective for a
-draw depends only on the covariance parameters. In the profiled formulation
-used here, the key matrices are
-
+After profiling out the fixed effects and residual scale, the criterion depends
+only on the covariance parameters. In this formulation, the key matrices are
 \[
 A_{\theta_s} = I_q + \Lambda_{\theta_s} Z^T Z \Lambda_{\theta_s}^T,
 \]
-
 \[
-R_{ZX,\theta_s} = L_{\theta_s}^{-1} \Lambda_{\theta_s} Z^T X,
+R_{ZX,\theta_s} = L_{\theta_s}^{-1}\Lambda_{\theta_s} Z^T X,
 \qquad
 M_{\theta_s} = X^T X - R_{ZX,\theta_s}^T R_{ZX,\theta_s},
 \]
+where \(L_{\theta_s}\) is the Cholesky factor of \(A_{\theta_s}\).
 
-where \(L_{\theta_s}\) is the Cholesky factor of \(A_{\theta_s}\). These
-matrices depend on \(X\), \(Z\), and \(\theta_s\), but not on the response
-vector itself. The remaining response-dependent quantity for draw \(s\) is the
-profiled weighted residual sum of squares,
-
+The response-dependent part of the draw-specific criterion is the profiled
+weighted residual sum of squares
 \[
 \mathrm{PWRSS}_s(\theta_s)
 =
@@ -122,114 +107,135 @@ profiled weighted residual sum of squares,
 - \|R_{ZY,\theta_s}\|^2
 - \|C_{\beta,\theta_s}\|^2,
 \]
-
 with
-
 \[
-R_{ZY,\theta_s} = L_{\theta_s}^{-1} \Lambda_{\theta_s} Z^T y_s,
+R_{ZY,\theta_s} = L_{\theta_s}^{-1}\Lambda_{\theta_s} Z^T y_s,
 \qquad
-C_{\beta,\theta_s} = L_{X,\theta_s}^{-1}
-\left(X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}\right),
+C_{\beta,\theta_s} =
+L_{X,\theta_s}^{-1}
+\left(
+X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}
+\right),
 \]
+and \(L_{X,\theta_s}\) the Cholesky factor of \(M_{\theta_s}\).
 
-and \(L_{X,\theta_s}\) is the Cholesky factor of \(M_{\theta_s}\). Intuitively,
-\(R_{ZY,\theta_s}\) is the random-effects projection of the response and
-\(C_{\beta,\theta_s}\) is the profiled fixed-effects solve. Up to constants, the
-profiled REML criterion for one draw is
-
+Up to constants, the profiled REML criterion for one draw is
 \[
 \ell_s(\theta_s)
 \propto
 \frac{1}{2}
 \left\{
 \log |A_{\theta_s}|
-+ \log |M_{\theta_s}|
-+ (N - p)\log\left(\frac{\mathrm{PWRSS}_s(\theta_s)}{N - p}\right)
++
+\log |M_{\theta_s}|
++
+(N-p)\log\left(
+\frac{\mathrm{PWRSS}_s(\theta_s)}{N-p}
+\right)
 \right\}.
 \]
 
-For one feature, the full Monte Carlo response block is
-\(Y_d = [y_{d1}, \dots, y_{dS}] \in \mathbb{R}^{N \times S}\), where column
-\(s\) is the response vector \(y_{ds}\) for draw \(s\). The batched anchor
-evaluation reuses structure shared across those \(S\) columns:
+Now collect the \(S\) Monte Carlo draws for feature \(d\) into the response
+block
+\[
+Y_d = [y_{d1}, \dots, y_{dS}] \in \mathbb{R}^{N \times S}.
+\]
+
+The computational advantage of BLMM is that one anchor evaluation reuses the
+same structural calculations across all \(S\) columns of \(Y_d\). In each
+evaluation it performs
 
 1. one factorisation of the profiled random-effects system,
 2. one log-determinant calculation,
 3. one solve against the fixed-effects design matrix,
-4. one multi-right-hand-side solve against `Y_d`,
-5. one average of the per-draw profiled residual log terms across draws.
+4. one multi-right-hand-side solve against \(Y_d\),
+5. one average over the draw-specific profiled residual log terms.
 
-That batching step is the core computational advantage. BLMM does **not** loop
-over \(S\) separate REML optimisations inside the anchor optimiser. It factors
-the shared pieces once per feature, then reuses them across draws.
+BLMM therefore does **not** run \(S\) separate REML optimisations inside the
+anchor optimiser.
 
-More concretely, the anchor fit targets the average of the per-draw profiled
-REML criteria. For a fixed feature, the determinant terms depend only on \(X\),
-\(Z\), and the covariance parameters, so they are shared across draws. The only
-draw-specific term that must be averaged is the profiled residual log term:
-
+More precisely, the anchor fit targets the average of the per-draw profiled
+REML criteria:
 \[
 \bar{\ell}(\phi)
-= \frac{1}{S}\sum_{s=1}^S \ell_s(\phi)
+=
+\frac{1}{S}\sum_{s=1}^S \ell_s(\phi),
 \]
-
 which is, up to constants,
-
 \[
 \bar{\ell}(\phi)
 \propto
 \frac{1}{2}
 \left\{
 \log |A_{\phi}|
-+ \log |M_{\phi}|
-+ \frac{N - p}{S}\sum_{s=1}^S
- \log\left(\frac{\mathrm{PWRSS}_s(\phi)}{N - p}\right)
-\right\},
++
+\log |M_{\phi}|
++
+\frac{N-p}{S}\sum_{s=1}^S
+\log\left(
+\frac{\mathrm{PWRSS}_s(\phi)}{N-p}
+\right)
+\right\}.
 \]
 
-Here \(\phi\) is the unconstrained optimisation parameter, and positive
-components of \(\theta\) are represented on the log scale. The draw index \(s\)
-is the Monte Carlo replicate; the sample index is already inside \(y_{ds}\).
+This point is important: the batched anchor uses the **average of the per-draw
+profiled REML criteria**, not a surrogate such as
+\(\log(\mathrm{mean}\,\mathrm{PWRSS}_s)\). The anchor, the draw-specific score
+correction, and the curvature matrix are all defined with respect to this same
+averaged profiled objective.
 
-This is the same profiled `lme4`-style formulation used by the code. The anchor
-fit, the draw-specific correction, and the curvature matrix all come from the
-same averaged profiled REML objective above.
-
-BLMM then uses a local second-order approximation around the anchor. Let \(H\)
-be the observed Hessian of \(\bar{\ell}\) at the anchor \(\bar{\phi}\). For
-draw \(s\), BLMM computes a draw-specific score correction \(g_s\) from the
-difference between the average profiled score and the draw-specific profiled
-score at the anchor, and applies the local Newton update
-
+BLMM then takes a local second-order approximation around the anchor
+\(\bar{\phi}\). Let \(H\) denote the observed Hessian of \(\bar{\ell}\) at that
+anchor. For draw \(s\), BLMM computes a draw-specific score correction
+\(g_s\), defined as the difference between the average profiled score and the
+draw-specific profiled score at \(\bar{\phi}\), and applies the local Newton
+update
 \[
 \phi_s \approx \bar{\phi} + H^{-1} g_s.
 \]
 
-This yields one updated covariance parameter vector per draw without rerunning
-full REML optimisation from scratch. Conditional on \(\phi_s\), BLMM then
-solves the fixed effects exactly by generalized least squares:
+This yields one updated covariance parameter vector per draw without rerunning a
+full REML optimisation from scratch.
 
+Conditional on \(\phi_s\), BLMM then solves the fixed effects exactly by
+generalized least squares:
 \[
-\hat{\beta}_s =
-\left(X^T V_s^{-1} X\right)^{-1} X^T V_s^{-1} y_s,
+\hat{\beta}_s
+=
+\left(X^T V_s^{-1}X\right)^{-1}X^T V_s^{-1} y_s,
 \]
+where \(V_s = Z\Sigma_{\theta_s}Z^T + \sigma_s^2 I_N\) is the covariance model
+implied by the updated parameters.
 
-with \(V_s = Z \Sigma_{\theta_s} Z^T + \sigma_s^2 I_N\) implied by the
-updated covariance parameters. The approximation is therefore confined to the
-repeated covariance optimisation step; the per-draw fixed-effects solve
-remains exact conditional on the updated covariance model.
+The approximation is therefore confined to the repeated covariance-optimisation
+step. The per-draw fixed-effects solve remains exact conditional on the updated
+covariance model.
 
 ## Assumptions and Scope
 
-BLMM assumes the same Gaussian linear mixed model structure as the exact
-`lme4` engine for a given feature and draw. It reuses `lme4::lFormula()` for
-formula parsing and random-effects design construction, so random intercepts,
-random slopes, and correlated random effects are supported through the same
-model syntax.
+BLMM targets the same Gaussian linear mixed model as the exact `lme4` engine for
+each feature and Monte Carlo draw. It reuses `lme4::lFormula()` for formula
+parsing and random-effects design construction, so the same model syntax can be
+used for random intercepts, random slopes, and correlated random effects.
 
-The method is intended for ALDEx3 repeated mixed-model fitting across Monte
-Carlo draws. It should be validated against exact `lme4` fits on the target
-problem class before large-scale use.
+The method is designed specifically for the ALDEx3 setting, where the same
+mixed-effects design is fit repeatedly across many Monte Carlo draws for each
+feature. Its computational advantage comes from exploiting the fact that the
+fixed-effects design, random-effects design, grouping structure, and covariance
+parameterisation are shared across those draws, while only the response vector
+changes.
+
+BLMM is an approximate engine. The approximation is confined to the repeated
+covariance-optimisation step: it replaces a full exact variance-component fit
+for every draw with one feature-specific anchor fit and draw-specific local
+updates around that anchor. Conditional on the updated covariance parameters,
+the per-draw fixed-effects solve remains exact.
+
+Accordingly, BLMM should be viewed as a fast ALDEx3-specific alternative to
+repeated exact `lme4` optimisation, not as a replacement for the exact engine in
+all settings. The exact `lme4` engine remains the reference implementation, and
+BLMM should be validated against exact `lme4` fits on the target problem class
+before large-scale use.
 
 ## Validation Strategy
 
