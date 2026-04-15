@@ -280,6 +280,7 @@ fit_blmm <- aldex(
   ~ treat * timec + (1 | participant_id),
   data = meta,
   method = "blmm",
+  n.cores = 1,
   nsample = 250,
   scale = clr.sm,
   gamma = 0
