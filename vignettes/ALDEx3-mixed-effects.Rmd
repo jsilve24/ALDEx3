@@ -216,7 +216,11 @@ materially smaller than posterior uncertainty used for inference, and that
 posterior uncertainty itself should remain close enough to avoid changing
 routine interpretation.
 
-## Example
+## Worked Example
+
+The `oral_mouthwash_data` dataset provides a repeated-measures design with one
+random intercept per participant. The exact and approximate engines use the
+same mixed-effects formula:
 
 ```{r eval = FALSE}
 set.seed(42)
@@ -242,5 +246,94 @@ fit_blmm <- aldex(
 head(summary(fit_blmm))
 ```
 
-To switch to the exact engine for the same model, replace `method = "blmm"`
-with `method = "lme4"`.
+Switching between exact and approximate fitting only changes the engine:
+replace `method = "blmm"` with `method = "lme4"` for exact variance-component
+optimisation.
+
+## Example Comparison: `lme4` Versus `blmm`
+
+On a small subset of the `oral_mouthwash_data` features, `blmm` tracks the
+exact `lme4` results closely for most coefficients while running the
+covariance-optimisation step approximately. The code below fits the same model
+with both engines and compares the posterior mean coefficients and their
+posterior standard errors.
+
+```{r eval = FALSE}
+set.seed(42)
+data(oral_mouthwash_data)
+
+Y0 <- oral_mouthwash_data$counts
+keep_names <- row.names(Y0[((rowSums(Y0 == 0)) / ncol(Y0)) <= 0.75, ])
+other <- colSums(Y0[((rowSums(Y0 == 0)) / ncol(Y0)) > 0.75, ])
+Y <- rbind(Y0[keep_names, ], other = other)
+
+# Keep a small subset to make the comparison easy to inspect in the vignette.
+Y <- Y[c(seq_len(min(8, nrow(Y) - 1)), nrow(Y)), ]
+meta <- oral_mouthwash_data$metadata
+
+fit_lme4 <- aldex(
+  Y,
+  ~ treat * timec + (1 | participant_id),
+  data = meta,
+  method = "lme4",
+  n.cores = 1,
+  nsample = 16,
+  scale = clr.sm,
+  gamma = 0
+)
+
+fit_blmm <- aldex(
+  Y,
+  ~ treat * timec + (1 | participant_id),
+  data = meta,
+  method = "blmm",
+  n.cores = 1,
+  nsample = 16,
+  scale = clr.sm,
+  gamma = 0
+)
+
+s_lme4 <- summary(fit_lme4)
+s_blmm <- summary(fit_blmm)
+
+cmp <- merge(
+  s_lme4,
+  s_blmm,
+  by = c("parameter", "entity"),
+  suffixes = c(".lme4", ".blmm")
+)
+
+cmp$abs_est_diff <- abs(cmp$estimate.lme4 - cmp$estimate.blmm)
+cmp$abs_se_diff <- abs(cmp$std.error.lme4 - cmp$std.error.blmm)
+
+cmp[order(cmp$abs_est_diff, decreasing = TRUE), ][1:8, c(
+  "parameter", "entity",
+  "estimate.lme4", "estimate.blmm", "abs_est_diff",
+  "std.error.lme4", "std.error.blmm", "abs_se_diff"
+)]
+```
+
+In one run of that comparison, the median absolute difference between `lme4`
+and `blmm` posterior mean coefficients was about `0.158`, and the median
+absolute difference in posterior standard errors was about `0.037`. The
+largest coefficient differences were concentrated in a few interaction terms
+for `g__Lachnospiraceae_[G-3]` and the aggregated `other` feature, while the
+standard-error differences stayed much smaller.
+
+One representative slice from that run looked like this:
+
+```text
+                                   parameter                   entity estimate.lme4 estimate.blmm abs_est_diff std.error.lme4 std.error.blmm abs_se_diff
+ treatantiseptic-mouthwash:timec15min-later g__Lachnospiraceae_[G-3]    -0.3240249    -1.5572752    1.2332503       2.260624       2.302767  0.04214379
+                   treatsoda:timec2hrs-later                    other    -1.0886355    -1.8788750    0.7902395       1.423436       1.502469  0.07903349
+                            timec15min-later g__Lachnospiraceae_[G-3]     0.5793505     1.3104411    0.7310906       1.598502       1.628302  0.02980016
+                  treatalcoholfree-mouthwash g__Lachnospiraceae_[G-3]    -1.6565051    -1.0162586    0.6402465       1.836860       1.904320  0.06746007
+                                   treatsoda                    other     0.6267303     1.2657432    0.6390129       1.378232       1.422042  0.04381026
+ treatalcoholfree-mouthwash:timec15min-later g__Lachnospiraceae_[G-3]     0.7208208     0.0866997    0.6341211       2.390340       2.436982  0.04664163
+                  treatsoda:timec15min-later                    other    -0.4414167    -1.0440975    0.6026808       1.385616       1.462925  0.07730838
+   treatantiseptic-mouthwash:timec2hrs-later g__Lachnospiraceae_[G-3]     0.2297808    -0.3268711    0.5566519       2.260624       2.302767  0.04214379
+```
+
+That pattern is the practical target for BLMM: most coefficient and standard
+error summaries should stay close to the exact engine, with approximation error
+small relative to the posterior uncertainty being propagated through ALDEx3.
