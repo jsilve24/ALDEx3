@@ -492,6 +492,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 ##'   random.eff.
 ##' @importFrom lme4 lFormula lmerControl
 ##' @importFrom TMB MakeADFun
+##' @useDynLib ALDEx3
 blmm <- function(logW, formula, data, n.cores = 1L) {
   N <- dim(logW)[1]
   D <- dim(logW)[2]
