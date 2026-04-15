@@ -23,6 +23,7 @@ Imports:
     purrr,
     lme4,
     lmerTest,
+    reformulas,
     parallel,
     MASS,
     nlme,
@@ -32,7 +33,12 @@ Imports:
     stats,
     TMB,
     Matrix
+LinkingTo:
+    TMB,
+    RcppEigen,
+    Matrix
 Depends: 
     R (>= 3.5)
 LazyData: true
 VignetteBuilder: knitr
+SystemRequirements: C++14

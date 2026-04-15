@@ -1,0 +1,246 @@
+---
+title: "ALDEx3 Mixed-Effects Engines"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ALDEx3 Mixed-Effects Engines}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Motivation
+
+ALDEx3 fits a regression model to every Monte Carlo draw of the latent
+log-abundance for every feature. For mixed-effects models, repeating a full
+exact variance-component optimisation for each draw can dominate runtime.
+
+The exact ALDEx3 mixed-effects engines remain available through
+`method = "lme4"` and `method = "nlme"`. The `method = "blmm"` engine is an
+ALDEx3-specific approximation designed to reduce repeated optimisation cost
+while preserving the same fixed-effects model.
+
+## What BLMM Approximates
+
+For one feature and one Monte Carlo draw, the target remains the usual Gaussian
+linear mixed model fitted in profiled REML form. BLMM does **not** approximate
+the fixed-effects solve once covariance parameters are chosen.
+
+The approximation is only this:
+
+1. Fit one feature-specific batched anchor covariance model across all draws.
+2. Build draw-specific local score updates around that anchor.
+3. Update the covariance parameters per draw with a local Newton step.
+4. Solve the fixed effects exactly for each draw conditional on the updated
+   covariance parameters.
+
+If the approximate path cannot be evaluated cleanly for a feature, ALDEx3 warns
+and falls back to the exact `lme4` engine for that feature.
+
+## Conceptual Formulation
+
+Conceptually, each draw has its own REML objective for the same design matrices
+and grouping structure but a different response vector. BLMM introduces:
+
+1. One anchor fit per feature.
+2. One shared local curvature matrix at the anchor.
+3. Draw-specific local score corrections around the anchor.
+4. Exact conditional GLS fixed-effect solves for each draw.
+
+This is the cleanest way to describe the method statistically.
+
+## Implemented Profiled Formulation
+
+For one feature and one Monte Carlo draw, BLMM targets the same Gaussian linear
+mixed model as `lme4`:
+
+\[
+y_s = X \beta_s + Z u_s + \varepsilon_s,
+\qquad
+u_s \sim N(0, \sigma_s^2 \Sigma_{\theta_s}),
+\qquad
+\varepsilon_s \sim N(0, \sigma_s^2 I_n).
+\]
+
+Here `X` is the fixed-effects design matrix, `Z` is the random-effects design
+matrix, `\beta_s` is the draw-specific fixed-effects vector, and `\theta_s`
+denotes the top-level covariance parameters. As in `lme4`, BLMM uses a
+relative covariance parameterisation in which `\Sigma_{\theta_s}` is encoded
+through a lower-triangular factor `\Lambda_{\theta_s}`.
+
+The code uses the profiled `lme4`-style Gaussian LMM parameterisation instead
+of a dense covariance-matrix implementation. This keeps BLMM compatible with
+`lme4::lFormula()` and the relative covariance parameterisation already used by
+the exact engine.
+
+After profiling out the fixed effects and residual scale, the draw-specific
+objective depends only on the covariance parameters. In the profiled
+parameterisation used here, the key matrices are
+
+\[
+A_{\theta_s} = I_q + \Lambda_{\theta_s} Z^T Z \Lambda_{\theta_s}^T,
+\]
+
+\[
+R_{ZX,\theta_s} = L_{\theta_s}^{-1} \Lambda_{\theta_s} Z^T X,
+\qquad
+M_{\theta_s} = X^T X - R_{ZX,\theta_s}^T R_{ZX,\theta_s},
+\]
+
+where `L_{\theta_s}` is the Cholesky factor of `A_{\theta_s}`. The profiled
+weighted residual sum of squares for draw `s` is
+
+\[
+\mathrm{PWRSS}_s(\theta_s)
+=
+\|y_s\|^2
+- \|R_{ZY,\theta_s}\|^2
+- \|C_{\beta,\theta_s}\|^2,
+\]
+
+with
+
+\[
+R_{ZY,\theta_s} = L_{\theta_s}^{-1} \Lambda_{\theta_s} Z^T y_s,
+\qquad
+C_{\beta,\theta_s} = L_{X,\theta_s}^{-1}
+\left(X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}\right),
+\]
+
+and `L_{X,\theta_s}` the Cholesky factor of `M_{\theta_s}`. Up to constants,
+the profiled REML criterion for one draw is
+
+\[
+\ell_s(\theta_s)
+\propto
+\frac{1}{2}
+\left\{
+\log |A_{\theta_s}|
++ \log |M_{\theta_s}|
++ (n - p)\log\left(\frac{\mathrm{PWRSS}_s(\theta_s)}{n - p}\right)
+\right\}.
+\]
+
+For a feature with response block `Y_d` of dimension `n x S`, one batched
+objective evaluation reuses shared structure:
+
+1. one factorisation of the profiled random-effects system,
+2. one log-determinant calculation,
+3. one solve against the fixed-effects design matrix,
+4. one multi-right-hand-side solve against `Y_d`,
+5. one average profiled residual sum-of-squares term across draws.
+
+That batching step is the core computational advantage. BLMM does **not** loop
+over `S` separate REML optimisations inside the anchor optimiser.
+
+More concretely, the anchor fit replaces the single-draw profiled residual term
+with the across-draw average
+
+\[
+\bar{\mathrm{PWRSS}}(\theta)
+= \frac{1}{S}\sum_{s=1}^S \mathrm{PWRSS}_s(\theta),
+\]
+
+and optimises the batched profiled objective
+
+\[
+\bar{\ell}(\phi)
+\propto
+\frac{1}{2}
+\left\{
+\log |A_{\phi}|
++ \log |M_{\phi}|
++ (n - p)\log\left(\frac{\bar{\mathrm{PWRSS}}(\phi)}{n - p}\right)
+\right\},
+\]
+
+where `\phi` is the unconstrained optimisation parameter and positive
+components of `\theta` are represented on the log scale.
+
+BLMM then uses a local second-order approximation around the anchor. Let `H` be
+the observed Hessian of `\bar{\ell}` at the anchor `\bar{\phi}`. For draw `s`,
+BLMM computes a draw-specific score correction `g_s` and applies the local
+Newton update
+
+\[
+\phi_s \approx \bar{\phi} + H^{-1} g_s.
+\]
+
+This yields one updated covariance parameter vector per draw without rerunning
+full REML optimisation from scratch. Conditional on `\phi_s`, BLMM then solves
+the fixed effects exactly by generalized least squares:
+
+\[
+\hat{\beta}_s =
+\left(X^T V_s^{-1} X\right)^{-1} X^T V_s^{-1} y_s,
+\]
+
+with `V_s = Z G_s Z^T + \sigma_s^2 I_n` implied by the updated covariance
+parameters. The approximation is therefore confined to the repeated covariance
+optimisation step; the per-draw fixed-effects solve remains exact conditional
+on the updated covariance model.
+
+## Assumptions and Scope
+
+BLMM assumes the same Gaussian linear mixed model structure as the exact
+`lme4` engine for a given feature and draw. It reuses `lme4::lFormula()` for
+formula parsing and random-effects design construction, so random intercepts,
+random slopes, and correlated random effects are supported through the same
+model syntax.
+
+The method is intended for ALDEx3 repeated mixed-model fitting across Monte
+Carlo draws. It should be validated against exact `lme4` fits on the target
+problem class before large-scale use.
+
+## Validation Strategy
+
+The BLMM test suite focuses on algorithmic correctness first.
+
+1. Single-draw consistency checks compare `blmm` to exact `lme4`.
+2. Identical-draw checks verify that identical Monte Carlo draws produce
+   identical BLMM outputs.
+3. Simulated-data comparisons check posterior means and posterior uncertainty
+   against the exact engine.
+4. Random-slope and correlated-random-effect tests verify that covariance terms
+   are retained in the returned random-effects output.
+5. Failure-mode tests verify that BLMM warns and falls back to exact `lme4`
+   instead of silently changing the model.
+
+The practical target is that approximation error in posterior means should stay
+materially smaller than posterior uncertainty used for inference, and that
+posterior uncertainty itself should remain close enough to avoid changing
+routine interpretation.
+
+## Example
+
+```{r eval = FALSE}
+set.seed(42)
+data(oral_mouthwash_data)
+
+Y <- oral_mouthwash_data$counts
+keep_names <- row.names(Y[((rowSums(Y == 0)) / ncol(Y)) <= 0.75, ])
+other <- colSums(Y[((rowSums(Y == 0)) / ncol(Y)) > 0.75, ])
+Y <- rbind(Y[keep_names, ], other = other)
+
+meta <- oral_mouthwash_data$metadata
+
+fit_blmm <- aldex(
+  Y,
+  ~ treat * timec + (1 | participant_id),
+  data = meta,
+  method = "blmm",
+  nsample = 250,
+  scale = clr.sm,
+  gamma = 0
+)
+
+head(summary(fit_blmm))
+```
+
+To switch to the exact engine for the same model, replace `method = "blmm"`
+with `method = "lme4"`.

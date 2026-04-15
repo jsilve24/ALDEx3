@@ -96,7 +96,7 @@ head(aldex.gut.summary)
 
 ## Mixed Effects Models (SR-MEM)
 
-Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with either the lme4 or nlme interfaces. Note, while parallelization can make these model practical, they are still slower than the linear models (enhancements to come). 
+Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with the exact `lme4` and `nlme` interfaces, or with the approximate `blmm` engine. `blmm` uses a batched profiled mixed-model anchor fit plus draw-specific local covariance updates, while keeping the final fixed-effect solve exact conditional on the updated covariance. See the dedicated mixed-effects vignette for algorithmic details, validation, and guidance on when the approximation is appropriate. 
 
 
 ``` r
@@ -132,6 +132,10 @@ head(aldex.mouthwash.summary)
 #> 5                            timec2hrs-later g__Haemophilus  2.3811563 0.6341158 0.03716786
 #> 6 treatantiseptic-mouthwash:timec15min-later g__Haemophilus -2.3012944 0.8967751 0.40475473
 ```
+
+To use the approximate engine instead, change `method="lme4"` to
+`method="blmm"`. The model formula is unchanged; only the covariance
+optimisation step is approximated.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
