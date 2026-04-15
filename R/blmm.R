@@ -312,6 +312,52 @@ blmm_fixed_effects_draw <- function(pieces, X, y) {
   )
 }
 
+# Compute the covariance-only pieces needed for the exact conditional solve.
+#
+# This is the lean per-draw path: once the local covariance parameters are
+# updated, we do not need to re-evaluate the full batched TMB objective just to
+# recover L, RZX, LX, and LambdaZt. Those matrices depend only on phi, X, and
+# the basis tensors, so recomputing them directly in R avoids the unnecessary
+# batched Y-block work in the inner draw loop.
+blmm_common_pieces <- function(phi, X, basis, lower) {
+  theta <- phi_to_theta_blmm(phi, lower)
+  q <- dim(basis)[2]
+  n <- nrow(X)
+  LambdaZt <- matrix(0, nrow = q, ncol = n)
+
+  for (j in seq_along(theta)) {
+    basis_j <- matrix(basis[j, , ], nrow = q, ncol = n)
+    LambdaZt <- LambdaZt + theta[j] * basis_j
+  }
+
+  A <- LambdaZt %*% t(LambdaZt)
+  diag(A) <- diag(A) + 1
+  L_raw <- tryCatch(chol(A), error = function(e) e)
+  if (inherits(L_raw, "error")) {
+    stop("blmm: local covariance factorisation failed")
+  }
+  L <- t(L_raw)
+
+  RZX <- forwardsolve(L, LambdaZt %*% X)
+  M <- crossprod(X) - crossprod(RZX)
+  LX_raw <- tryCatch(chol(M), error = function(e) e)
+  if (inherits(LX_raw, "error")) {
+    stop("blmm: local fixed-effect factorisation failed")
+  }
+
+  dimnames(L) <- NULL
+  dimnames(RZX) <- NULL
+  dimnames(LX_raw) <- NULL
+  dimnames(LambdaZt) <- NULL
+
+  list(
+    L = L,
+    RZX = RZX,
+    LX = t(LX_raw),
+    LambdaZt = LambdaZt
+  )
+}
+
 # ---------------------------------------------------------------------------
 # Exact lme4 fallback for features the approximation cannot handle cleanly
 # ---------------------------------------------------------------------------
@@ -371,8 +417,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     feature_random <- matrix(NA_real_, nrow = feature_random_rows, ncol = S)
 
     for (s in seq_len(S)) {
-      obj_full$fn(phi_tilde[, s])
-      pieces <- obj_full$report()
+      pieces <- blmm_common_pieces(phi_tilde[, s], X, basis, lower)
       fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
 
       feature_estimate[, s] <- fe$beta

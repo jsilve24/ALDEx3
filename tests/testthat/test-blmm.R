@@ -117,6 +117,35 @@ test_that("blmm A2: anchor objective is the average profiled REML criterion", {
   expect_true(all(abs(rowMeans(scores)) < 1e-6))
 })
 
+test_that("blmm A3: lean common-piece kernel matches the batched report", {
+  set.seed(2027)
+  sim <- ALDEx3:::aldex.mem.sim(D = 1, days = 4, subjects = 6,
+                       depth = 100000, sd_resid = 0.1)
+  parsed <- ALDEx3:::blmm_parse_formula(~treatment + (1|subject_ids), sim$meta)
+
+  base_y <- log2(sim$Y[1, ] + 0.5)
+  Y_d <- vapply(
+    seq_len(4),
+    function(s) base_y + stats::rnorm(length(base_y), sd = 0.03 * s),
+    numeric(length(base_y))
+  )
+
+  obj <- ALDEx3:::blmm_make_adfun(
+    parsed$X, Y_d, parsed$basis, parsed$is_log, parsed$phi_init
+  )
+  anchor <- ALDEx3:::blmm_fit_anchor(obj, parsed$phi_init)
+  obj$fn(anchor$phi_bar)
+  report <- obj$report()
+  pieces <- ALDEx3:::blmm_common_pieces(
+    anchor$phi_bar, parsed$X, parsed$basis, parsed$lower
+  )
+
+  expect_equal(pieces$L, report$L, tolerance = 1e-10)
+  expect_equal(pieces$RZX, report$RZX, tolerance = 1e-10)
+  expect_equal(pieces$LX, report$LX, tolerance = 1e-10)
+  expect_equal(pieces$LambdaZt, report$LambdaZt, tolerance = 1e-10)
+})
+
 test_that("blmm B: identical-draw consistency", {
   set.seed(123)
   nsample <- 20

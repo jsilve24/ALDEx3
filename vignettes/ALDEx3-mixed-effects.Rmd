@@ -315,32 +315,46 @@ Y <- rbind(Y0[keep_names, ], other = other)
 Y <- Y[c(seq_len(min(8, nrow(Y) - 1)), nrow(Y)), ]
 meta <- oral_mouthwash_data$metadata
 
-time_lme4 <- system.time({
-  fit_lme4 <- aldex(
-    Y,
-    ~ treat * timec + (1 | participant_id),
-    data = meta,
-    method = "lme4",
-    n.cores = 1,
-    nsample = 16,
-    scale = clr.sm,
-    gamma = 0
+K <- 10
+
+fit_args <- list(
+  data = meta,
+  n.cores = 1,
+  nsample = 16,
+  scale = clr.sm,
+  gamma = 0
+)
+
+fit_model <- function(method) {
+  do.call(
+    aldex,
+    c(
+      list(Y, ~ treat * timec + (1 | participant_id)),
+      fit_args,
+      list(method = method)
+    )
   )
-})[["elapsed"]]
+}
 
 set.seed(42)
-time_blmm <- system.time({
-  fit_blmm <- aldex(
-    Y,
-    ~ treat * timec + (1 | participant_id),
-    data = meta,
-    method = "blmm",
-    n.cores = 1,
-    nsample = 16,
-    scale = clr.sm,
-    gamma = 0
-  )
-})[["elapsed"]]
+fit_lme4 <- fit_model("lme4")
+
+set.seed(42)
+fit_blmm <- fit_model("blmm")
+
+time_lme4 <- replicate(K, {
+  set.seed(42)
+  system.time({
+    invisible(fit_model("lme4"))
+  })[["elapsed"]]
+})
+
+time_blmm <- replicate(K, {
+  set.seed(42)
+  system.time({
+    invisible(fit_model("blmm"))
+  })[["elapsed"]]
+})
 
 s_lme4 <- summary(fit_lme4)
 s_blmm <- summary(fit_blmm)
@@ -372,8 +386,9 @@ cat('\n</div>\n')
 
 runtime_tbl <- data.frame(
   engine = c("lme4", "blmm"),
-  elapsed_sec = c(time_lme4, time_blmm),
-  speedup_vs_lme4 = c(1, time_lme4 / time_blmm)
+  mean_elapsed_sec = c(mean(time_lme4), mean(time_blmm)),
+  median_elapsed_sec = c(median(time_lme4), median(time_blmm)),
+  speedup_vs_lme4 = c(1, mean(time_lme4) / mean(time_blmm))
 )
 
 cat('\n\n')
@@ -382,7 +397,11 @@ knitr::kable(
   runtime_tbl,
   format = "html",
   digits = 3,
-  caption = "Elapsed runtime on the shared-draw vignette subset. Times are one run on the local machine and will vary by hardware."
+  caption = paste0(
+    "Elapsed runtime on the shared-draw vignette subset averaged over K = ",
+    K,
+    " repeated runs. Times will vary by hardware."
+  )
 )
 cat('\n</div>\n')
 ```
@@ -392,13 +411,15 @@ Carlo draws. The duplicated `set.seed(42)` above enforces that. Without that
 reset, the comparison would conflate engine differences with differences in the
 posterior draw block itself.
 
-With identical draws on this vignette subset, one run gave a maximum absolute
-posterior-mean coefficient difference of about `0.023`, a median absolute
-difference effectively `0`, a maximum absolute posterior standard-error
-difference of about `0.025`, and a median standard-error difference of about
-`0.003`. That is the practical target for BLMM on this example: when compared
-on the same posterior draws, `blmm` should stay very close to the exact
-`lme4` engine while avoiding repeated exact variance-component optimisation.
+With identical draws on this vignette subset, the comparison gave a maximum
+absolute posterior-mean coefficient difference of about `0.023`, a median
+absolute difference effectively `0`, a maximum absolute posterior
+standard-error difference of about `0.025`, and a median standard-error
+difference of about `0.003`. Averaging the runtime over `K = 10` repeated runs
+gave a `blmm` speedup of about `11.95x` relative to `lme4` on this subset.
+That is the practical target for BLMM on this example: when compared on the
+same posterior draws, `blmm` should stay very close to the exact `lme4`
+engine while avoiding repeated exact variance-component optimisation.
 
 ## Runtime Scaling
 
