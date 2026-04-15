@@ -4,8 +4,8 @@
 // parameterisation in terms of top-level covariance parameters theta and the
 // profiled residual scale sigma^2. The anchor objective is genuinely batched:
 // one factorisation of the shared q x q system per objective evaluation, one
-// multi-right-hand-side solve against the draw block Y, and one average PWRSS
-// term across draws.
+// multi-right-hand-side solve against the draw block Y, and one average of the
+// per-draw profiled REML residual terms across draws.
 
 #include <TMB.hpp>
 
@@ -120,6 +120,7 @@ Type objective_function<Type>::operator()() {
   matrix<Type> Cu_Y = X.transpose() * Y - RZX.transpose() * RZY;
   matrix<Type> Cbeta = solve_lower(LX, Cu_Y);
 
+  const Type np = Type(n - p);
   vector<Type> PWRSS_s(S);
   bool valid = true;
   for (int s = 0; s < S; ++s) {
@@ -131,20 +132,20 @@ Type objective_function<Type>::operator()() {
     }
   }
 
-  Type PWRSS_bar = Type(0.0);
+  Type mean_log_PWRSS = Type(0.0);
   for (int s = 0; s < S; ++s) {
-    PWRSS_bar += PWRSS_s(s);
+    mean_log_PWRSS += log(PWRSS_s(s) / np);
   }
-  PWRSS_bar /= Type(S);
+  mean_log_PWRSS /= Type(S);
 
-  if (!valid || !(PWRSS_bar > Type(0.0))) {
+  if (!valid) {
     return Type(1e20);
   }
 
-  const Type np = Type(n - p);
-  const Type nll = Type(0.5) * (ldL2 + ldRX2 + np * log(PWRSS_bar / np));
+  const Type nll = Type(0.5) * (ldL2 + ldRX2 + np * mean_log_PWRSS);
 
   REPORT(PWRSS_s);
+  REPORT(mean_log_PWRSS);
   REPORT(L);
   REPORT(RZX);
   REPORT(LX);

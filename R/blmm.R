@@ -146,6 +146,16 @@ blmm_make_adfun <- function(X, Y_d, basis, is_log, phi_init) {
   )
 }
 
+blmm_profiled_objectives <- function(report, n, p) {
+  np <- n - p
+  common <- 0.5 * (report$ldL2 + report$ldRX2)
+  common + np / 2 * log(report$PWRSS_s / np)
+}
+
+blmm_anchor_objective_from_report <- function(report, n, p) {
+  mean(blmm_profiled_objectives(report, n, p))
+}
+
 # ---------------------------------------------------------------------------
 # Anchor optimisation and curvature handling
 # ---------------------------------------------------------------------------
@@ -212,12 +222,7 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
   S <- length(PWRSS_s)
   np <- n - p
   q_phi <- length(phi_bar)
-  PWRSS_bar <- mean(PWRSS_s)
   scores <- matrix(0, nrow = q_phi, ncol = S)
-
-  if (!is.finite(PWRSS_bar) || PWRSS_bar <= 0) {
-    stop("blmm: invalid batched profiled residual sum of squares at the anchor")
-  }
 
   for (j in seq_len(q_phi)) {
     step <- eps * max(1, abs(phi_bar[j]))
@@ -238,9 +243,8 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
       stop("blmm: score perturbation produced an invalid profiled residual sum of squares")
     }
 
-    dPWRSS_s <- (PWRSS_p - PWRSS_m) / (2 * step)
-    dPWRSS_bar <- mean(dPWRSS_s)
-    scores[j, ] <- np / 2 * (dPWRSS_bar / PWRSS_bar - dPWRSS_s / PWRSS_s)
+    dlogPWRSS_s <- (log(PWRSS_p) - log(PWRSS_m)) / (2 * step)
+    scores[j, ] <- np / 2 * (mean(dlogPWRSS_s) - dlogPWRSS_s)
   }
 
   scores

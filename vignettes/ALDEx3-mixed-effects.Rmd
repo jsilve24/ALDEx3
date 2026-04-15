@@ -56,31 +56,49 @@ This is the cleanest way to describe the method statistically.
 
 ## Implemented Profiled Formulation
 
-For one feature and one Monte Carlo draw, BLMM targets the same Gaussian linear
-mixed model as `lme4`:
+To keep the notation readable, fix one feature \(d\). For each Monte Carlo
+draw \(s\), let \(y_{ds}\in\mathbb{R}^N\) be the vector of latent
+log-abundances across the \(N\) samples for that feature and draw. In the
+formulas below, I write \(y_s\) instead of \(y_{ds}\) because the feature is
+already fixed; the sample index \(n\) is the coordinate inside that
+\(N\)-vector, so it does not appear separately.
+
+If you prefer a fully indexed view, think of the data as \(y_{dns}\), where
+\(n\) indexes samples, \(d\) indexes features, and \(s\) indexes Monte Carlo
+draws. This section fixes \(d\) and then works with the length-\(N\) vector
+\(y_{ds} = (y_{d1s}, \dots, y_{dNs})^T\) for each draw \(s\).
+
+For that fixed feature and draw, BLMM targets the same Gaussian linear mixed
+model as `lme4`:
 
 \[
 y_s = X \beta_s + Z u_s + \varepsilon_s,
 \qquad
 u_s \sim N(0, \sigma_s^2 \Sigma_{\theta_s}),
 \qquad
-\varepsilon_s \sim N(0, \sigma_s^2 I_n).
+\varepsilon_s \sim N(0, \sigma_s^2 I_N).
 \]
 
-Here `X` is the fixed-effects design matrix, `Z` is the random-effects design
-matrix, `\beta_s` is the draw-specific fixed-effects vector, and `\theta_s`
-denotes the top-level covariance parameters. As in `lme4`, BLMM uses a
-relative covariance parameterisation in which `\Sigma_{\theta_s}` is encoded
-through a lower-triangular factor `\Lambda_{\theta_s}`.
+Here \(X\) is the fixed-effects design matrix and \(Z\) is the random-effects
+design matrix for the \(N\) samples. The vector \(\beta_s\) contains the
+draw-specific fixed effects, and \(\theta_s\) denotes the covariance
+parameters for that draw. As in `lme4`, BLMM uses a relative covariance
+parameterisation in which \(\Sigma_{\theta_s}\) is encoded through a
+lower-triangular factor \(\Lambda_{\theta_s}\).
 
-The code uses the profiled `lme4`-style Gaussian LMM parameterisation instead
-of a dense covariance-matrix implementation. This keeps BLMM compatible with
-`lme4::lFormula()` and the relative covariance parameterisation already used by
-the exact engine.
+Write \(p = \mathrm{ncol}(X)\) for the number of fixed-effect coefficients and
+\(q = \mathrm{ncol}(Z)\) for the number of random-effect coefficients.
 
-After profiling out the fixed effects and residual scale, the draw-specific
-objective depends only on the covariance parameters. In the profiled
-parameterisation used here, the key matrices are
+BLMM uses the profiled `lme4`-style Gaussian LMM formulation rather than a
+dense \(N \times N\) covariance-matrix formulation. That is not a different
+statistical model; it is the algebraic form used to evaluate the same REML
+criterion efficiently. The profiled form is convenient because it lets us
+profile out the fixed effects and residual scale first, then work with smaller
+matrices that depend on the covariance parameters.
+
+After profiling out the fixed effects and residual scale, the objective for a
+draw depends only on the covariance parameters. In the profiled formulation
+used here, the key matrices are
 
 \[
 A_{\theta_s} = I_q + \Lambda_{\theta_s} Z^T Z \Lambda_{\theta_s}^T,
@@ -92,8 +110,10 @@ R_{ZX,\theta_s} = L_{\theta_s}^{-1} \Lambda_{\theta_s} Z^T X,
 M_{\theta_s} = X^T X - R_{ZX,\theta_s}^T R_{ZX,\theta_s},
 \]
 
-where `L_{\theta_s}` is the Cholesky factor of `A_{\theta_s}`. The profiled
-weighted residual sum of squares for draw `s` is
+where \(L_{\theta_s}\) is the Cholesky factor of \(A_{\theta_s}\). These
+matrices depend on \(X\), \(Z\), and \(\theta_s\), but not on the response
+vector itself. The remaining response-dependent quantity for draw \(s\) is the
+profiled weighted residual sum of squares,
 
 \[
 \mathrm{PWRSS}_s(\theta_s)
@@ -112,8 +132,10 @@ C_{\beta,\theta_s} = L_{X,\theta_s}^{-1}
 \left(X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}\right),
 \]
 
-and `L_{X,\theta_s}` the Cholesky factor of `M_{\theta_s}`. Up to constants,
-the profiled REML criterion for one draw is
+and \(L_{X,\theta_s}\) is the Cholesky factor of \(M_{\theta_s}\). Intuitively,
+\(R_{ZY,\theta_s}\) is the random-effects projection of the response and
+\(C_{\beta,\theta_s}\) is the profiled fixed-effects solve. Up to constants, the
+profiled REML criterion for one draw is
 
 \[
 \ell_s(\theta_s)
@@ -122,31 +144,36 @@ the profiled REML criterion for one draw is
 \left\{
 \log |A_{\theta_s}|
 + \log |M_{\theta_s}|
-+ (n - p)\log\left(\frac{\mathrm{PWRSS}_s(\theta_s)}{n - p}\right)
++ (N - p)\log\left(\frac{\mathrm{PWRSS}_s(\theta_s)}{N - p}\right)
 \right\}.
 \]
 
-For a feature with response block `Y_d` of dimension `n x S`, one batched
-objective evaluation reuses shared structure:
+For one feature, the full Monte Carlo response block is
+\(Y_d = [y_{d1}, \dots, y_{dS}] \in \mathbb{R}^{N \times S}\), where column
+\(s\) is the response vector \(y_{ds}\) for draw \(s\). The batched anchor
+evaluation reuses structure shared across those \(S\) columns:
 
 1. one factorisation of the profiled random-effects system,
 2. one log-determinant calculation,
 3. one solve against the fixed-effects design matrix,
 4. one multi-right-hand-side solve against `Y_d`,
-5. one average profiled residual sum-of-squares term across draws.
+5. one average of the per-draw profiled residual log terms across draws.
 
 That batching step is the core computational advantage. BLMM does **not** loop
-over `S` separate REML optimisations inside the anchor optimiser.
+over \(S\) separate REML optimisations inside the anchor optimiser. It factors
+the shared pieces once per feature, then reuses them across draws.
 
-More concretely, the anchor fit replaces the single-draw profiled residual term
-with the across-draw average
+More concretely, the anchor fit targets the average of the per-draw profiled
+REML criteria. For a fixed feature, the determinant terms depend only on \(X\),
+\(Z\), and the covariance parameters, so they are shared across draws. The only
+draw-specific term that must be averaged is the profiled residual log term:
 
 \[
-\bar{\mathrm{PWRSS}}(\theta)
-= \frac{1}{S}\sum_{s=1}^S \mathrm{PWRSS}_s(\theta),
+\bar{\ell}(\phi)
+= \frac{1}{S}\sum_{s=1}^S \ell_s(\phi)
 \]
 
-and optimises the batched profiled objective
+which is, up to constants,
 
 \[
 \bar{\ell}(\phi)
@@ -155,35 +182,42 @@ and optimises the batched profiled objective
 \left\{
 \log |A_{\phi}|
 + \log |M_{\phi}|
-+ (n - p)\log\left(\frac{\bar{\mathrm{PWRSS}}(\phi)}{n - p}\right)
++ \frac{N - p}{S}\sum_{s=1}^S
+ \log\left(\frac{\mathrm{PWRSS}_s(\phi)}{N - p}\right)
 \right\},
 \]
 
-where `\phi` is the unconstrained optimisation parameter and positive
-components of `\theta` are represented on the log scale.
+Here \(\phi\) is the unconstrained optimisation parameter, and positive
+components of \(\theta\) are represented on the log scale. The draw index \(s\)
+is the Monte Carlo replicate; the sample index is already inside \(y_{ds}\).
 
-BLMM then uses a local second-order approximation around the anchor. Let `H` be
-the observed Hessian of `\bar{\ell}` at the anchor `\bar{\phi}`. For draw `s`,
-BLMM computes a draw-specific score correction `g_s` and applies the local
-Newton update
+This is the same profiled `lme4`-style formulation used by the code. The anchor
+fit, the draw-specific correction, and the curvature matrix all come from the
+same averaged profiled REML objective above.
+
+BLMM then uses a local second-order approximation around the anchor. Let \(H\)
+be the observed Hessian of \(\bar{\ell}\) at the anchor \(\bar{\phi}\). For
+draw \(s\), BLMM computes a draw-specific score correction \(g_s\) from the
+difference between the average profiled score and the draw-specific profiled
+score at the anchor, and applies the local Newton update
 
 \[
 \phi_s \approx \bar{\phi} + H^{-1} g_s.
 \]
 
 This yields one updated covariance parameter vector per draw without rerunning
-full REML optimisation from scratch. Conditional on `\phi_s`, BLMM then solves
-the fixed effects exactly by generalized least squares:
+full REML optimisation from scratch. Conditional on \(\phi_s\), BLMM then
+solves the fixed effects exactly by generalized least squares:
 
 \[
 \hat{\beta}_s =
 \left(X^T V_s^{-1} X\right)^{-1} X^T V_s^{-1} y_s,
 \]
 
-with `V_s = Z G_s Z^T + \sigma_s^2 I_n` implied by the updated covariance
-parameters. The approximation is therefore confined to the repeated covariance
-optimisation step; the per-draw fixed-effects solve remains exact conditional
-on the updated covariance model.
+with \(V_s = Z \Sigma_{\theta_s} Z^T + \sigma_s^2 I_N\) implied by the
+updated covariance parameters. The approximation is therefore confined to the
+repeated covariance optimisation step; the per-draw fixed-effects solve
+remains exact conditional on the updated covariance model.
 
 ## Assumptions and Scope
 
@@ -222,7 +256,7 @@ The `oral_mouthwash_data` dataset provides a repeated-measures design with one
 random intercept per participant. The exact and approximate engines use the
 same mixed-effects formula:
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 set.seed(42)
 data(oral_mouthwash_data)
 
@@ -258,7 +292,7 @@ covariance-optimisation step approximately. The code below fits the same model
 with both engines and compares the posterior mean coefficients and their
 posterior standard errors.
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 set.seed(42)
 data(oral_mouthwash_data)
 
@@ -271,27 +305,32 @@ Y <- rbind(Y0[keep_names, ], other = other)
 Y <- Y[c(seq_len(min(8, nrow(Y) - 1)), nrow(Y)), ]
 meta <- oral_mouthwash_data$metadata
 
-fit_lme4 <- aldex(
-  Y,
-  ~ treat * timec + (1 | participant_id),
-  data = meta,
-  method = "lme4",
-  n.cores = 1,
-  nsample = 16,
-  scale = clr.sm,
-  gamma = 0
-)
+time_lme4 <- system.time({
+  fit_lme4 <- aldex(
+    Y,
+    ~ treat * timec + (1 | participant_id),
+    data = meta,
+    method = "lme4",
+    n.cores = 1,
+    nsample = 16,
+    scale = clr.sm,
+    gamma = 0
+  )
+})[["elapsed"]]
 
-fit_blmm <- aldex(
-  Y,
-  ~ treat * timec + (1 | participant_id),
-  data = meta,
-  method = "blmm",
-  n.cores = 1,
-  nsample = 16,
-  scale = clr.sm,
-  gamma = 0
-)
+set.seed(42)
+time_blmm <- system.time({
+  fit_blmm <- aldex(
+    Y,
+    ~ treat * timec + (1 | participant_id),
+    data = meta,
+    method = "blmm",
+    n.cores = 1,
+    nsample = 16,
+    scale = clr.sm,
+    gamma = 0
+  )
+})[["elapsed"]]
 
 s_lme4 <- summary(fit_lme4)
 s_blmm <- summary(fit_blmm)
@@ -306,34 +345,89 @@ cmp <- merge(
 cmp$abs_est_diff <- abs(cmp$estimate.lme4 - cmp$estimate.blmm)
 cmp$abs_se_diff <- abs(cmp$std.error.lme4 - cmp$std.error.blmm)
 
-cmp[order(cmp$abs_est_diff, decreasing = TRUE), ][1:8, c(
+cmp_tbl <- cmp[order(cmp$abs_est_diff, decreasing = TRUE), ][1:8, c(
   "parameter", "entity",
   "estimate.lme4", "estimate.blmm", "abs_est_diff",
   "std.error.lme4", "std.error.blmm", "abs_se_diff"
 )]
+
+cat('<div style="overflow-x:auto; width:100%;">\n')
+knitr::kable(
+  cmp_tbl,
+  format = "html",
+  digits = 4,
+  caption = "Largest absolute differences between exact lme4 and blmm on the shared-draw subset."
+)
+cat('\n</div>\n')
+
+runtime_tbl <- data.frame(
+  engine = c("lme4", "blmm"),
+  elapsed_sec = c(time_lme4, time_blmm),
+  speedup_vs_lme4 = c(1, time_lme4 / time_blmm)
+)
+
+cat('\n\n')
+cat('<div style="overflow-x:auto; width:100%;">\n')
+knitr::kable(
+  runtime_tbl,
+  format = "html",
+  digits = 3,
+  caption = "Elapsed runtime on the shared-draw vignette subset. Times are one run on the local machine and will vary by hardware."
+)
+cat('\n</div>\n')
 ```
 
-In one run of that comparison, the median absolute difference between `lme4`
-and `blmm` posterior mean coefficients was about `0.158`, and the median
-absolute difference in posterior standard errors was about `0.037`. The
-largest coefficient differences were concentrated in a few interaction terms
-for `g__Lachnospiraceae_[G-3]` and the aggregated `other` feature, while the
-standard-error differences stayed much smaller.
+For an engine comparison to be meaningful, both fits must use the same Monte
+Carlo draws. The duplicated `set.seed(42)` above enforces that. Without that
+reset, the comparison would conflate engine differences with differences in the
+posterior draw block itself.
 
-One representative slice from that run looked like this:
+With identical draws on this vignette subset, one run gave a maximum absolute
+posterior-mean coefficient difference of about `0.023`, a median absolute
+difference effectively `0`, a maximum absolute posterior standard-error
+difference of about `0.025`, and a median standard-error difference of about
+`0.003`. That is the practical target for BLMM on this example: when compared
+on the same posterior draws, `blmm` should stay very close to the exact
+`lme4` engine while avoiding repeated exact variance-component optimisation.
 
-```text
-                                   parameter                   entity estimate.lme4 estimate.blmm abs_est_diff std.error.lme4 std.error.blmm abs_se_diff
- treatantiseptic-mouthwash:timec15min-later g__Lachnospiraceae_[G-3]    -0.3240249    -1.5572752    1.2332503       2.260624       2.302767  0.04214379
-                   treatsoda:timec2hrs-later                    other    -1.0886355    -1.8788750    0.7902395       1.423436       1.502469  0.07903349
-                            timec15min-later g__Lachnospiraceae_[G-3]     0.5793505     1.3104411    0.7310906       1.598502       1.628302  0.02980016
-                  treatalcoholfree-mouthwash g__Lachnospiraceae_[G-3]    -1.6565051    -1.0162586    0.6402465       1.836860       1.904320  0.06746007
-                                   treatsoda                    other     0.6267303     1.2657432    0.6390129       1.378232       1.422042  0.04381026
- treatalcoholfree-mouthwash:timec15min-later g__Lachnospiraceae_[G-3]     0.7208208     0.0866997    0.6341211       2.390340       2.436982  0.04664163
-                  treatsoda:timec15min-later                    other    -0.4414167    -1.0440975    0.6026808       1.385616       1.462925  0.07730838
-   treatantiseptic-mouthwash:timec2hrs-later g__Lachnospiraceae_[G-3]     0.2297808    -0.3268711    0.5566519       2.260624       2.302767  0.04214379
-```
+## Runtime Scaling
 
-That pattern is the practical target for BLMM: most coefficient and standard
-error summaries should stay close to the exact engine, with approximation error
-small relative to the posterior uncertainty being propagated through ALDEx3.
+Runtime is driven by three quantities:
+
+- `N`, the number of samples,
+- `D`, the number of features, and
+- `S`, the number of Monte Carlo draws.
+
+Both engines pay the shared cost of generating and transforming the Monte Carlo
+draws, which scales roughly with `D * N * S`. The difference is in the mixed
+model solve.
+
+`lme4` performs a full variance-component optimisation for every feature and
+every draw. That means its expensive nonlinear step scales roughly like
+`D * S * cost(full_REML_opt(N, random_effect_structure))`. As `N` grows or the
+random-effects structure gets more complex, each exact optimisation becomes
+more expensive.
+
+`blmm` replaces those repeated exact optimisations with one batched anchor fit
+per feature plus per-draw local updates and exact conditional fixed-effect
+solves. Its costly nonlinear work is therefore closer to
+`D * cost(anchor_REML_opt(N, random_effect_structure)) + D * S * cost(local_update(N))`.
+The savings are largest when the repeated exact optimisation is the dominant
+cost.
+
+In practice, BLMM is most valuable when:
+
+1. `S` is moderate to large, so repeated exact REML fits become expensive.
+2. `D` is large, so the same model structure is reused across many features.
+3. The random-effects structure is nontrivial, so each exact `lme4` fit is
+   expensive.
+4. The approximation can be anchored once and reused cleanly across draws.
+
+BLMM is less compelling when `S = 1`, when the random-effects structure is very
+simple, or when the dataset is so small that exact `lme4` optimisation is already
+cheap. In those settings, the extra approximation machinery may not buy much.
+
+On the vignette subset above, the elapsed times in the table give a concrete
+example of the expected pattern: `blmm` should be faster because it avoids
+repeating the full covariance optimisation for every draw, while still solving
+the fixed effects exactly conditional on the updated covariance parameters.
