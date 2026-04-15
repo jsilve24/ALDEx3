@@ -192,6 +192,59 @@ test_that("blmm C3: vignette subset discrepancies are materially reduced", {
   expect_lt(max(abs(se_lme4 - se_blmm)), 0.05)
 })
 
+test_that("blmm D: feature-level parallelization preserves results and ordering", {
+  set.seed(2468)
+  nsample <- 6
+  formula <- ~treatment + (1|subject_ids)
+  sim <- ALDEx3:::aldex.mem.sim(D = 4, days = 5, subjects = 6,
+                       depth = 100000, sd_resid = 0.08)
+  logScale <- blmm_true_scale(sim, nsample)
+  logW <- blmm_sample_logW(sim$Y, formula, sim$meta, nsample, logScale)
+
+  res_serial <- ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 1L)
+  res_parallel <- ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 2L)
+
+  expect_equal(res_serial$estimate, res_parallel$estimate, tolerance = 1e-10)
+  expect_equal(res_serial$std.error, res_parallel$std.error, tolerance = 1e-10)
+  expect_equal(res_serial$df, res_parallel$df, tolerance = 1e-10)
+  expect_equal(res_serial$p.lower, res_parallel$p.lower, tolerance = 1e-10)
+  expect_equal(res_serial$p.upper, res_parallel$p.upper, tolerance = 1e-10)
+  expect_equal(res_serial$random.eff, res_parallel$random.eff, tolerance = 1e-10)
+})
+
+test_that("blmm E: parallel fallback aggregates warnings and remains exact", {
+  set.seed(97531)
+  nsample <- 4
+  formula <- ~treatment + (1|subject_ids)
+  sim <- ALDEx3:::aldex.mem.sim(D = 4, days = 4, subjects = 6,
+                       depth = 100000, sd_resid = 0.08)
+  logScale <- blmm_true_scale(sim, nsample)
+  logW <- blmm_sample_logW(sim$Y, formula, sim$meta, nsample, logScale)
+  attr(logW, "blmm.force_fail_features") <- c(1L, 2L)
+
+  warns <- character()
+  res_parallel <- withCallingHandlers(
+    ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 2L),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  res_exact <- ALDEx3:::sr.mem(logW, formula, sim$meta, n.cores = 1L,
+                               method = "lme4", mem.args = list())
+
+  expect_length(warns, 1)
+  expect_match(warns[[1]], "2 feature\\(s\\) fell back to exact lme4")
+  expect_equal(res_parallel$estimate[, 1:2, ], res_exact$estimate[, 1:2, ],
+               tolerance = 1e-10)
+  expect_equal(res_parallel$std.error[, 1:2, ], res_exact$std.error[, 1:2, ],
+               tolerance = 1e-10)
+  expect_equal(res_parallel$df[, 1:2, ], res_exact$df[, 1:2, ],
+               tolerance = 1e-10)
+  expect_equal(res_parallel$random.eff[, 1:2, ], res_exact$random.eff[, 1:2, ],
+               tolerance = 1e-10)
+})
+
 test_that("blmm D/E/F: correlated random-slope output remains compatible", {
   set.seed(4321)
   nsample <- 1

@@ -23,7 +23,9 @@ exact variance-component optimisation for each draw can dominate runtime.
 The exact ALDEx3 mixed-effects engines remain available through
 `method = "lme4"` and `method = "nlme"`. The `method = "blmm"` engine is an
 ALDEx3-specific approximation designed to reduce repeated optimisation cost
-while preserving the same fixed-effects model.
+while preserving the same fixed-effects model. When `n.cores > 1`, BLMM and
+the exact mixed-effects engines parallelize across features, not across the
+Monte Carlo draws within a feature.
 
 ## What BLMM Approximates
 
@@ -407,6 +409,10 @@ Runtime is driven by three quantities:
 Both engines pay the shared cost of generating and transforming the Monte Carlo
 draws, which scales roughly with `D * N * S`. The difference is in the mixed
 model solve.
+
+The `n.cores` argument distributes features across workers, so it changes the
+feature loop but not the per-feature draw loop. That is why the runtime gains
+from parallelism and the runtime gains from BLMM are complementary.
 
 `lme4` performs a full variance-component optimisation for every feature and
 every draw. That means its expensive nonlinear step scales roughly like

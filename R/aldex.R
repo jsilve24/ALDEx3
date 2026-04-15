@@ -19,7 +19,8 @@
 ##'    one batched profiled mixed-model anchor fit per feature, draw-specific
 ##'    local covariance updates, and exact conditional fixed-effect solves.
 ##'    The approximation is only in the variance-component optimisation step.
-##'    See the mixed-effects vignette for details and validation guidance.
+##'    See the mixed-effects vignette for details, validation guidance, and the
+##'    runtime comparison with exact \code{lme4}.
 ##' @param nsample number of monte carlo replicates
 ##' @param scale the scale model, can be a function or an N x nsample matrix
 ##'   (samples should be given on log2-scale; e.g., samples should be of log of
@@ -31,9 +32,10 @@
 ##'   streaming will be performed. Note, to conserve memory, samples from the
 ##'   Dirichlet and scale models will not be returned if streaming is used.
 ##'   Streaming can be turned off by setting streamsize=Inf.
-##' @param n.cores (default detectCores()-1) If method is 'lme4', use this many
-##'   cores for running mixed effects models in parallel. Reserved for future
-##'   feature-level parallelism when method is 'blmm'.
+##' @param n.cores (default detectCores()-1) If method is 'lme4' or 'blmm',
+##'   use this many cores for feature-level parallelism across taxa/features.
+##'   For \code{method = "blmm"}, parallelism is across features, not across
+##'   Monte Carlo draws within a feature.
 ##' @param return.pars what results should be returned, see return section
 ##'   below.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test

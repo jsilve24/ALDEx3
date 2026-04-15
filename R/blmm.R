@@ -243,6 +243,10 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
       stop("blmm: score perturbation produced an invalid profiled residual sum of squares")
     }
 
+    # The score correction uses a relative step in the profiled parameter
+    # scale and differentiates the same compiled objective that defines the
+    # anchor. The variance-component dimension is small, so centered finite
+    # differences are a stable and explicit local update here.
     dlogPWRSS_s <- (log(PWRSS_p) - log(PWRSS_m)) / (2 * step)
     scores[j, ] <- np / 2 * (mean(dlogPWRSS_s) - dlogPWRSS_s)
   }
@@ -332,6 +336,84 @@ blmm_exact_feature <- function(Y_d, formula, data) {
   )
 }
 
+blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
+                             reTrms, formula, data, forced_fallback = integer(0)) {
+  N <- nrow(X)
+  p <- ncol(X)
+  S <- dim(logW)[3]
+  Y_d <- logW[, d, , drop = FALSE]
+  dim(Y_d) <- c(N, S)
+
+  feature_random_rows <- length(names(blmm_random_effect_vector(reTrms$theta, 1, reTrms)))
+  if (length(forced_fallback) > 0L && d %in% forced_fallback) {
+    return(list(
+      fit = blmm_exact_feature(Y_d, formula, data),
+      fallback = TRUE,
+      fallback_message = "forced approximate failure for testing"
+    ))
+  }
+
+  result <- tryCatch({
+    obj_full <- blmm_make_adfun(X, Y_d, basis, is_log, phi_init)
+    anchor <- blmm_fit_anchor(obj_full, phi_init)
+
+    obj_full$fn(anchor$phi_bar)
+    anchor_report <- obj_full$report()
+    g_mat <- blmm_scores_batch(obj_full, anchor$phi_bar,
+                               anchor_report$PWRSS_s, N, p)
+    phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat)
+
+    feature_estimate <- matrix(NA_real_, nrow = p, ncol = S)
+    feature_std.error <- matrix(NA_real_, nrow = p, ncol = S)
+    feature_df <- matrix(NA_real_, nrow = p, ncol = S)
+    feature_p.lower <- matrix(NA_real_, nrow = p, ncol = S)
+    feature_p.upper <- matrix(NA_real_, nrow = p, ncol = S)
+    feature_random <- matrix(NA_real_, nrow = feature_random_rows, ncol = S)
+
+    for (s in seq_len(S)) {
+      obj_full$fn(phi_tilde[, s])
+      pieces <- obj_full$report()
+      fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
+
+      feature_estimate[, s] <- fe$beta
+      feature_std.error[, s] <- fe$se
+      feature_df[, s] <- fe$df
+
+      t_stat <- fe$beta / fe$se
+      feature_p.lower[, s] <- pt(t_stat, df = fe$df, lower.tail = TRUE)
+      feature_p.upper[, s] <- 1 - feature_p.lower[, s]
+
+      theta_draw <- phi_to_theta_blmm(phi_tilde[, s], lower)
+      feature_random[, s] <- blmm_random_effect_vector(
+        theta = theta_draw,
+        sigma2 = fe$sigma2,
+        reTrms = reTrms
+      )
+    }
+
+    list(
+      fit = list(
+        estimate = array(feature_estimate, c(p, 1L, S)),
+        std.error = array(feature_std.error, c(p, 1L, S)),
+        df = array(feature_df, c(p, 1L, S)),
+        p.lower = array(feature_p.lower, c(p, 1L, S)),
+        p.upper = array(feature_p.upper, c(p, 1L, S)),
+        random.eff = array(feature_random, c(feature_random_rows, 1L, S))
+      ),
+      fallback = FALSE,
+      fallback_message = ""
+    )
+  }, error = function(e) {
+    list(
+      fit = blmm_exact_feature(Y_d, formula, data),
+      fallback = TRUE,
+      fallback_message = conditionMessage(e)
+    )
+  })
+
+  result
+}
+
 # ---------------------------------------------------------------------------
 # Main engine
 # ---------------------------------------------------------------------------
@@ -357,8 +439,9 @@ blmm_exact_feature <- function(Y_d, formula, data) {
 ##' @param logW numeric array (N x D x S)
 ##' @param formula lme4 mixed-effects formula
 ##' @param data data.frame for formula evaluation
-##' @param n.cores currently ignored; reserved for future feature-level
-##'   parallelism
+##' @param n.cores number of worker processes for feature-level parallelism.
+##'   If \code{n.cores > 1}, BLMM distributes features across workers. The
+##'   per-feature draw calculations remain serial.
 ##' @return The same list layout as \code{sr.mem}: named arrays (P x D x S) for
 ##'   estimate, std.error, df, p.lower, p.upper, and (Pr x D x S) for
 ##'   random.eff.
@@ -381,6 +464,13 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
   fnames <- colnames(X)
   rnames <- names(parsed$random_template)
   Pr <- length(rnames)
+  forced_fallback <- attr(logW, "blmm.force_fail_features")
+  if (is.null(forced_fallback)) {
+    forced_fallback <- integer(0)
+  } else {
+    forced_fallback <- unique(as.integer(forced_fallback))
+    forced_fallback <- forced_fallback[forced_fallback >= 1L & forced_fallback <= D]
+  }
 
   estimate <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   std.error <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
@@ -389,70 +479,69 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
   p.upper <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   random.eff <- array(NA_real_, c(Pr, D, S), dimnames = list(rnames, NULL, NULL))
 
+  feature_worker <- function(d) {
+    blmm_fit_feature(
+      d = d,
+      logW = logW,
+      X = X,
+      basis = basis,
+      is_log = is_log,
+      phi_init = phi_init,
+      lower = lower,
+      reTrms = reTrms,
+      formula = formula,
+      data = data,
+      forced_fallback = forced_fallback
+    )
+  }
+
+  feature_indices <- seq_len(D)
+  if (n.cores > 1L && D > 1L) {
+    n_workers <- min(as.integer(n.cores), D)
+    if (.Platform$OS.type == "windows") {
+      cl <- makeCluster(n_workers)
+      on.exit(stopCluster(cl), add = TRUE)
+      clusterEvalQ(cl, {
+        suppressPackageStartupMessages(library(ALDEx3))
+        NULL
+      })
+      feature_results <- parLapply(cl, feature_indices, feature_worker)
+    } else {
+      feature_results <- parallel::mclapply(
+        feature_indices,
+        feature_worker,
+        mc.cores = n_workers
+      )
+    }
+  } else {
+    feature_results <- lapply(feature_indices, feature_worker)
+  }
+
+  fallback_idx <- which(vapply(feature_results, `[[`, logical(1), "fallback"))
+  if (length(fallback_idx) > 0L) {
+    n_examples <- min(3L, length(fallback_idx))
+    example_msgs <- vapply(
+      feature_results[fallback_idx[seq_len(n_examples)]],
+      `[[`,
+      "",
+      "fallback_message"
+    )
+    example_text <- paste(
+      sprintf("feature %d: %s", fallback_idx[seq_len(n_examples)], example_msgs),
+      collapse = "; "
+    )
+    suffix <- if (length(fallback_idx) > n_examples) " ..." else ""
+    warning(
+      sprintf(
+        "blmm: %d feature(s) fell back to exact lme4 because the approximate path failed. Examples: %s%s",
+        length(fallback_idx), example_text, suffix
+      ),
+      call. = FALSE
+    )
+  }
+
   for (d in seq_len(D)) {
-    Y_d <- logW[, d, , drop = FALSE]
-    dim(Y_d) <- c(N, S)
-
-    feature_fit <- tryCatch({
-      obj_full <- blmm_make_adfun(X, Y_d, basis, is_log, phi_init)
-      anchor <- blmm_fit_anchor(obj_full, phi_init)
-
-      obj_full$fn(anchor$phi_bar)
-      anchor_report <- obj_full$report()
-      g_mat <- blmm_scores_batch(obj_full, anchor$phi_bar,
-                                 anchor_report$PWRSS_s, N, p)
-      phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat)
-
-      feature_estimate <- matrix(NA_real_, nrow = p, ncol = S)
-      feature_std.error <- matrix(NA_real_, nrow = p, ncol = S)
-      feature_df <- matrix(NA_real_, nrow = p, ncol = S)
-      feature_p.lower <- matrix(NA_real_, nrow = p, ncol = S)
-      feature_p.upper <- matrix(NA_real_, nrow = p, ncol = S)
-      feature_random <- matrix(NA_real_, nrow = Pr, ncol = S)
-
-      for (s in seq_len(S)) {
-        obj_full$fn(phi_tilde[, s])
-        pieces <- obj_full$report()
-        fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
-
-        feature_estimate[, s] <- fe$beta
-        feature_std.error[, s] <- fe$se
-        feature_df[, s] <- fe$df
-
-        t_stat <- fe$beta / fe$se
-        feature_p.lower[, s] <- pt(t_stat, df = fe$df, lower.tail = TRUE)
-        feature_p.upper[, s] <- 1 - feature_p.lower[, s]
-
-        theta_draw <- phi_to_theta_blmm(phi_tilde[, s], lower)
-        feature_random[, s] <- blmm_random_effect_vector(
-          theta = theta_draw,
-          sigma2 = fe$sigma2,
-          reTrms = reTrms
-        )
-      }
-
-      list(
-        estimate = array(feature_estimate, c(p, 1L, S)),
-        std.error = array(feature_std.error, c(p, 1L, S)),
-        df = array(feature_df, c(p, 1L, S)),
-        p.lower = array(feature_p.lower, c(p, 1L, S)),
-        p.upper = array(feature_p.upper, c(p, 1L, S)),
-        random.eff = array(feature_random, c(Pr, 1L, S))
-      )
-    }, error = function(e) {
-      warning(
-        sprintf(
-          paste0(
-            "blmm: feature %d fell back to exact lme4 because the approximate ",
-            "path failed: %s"
-          ),
-          d, conditionMessage(e)
-        ),
-        call. = FALSE
-      )
-      blmm_exact_feature(Y_d, formula, data)
-    })
-
+    feature_fit <- feature_results[[d]]$fit
     estimate[, d, ] <- feature_fit$estimate[, 1, ]
     std.error[, d, ] <- feature_fit$std.error[, 1, ]
     df_arr[, d, ] <- feature_fit$df[, 1, ]

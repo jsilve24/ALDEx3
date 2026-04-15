@@ -132,15 +132,15 @@ Type objective_function<Type>::operator()() {
     }
   }
 
+  if (!valid) {
+    return Type(1e20);
+  }
+
   Type mean_log_PWRSS = Type(0.0);
   for (int s = 0; s < S; ++s) {
     mean_log_PWRSS += log(PWRSS_s(s) / np);
   }
   mean_log_PWRSS /= Type(S);
-
-  if (!valid) {
-    return Type(1e20);
-  }
 
   const Type nll = Type(0.5) * (ldL2 + ldRX2 + np * mean_log_PWRSS);
 

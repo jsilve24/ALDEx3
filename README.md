@@ -73,7 +73,7 @@ head(aldex.gut.summary)
 
 ## Mixed Effects Models (SR-MEM)
 
-Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with either the lme4 or nlme interfaces. Note, while parallelization can make these model practical, they are still slower than the linear models (enhancements to come). 
+Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with the exact `lme4` and `nlme` interfaces and the approximate `blmm` engine. BLMM parallelizes across features via `n.cores`, and the dedicated mixed-effects vignette covers the model setup, validation, and runtime tradeoffs in more detail.
 
 ``` r
 library(ALDEx3)
