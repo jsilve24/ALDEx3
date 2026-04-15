@@ -1,10 +1,12 @@
-# Unreleased
+# ALDEx3 1.1.0
 
-## Changes
+## New Features
 
-- Added feature-level parallelism to the BLMM mixed-effects engine and aligned the user-facing docs with the implemented behavior.
-- Removed stale rendered vignette outputs and source-side build artifacts from the repository.
-- Tightened the BLMM anchor objective and fallback handling so the mixed-effects vignette and tests stay internally consistent.
+- Added `method = "blmm"`: an ALDEx3-specific approximate mixed-effects engine using a batched profiled REML anchor fit per feature, draw-specific local covariance updates, and exact conditional GLS fixed-effect solves. Falls back to `lme4` for features where the approximation cannot be evaluated cleanly.
+- On small datasets (with S\approx 20) blmm is approximately 40x faster than lme4, that factor should increase substantially as S increases to more realistic levels. 
+- Added feature-level parallelism (`n.cores`) for `method = "blmm"` and `method = "lme4"`.
+- Added dedicated mixed-effects vignette covering model setup, BLMM formulation, validation guidance, and runtime comparison with exact `lme4`.
+
 
 # ALDEx3 0.1.1
 
