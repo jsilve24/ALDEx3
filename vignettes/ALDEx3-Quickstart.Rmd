@@ -283,3 +283,29 @@ The output is a data.frame which includes:
 - estimate: The average regression coefficient across Monte Carlo draws
 - std.err: The average regression standard error across Monte Carlo draws
 - p.val.adj: The BH adjusted p-values combined from Monte Carlo draws using special procedure
+
+## Plotting pairwise analyses
+
+ALDEx3 has simple plotting functions available for pairwise plotting of outputs. Plots include:  a [volcano plot](https://doi.org/10.1186/gb-2003-4-4-210) that plots the log2 difference between groups vs. the -log(adjusted p-value); an [effect plot](https:://doi.org/10.1080/10618600.2015.1131161) taht plots the standard deviation of the estimate vs. the log2 difference between groups; or a [Bland-Altmann, or MA plot]((https://doi.org/10.2307/2987937)) that plots the log abundance of the parts vs the log2 difference between groups (estimate). Note that the Bland-Altmann plot may not work for very large datasets. If this occurs an error message will provide a potential solution. Note that the contrast name must be supplied.
+
+It is possible to change the following aspects of the plots:
+
+  - plot type: `plot`: default is 'volcano
+  - minimum fold-change: `min.diff`, default is 0.5 for the MA plot, this is used as a cutoff by the waterfall plot
+  - Cohen's d: `cohen`, default is 0.5 for effect plot
+  - significant feature color: `sig.col`, default is rgb(1,0,0,0.5)
+  - minimum FDR: `threshold`, default is 0.05
+  - waterfall number of features: `water.show`, default is 5 per group
+  - waterfall colors: `water.col`, default is c("red", "blue")
+  - waterfall names: `water.names`, logical default is TRUE
+
+```{r plots, echo=T, message=F, error=F, warning=F, fig.align='left', fig.dim=c(8,8), out.width="95%", fig.cap="Volcano, Effect, Bland-Altmann (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot; the horizontal line represents a posterior predicted FDR of 0.05. In the effect plot; the lines represent the boundary where the estimate is twice the standard deviation of the estimate (Cohen's d = 0.5). In the Bland-Altman or MA plot the lines represent at least a 0.5 fold log2 difference.  In these three plots features that are not significant are in grey or black. Features that are have a FDR less than the threshold of 0.05  are in red. The log-ratio abundance is arbitrary. The waterfall plot sorts the features first by adjusted p-value and then by estimate."}
+
+par(mfrow=c(2,2))
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='vol', main="Volcano plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='eff', main="Effect plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='MA', main="MA plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot="water", 
+    water.col=c("orange", "purple"), main="Waterfall plot")
+```
+
