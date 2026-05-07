@@ -24,9 +24,10 @@
 #' @param water.names logical, show names of features for waterfall plot 
 #' @param ... additional plot parameters (cex)
 #' @return the desired plot
-#' @export
 #' @author Greg Gloor
-
+#' @importFrom grDevices rgb
+#' @importFrom graphics abline barplot mtext points text
+#' @export
 aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"), 
   contrast=NULL, threshold=0.05, min.diff=0.5, cohen=0.5, sig.col=rgb(1,0,0,0.5),
   water.show=5, water.col=c("red", "blue"), water.names=TRUE,  ... ){
@@ -115,7 +116,7 @@ aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
 	  display.p <- display
 	  display.n <- display
       # if there are a more 0 values than n to display order them by estimate
-	  if(length(which(sum.yst.clr$p.val.adj == min(sum.yst.clr$p.val.adj)) > display)){
+	  if(length(which(sum.output$p.val.adj == min(sum.output$p.val.adj)) > display)){
 	  	
 	  }
 

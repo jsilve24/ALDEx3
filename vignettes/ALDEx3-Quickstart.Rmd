@@ -56,7 +56,7 @@ devtools::install_github("jsilve24/ALDEx3")
 *Note*: the following examples use the CLR scale model often with zero scale uncertainty `gamma=0`. This is generally a bad idea but is shown here just for backwards comparability with the defaults in ALDEx2. In general we strongly recommend carefully thinking about the choice of scale model (see https://link.springer.com/article/10.1186/s13059-025-03609-3 for a background on the subject). In the worst case scenario where the user is unwilling to carefully design a scale model, we recommend choosing `scale=tss.sm` and `gamma=0.5`as a default. 
 
 
-``` r
+```{r,eval=T}
 set.seed(42)
 # Load Crohn's Disease vs. Control Data
 data(gut_crohns_data)
