@@ -20,12 +20,15 @@
 ##'   interest
 ##' @author Justin Silverman
 cohensd <- function(m, var) {
-  expr <- substitute(var)
-  if (is.numeric(expr)) {
+  # somehow the substitute function was changing a character to something else
+  # when the variable was passed from another function, but worked 
+  #expr <- substitute(var)
+  if (is.numeric(var)) {
     # already numeric
-  } else {
-    var <- deparse(expr)
-    var <- which(rownames(m$X) == var)
+  } else if (is.character(var)){
+    #var <- deparse(expr)
+    #var <- which(rownames(m$X) == var)
+    var <- grep(var, rownames(m$X))
   }
 
   diff.mean <- m$estimate[var,,]  # D x S
@@ -67,11 +70,46 @@ cohensd <- function(m, var) {
 
   # Pooled variance
   pooled_var <- ((n0 - 1) * var0 + (n1 - 1) * var1) / (n0 + n1 - 2)
-  cohensd <- diff.mean / sqrt(pooled_var)
+  cohens.d <- diff.mean / sqrt(pooled_var)
+### added by gg
+  # from ALDEx2. 0.5 is complete uncertainty as to direction of Cohen's d
+  overlap <- round(apply( cohens.d, 1, function(row) { if(all(is.na(row))) warning("NAs in effect");
+                row[is.na(row)] <- 0 ;
+                min( aitchison.mean( c( sum( row < 0 ) , sum( row > 0 ) ) + 0.5 ) ) } ),3)
 
-  return(cohensd)
+
+  pooled.SD <- round(rowMeans(sqrt(pooled_var)),3)
+  estimate <- round(rowMeans(diff.mean),3)
+  cohens.d <- round(rowMeans(cohens.d),3)
+  the.three <- as.data.frame(cbind(estimate, pooled.SD, cohens.d, overlap))
+  return(the.three)
+###
+
 }
+### added by gg
+# private function from ALDEx2, via Andrew Fernandes
+aitchison.mean <- function( n, log=FALSE ) {
 
+    # Input is a vector of non-negative integer counts.
+    # Output is a probability vector of expected frequencies.
+    # If log-frequencies are requested, the uninformative subspace is removed.
+
+    n <- round( as.vector( n, mode="numeric" ) )
+    if ( any( n < 0 ) ) stop("counts cannot be negative")
+
+    a <- n + 0.5
+    sa <- sum(a)
+
+    log.p <- digamma(a) - digamma(sa)
+    log.p <- log.p - mean(log.p)
+
+    if ( log ) return(log.p)
+
+    p <- exp( log.p - max(log.p) )
+    p <- p / sum(p)
+    return(p)
+}
+###
 
 ## summary <- function(object, ...) {
 ##   UseMethod("summary", object)

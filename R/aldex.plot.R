@@ -6,7 +6,7 @@
 #' posterior estimates, standard errors and log abundance values
 #' averaged across Monte Carlo samples.
 #' The result is returned as a single plots of the desired type
-#' Note-calls the aldex `summary` function internally
+#' Note-calls the aldex `summary` and `cohensd` functions internally
 #' Note-the contrast must be supplied
 #' Note-the data for MA plots may not be available for very large datasets
 #' Note-if there are many tied values the waterfall function will show the first n features
@@ -40,10 +40,10 @@ aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
   	# throws an error if the needed slot is not populated
     # only needed for MA plot, so test is inside that if statement  
   	# if(!("logScale" %in% names(object))) stop("\nlogScale slot not found\ntry reducing nsample when running aldex()\nnsamples=32 is a reasonable minimum")
-  	
+
   	#contrast = names(object[[9]])
   	#contrast = names(object$data)
-  	
+ 	
   	nms0 <- as.character(object$data[,contrast])[as.numeric(which(object$X[2,] == 0)[1])]
   	nms1 <- as.character(object$data[,contrast])[as.numeric(which(object$X[2,] == 1)[1])]
   	
@@ -72,14 +72,15 @@ aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
             col = "grey", cex = 0.8)
       points(sum.output$estimate[sig], y.val[sig], pch=19, col=sig.col, ...)
     }else if(plot=="effect"){
-      plot(sum.output$std.error*sqrt(nsamples), sum.output$estimate,
+      cohens <- cohensd(object, contrast)
+      plot(cohens$pooled.SD, sum.output$estimate,
       	pch=19, col=rgb(0,0,0,0.3),xlab="std dev", ylab='estimate', ...)
       mtext(nms0, side=2, line = 2, at = min(sum.output$estimate),
             col = "grey", cex = 0.8)
       mtext(nms1, side=2, line = 2, at = max(sum.output$estimate),
             col = "grey", cex = 0.8)
     
-      points(sum.output$std.error[sig]*sqrt(nsamples), sum.output$estimate[sig],
+      points(cohens$pooled.SD[sig], sum.output$estimate[sig],
       	pch=19, col=sig.col, ... )
 	  abline(0,cohen, lty=2, col='grey') 
 	  abline(0,-cohen, lty=2, col='grey')
