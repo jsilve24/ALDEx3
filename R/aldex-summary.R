@@ -42,7 +42,7 @@ cohensd <- function(m, var) {
   n1 <- length(x1idx)
 
   if (!all(c("logComp", "logScale") %in% names(m))) {
-    stop("m must contain logComp and logScale samples")
+    stop("m must contain logComp and logScale samples\ntry reducing the nsample parameter")
   }
 
   logW <- sweep(m$logComp, c(2,3), m$logScale, FUN = `+`)  # D x N x S
