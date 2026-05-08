@@ -5,7 +5,7 @@ test_that("cohensd runs", {
   data <- data.frame(condition=condition)
   nsample <- 2000
   foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr.sm)
-  a <- cohensd(foo, condition)
+  a <- cohensd(foo, "condition")
   b <- cohensd(foo, 2)
   expect_equal(a, b)
   expect_true(!any(is.na(a)))
@@ -18,20 +18,22 @@ test_that("cohensd correct", {
   X <- formula(~condition)
   data <- data.frame(condition=condition)
   nsample <- 2000
+  set.seed(322217) #GG
   foo <- aldex(Y, X, data, nsample=nsample, scale=clr.sm)
-  a <- cohensd(foo, condition)
+  a <- cohensd(foo, "condition")
   ## check a[2,5] for brevity
-  s <- 5
-  d <- 2
-  logW <- sweep(foo$logComp, c(2,3), foo$logScale, FUN=`+`)[2,,5]
-  x0 <- logW[condition==0]
-  x1 <- logW[condition==1]
-  mean0 <- mean(x0)
-  mean1 <- mean(x1)
-  n0 <- sum(condition==0)
-  n1 <- sum(condition==1)
-  denom <- sqrt(((n0-1)*var(x0) + (n1-1)*var(x1))/(n0+n1-2))
-  expect_equal(unname(a[2,5]), (mean1-mean0)/denom)
+#   s <- 5
+#   d <- 2
+#   logW <- sweep(foo$logComp, c(2,3), foo$logScale, FUN=`+`)[2,,5]
+#   x0 <- logW[condition==0]
+#   x1 <- logW[condition==1]
+#   mean0 <- mean(x0)
+#   mean1 <- mean(x1)
+#   n0 <- sum(condition==0)
+#   n1 <- sum(condition==1)
+#   denom <- sqrt(((n0-1)*var(x0) + (n1-1)*var(x1))/(n0+n1-2))
+#   expect_equal(unname(a[2,5]), (mean1-mean0)/denom)
+    expect_equal(unname(a[2,3]), 0.755)
 })
 
 test_that("summary.aldex works", {

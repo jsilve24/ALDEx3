@@ -13,22 +13,22 @@
 ##'   covariate in the model is an indicator denoting health (0) and disease (1)
 ##'   then set `var=3`. In contrast, if X was a formula (in which case the
 ##'   `data` argument should have been specified) then `var` can be set to
-##'   the unquoted name of the binary condition variable (e.g.,
-##'   `var=condition`).
+##'   the quoted name of the binary condition variable (e.g.,
+##'   `var="condition"`).
 ##' @import matrixStats stats
-##' @return A (D x nsample)-matrix of Cohen's D statistics for the variable of
-##'   interest
-##' @author Justin Silverman
+##' @return a matrix with the expected values for the estimate, pooled standard
+##'   deviation, Cohen's d, and the overlap of Cohen's d with no effect
+##' @author Justin Silverman, Greg Gloor
 cohensd <- function(m, var) {
   # somehow the substitute function was changing a character to something else
-  # when the variable was passed from another function, but worked 
+  # when the variable was passed from another function, aargh 
   #expr <- substitute(var)
   if (is.numeric(var)) {
     # already numeric
   } else if (is.character(var)){
     #var <- deparse(expr)
     #var <- which(rownames(m$X) == var)
-    var <- grep(var, rownames(m$X))
+    var <- grep(var, rownames(m$X)) # returns the offset needed
   }
 
   diff.mean <- m$estimate[var,,]  # D x S

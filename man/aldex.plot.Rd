@@ -54,7 +54,7 @@ This method plots combinations of adjusted p-values from \code{object$p.val.adj}
 posterior estimates, standard errors and log abundance values
 averaged across Monte Carlo samples.
 The result is returned as a single plots of the desired type
-Note-calls the aldex \code{summary} function internally
+Note-calls the aldex \code{summary} and \code{cohensd} functions internally
 Note-the contrast must be supplied
 Note-the data for MA plots may not be available for very large datasets
 Note-if there are many tied values the waterfall function will show the first n features
