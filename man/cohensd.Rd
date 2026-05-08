@@ -16,12 +16,12 @@ two groups indicated by the binary covariate). For example, if the third
 covariate in the model is an indicator denoting health (0) and disease (1)
 then set \code{var=3}. In contrast, if X was a formula (in which case the
 \code{data} argument should have been specified) then \code{var} can be set to
-the unquoted name of the binary condition variable (e.g.,
-\code{var=condition}).}
+the quoted name of the binary condition variable (e.g.,
+\code{var="condition"}).}
 }
 \value{
-A (D x nsample)-matrix of Cohen's D statistics for the variable of
-interest
+a matrix with the expected values for the estimate, pooled standard
+deviation, Cohen's d, and the overlap of Cohen's d with no effect
 }
 \description{
 Function to compute cohensd on the results provided by the aldex function
@@ -31,5 +31,5 @@ WARNING: this function is experimental and requires users read the
 documetation fully.
 }
 \author{
-Justin Silverman
+Justin Silverman, Greg Gloor
 }
