@@ -53,11 +53,11 @@ Provides volcano, effect, MA and waterfall plots from an ALDEx3  object.
 This method plots combinations of adjusted p-values from \code{object$p.val.adj},
 posterior estimates, standard errors and log abundance values
 averaged across Monte Carlo samples.
-The result is returned as a single plots of the desired type
-Note-calls the aldex \code{summary} and \code{cohensd} functions internally
-Note-the contrast must be supplied
-Note-the data for MA plots may not be available for very large datasets
-Note-if there are many tied values the waterfall function will show the first n features
+The result is returned as a single plot of the desired type. Effect plots
+use the ALDEx2-inspired diagnostics returned by \code{aldex.effect}. The contrast
+must identify exactly one binary model coefficient. Effect diagnostics and
+MA plots require \code{logComp} and \code{logScale}, which are not returned when
+\code{aldex} streams large jobs.
 }
 \author{
 Greg Gloor

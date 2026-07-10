@@ -10,7 +10,7 @@ vignette: >
 
 
 
-``` r
+```{r setup, message=FALSE}
 library(ALDEx3)
 ```
 
@@ -286,7 +286,9 @@ The output is a data.frame which includes:
 
 ## Plotting pairwise analyses
 
-ALDEx3 has simple plotting functions available for pairwise plotting of outputs. Plots include:  a [volcano plot](https://doi.org/10.1186/gb-2003-4-4-210) that plots the log2 difference between groups vs. the -log(adjusted p-value); an [effect plot](https:://doi.org/10.1080/10618600.2015.1131161) taht plots the standard deviation of the estimate vs. the log2 difference between groups; or a [Bland-Altmann, or MA plot]((https://doi.org/10.2307/2987937)) that plots the log abundance of the parts vs the log2 difference between groups (estimate). Note that the Bland-Altmann plot may not work for very large datasets. If this occurs an error message will provide a potential solution. Note that the contrast name must be supplied.
+ALDEx3 has simple plotting functions available for pairwise plotting of outputs. Plots include: a [volcano plot](https://doi.org/10.1186/gb-2003-4-4-210) that plots the model estimate against the -log10 adjusted p-value; an effect plot that uses `aldex.effect()` to plot the pooled within-group standard deviation against the model estimate; a [Bland-Altman, or MA plot](https://doi.org/10.2307/2987937) that plots reconstructed log abundance (`logComp + logScale`) against the model estimate; and a waterfall plot that displays the largest significant positive and negative estimates. The contrast name must identify one binary model coefficient. The effect plot and MA plot require the Monte Carlo `logComp` and `logScale` arrays, so they are unavailable when `aldex()` streams large jobs and omits those arrays.
+
+The `aldex.effect()` helper reports ALDEx2-inspired effect diagnostics for ALDEx3 model contrasts. It returns the mean contrast estimate, mean pooled within-group standard deviation, mean Cohen's d, and `overlap`. The `overlap` statistic is a directional uncertainty diagnostic based on the signs of the Monte Carlo Cohen's d draws: values near 0 indicate consistent effect direction across Monte Carlo instances, while values near 0.5 indicate uncertainty about direction. It is not a p-value or a literal density-overlap area.
 
 It is possible to change the following aspects of the plots:
 
@@ -299,7 +301,7 @@ It is possible to change the following aspects of the plots:
   - waterfall colors: `water.col`, default is c("red", "blue")
   - waterfall names: `water.names`, logical default is TRUE
 
-```{r plots, echo=T, message=F, error=F, warning=F, fig.align='left', fig.dim=c(8,8), out.width="95%", fig.cap="Volcano, Effect, Bland-Altmann (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot; the horizontal line represents a posterior predicted FDR of 0.05. In the effect plot; the lines represent the boundary where the estimate is twice the standard deviation of the estimate (Cohen's d = 0.5). In the Bland-Altman or MA plot the lines represent at least a 0.5 fold log2 difference.  In these three plots features that are not significant are in grey or black. Features that are have a FDR less than the threshold of 0.05  are in red. The log-ratio abundance is arbitrary. The waterfall plot sorts the features first by adjusted p-value and then by estimate."}
+```{r plots, echo=T, message=F, error=F, warning=F, fig.align='left', fig.dim=c(8,8), out.width="95%", fig.cap="Volcano, effect, Bland-Altman (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot, the horizontal line marks an adjusted p-value of 0.05. In the effect plot, the grey lines mark the requested Cohen's d threshold. In the Bland-Altman or MA plot, the grey lines mark the requested minimum model-estimate difference. Significant features are drawn with the requested significant-feature color. The waterfall plot sorts displayed features by adjusted p-value and estimate."}
 
 par(mfrow=c(2,2))
 aldex.plot(aldex.gut.raw, contrast="Health.status", plot='vol', main="Volcano plot")
@@ -308,4 +310,3 @@ aldex.plot(aldex.gut.raw, contrast="Health.status", plot='MA', main="MA plot")
 aldex.plot(aldex.gut.raw, contrast="Health.status", plot="water", 
     water.col=c("orange", "purple"), main="Waterfall plot")
 ```
-
