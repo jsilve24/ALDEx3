@@ -28,7 +28,7 @@
 #' @importFrom grDevices rgb
 #' @importFrom graphics abline barplot mtext points text
 #' @export
-aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"), 
+aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water", "3d"), 
   contrast=NULL, threshold=0.05, min.diff=0.5, cohen=0.5, sig.col=rgb(1,0,0,0.5),
   water.show=5, water.col=c("red", "blue"), water.names=TRUE,  ... ){
     
@@ -138,6 +138,5 @@ aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
 	    text(c(rep(min.estimate,display.p), rep(0.5,display.n)), plot.offset[,1], 
 	      adj=0, sum.output[c(pos.e, neg.e), "entity"])
 	  }
-    }
-  
+    } 
 }
