@@ -11,25 +11,25 @@ cohensd(m, var)
 
 \item{var}{if aldex was called with X being a pre-computed model matrix,
 this var should be an integer corresponding to a binary covariate
-indicateing the desired effect size to calculate (an effect size between
+indicating the desired effect size to calculate (an effect size between
 two groups indicated by the binary covariate). For example, if the third
 covariate in the model is an indicator denoting health (0) and disease (1)
 then set \code{var=3}. In contrast, if X was a formula (in which case the
 \code{data} argument should have been specified) then \code{var} can be set to
-the quoted name of the binary condition variable (e.g.,
-\code{var="condition"}).}
+the unquoted or quoted name of the binary condition variable (e.g.,
+\code{var=condition} or \code{var="condition"}).}
 }
 \value{
-a matrix with the expected values for the estimate, pooled standard
-deviation, Cohen's d, and the overlap of Cohen's d with no effect
+A (D x nsample)-matrix of Cohen's d statistics for the variable of
+interest.
 }
 \description{
 Function to compute cohensd on the results provided by the aldex function
 }
 \details{
 WARNING: this function is experimental and requires users read the
-documetation fully.
+documentation fully.
 }
 \author{
-Justin Silverman, Greg Gloor
+Justin Silverman
 }
