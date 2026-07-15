@@ -1,0 +1,5 @@
+*.o
+*.so
+/.codex
+*.pdf
+*.html

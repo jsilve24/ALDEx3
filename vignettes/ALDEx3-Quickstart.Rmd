@@ -94,44 +94,14 @@ head(aldex.gut.summary)
 #> 6 Health.statusCD     Bacteroides  5.3739786  1.362744 0.003758113
 ```
 
-## Mixed Effects Models (SR-MEM)
+## Mixed Effects Models
 
-Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with either the lme4 or nlme interfaces. Note, while parallelization can make these model practical, they are still slower than the linear models (enhancements to come). 
-
-
-``` r
-set.seed(42)
-# Load Data
-data(oral_mouthwash_data)
-
-# 75% Sparsity Filter
-Y <- oral_mouthwash_data$counts
-keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
-other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
-Y <- Y[keep_names,]
-Y <- rbind(Y, other)
-X <- oral_mouthwash_data$metadata
-
-# Fixed Effects: Interaction between Treatment and Discrete Time Point
-# Random Effects: Random intercept for each study participant
-aldex.mouthwash.raw <- aldex(Y,
-                             ~treat*timec+(1|participant_id),
-                             X,
-                             n.cores=2,
-                             method="lme4",   # Required
-                             nsample=250,
-                             scale=clr.sm,    # CLR assumpsion 
-                             gamma=0)         # Gamma=0 no scale uncertainty
-aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
-head(aldex.mouthwash.summary)
-#>                                    parameter         entity   estimate std.error  p.val.adj
-#> 1                  treatantiseptic-mouthwash g__Haemophilus  2.3758996 0.8194347 0.34395960
-#> 2                 treatalcoholfree-mouthwash g__Haemophilus  3.2202728 0.8194347 0.01730350
-#> 3                                  treatsoda g__Haemophilus  1.6586761 0.8194347 0.91485045
-#> 4                           timec15min-later g__Haemophilus  0.8264883 0.6341158 0.99985081
-#> 5                            timec2hrs-later g__Haemophilus  2.3811563 0.6341158 0.03716786
-#> 6 treatantiseptic-mouthwash:timec15min-later g__Haemophilus -2.3012944 0.8967751 0.40475473
-```
+ALDEx3 supports mixed-effects models through the exact `lme4` and `nlme`
+engines and the approximate `blmm` engine. The quickstart no longer walks
+through those models inline. See the dedicated mixed-effects vignette
+`vignettes/ALDEx3-mixed-effects.Rmd` for the model setup, the `blmm`
+mathematical formulation, and a practical comparison between exact `lme4` and
+approximate `blmm` results on the `oral_mouthwash_data` dataset.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 

@@ -37,7 +37,13 @@ this should be the formula including random effects.}
 "lme4": linear mixed effects regression with lme4; "nlme": linear mixed
 effects models with nlme, REQUIRES "random" argument representing random
 effects be passed into \code{aldex} function, can also pass "correlation" as
-argument (see nlme documentation for how to use "correlation" argument).}
+argument (see nlme documentation for how to use "correlation" argument);
+or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
+one batched profiled mixed-model anchor fit per feature, draw-specific
+local covariance updates, and exact conditional fixed-effect solves.
+The approximation is only in the variance-component optimisation step.
+See the mixed-effects vignette for details, validation guidance, and the
+runtime comparison with exact \code{lme4}.}
 
 \item{nsample}{number of monte carlo replicates}
 
@@ -53,8 +59,10 @@ streaming will be performed. Note, to conserve memory, samples from the
 Dirichlet and scale models will not be returned if streaming is used.
 Streaming can be turned off by setting streamsize=Inf.}
 
-\item{n.cores}{(default detectCores()-1) If method is 'lme4', use this many
-cores for running mixed effects models in parallel.}
+\item{n.cores}{(default detectCores()-1) If method is 'lme4' or 'blmm',
+use this many cores for feature-level parallelism across taxa/features.
+For \code{method = "blmm"}, parallelism is across features, not across
+Monte Carlo draws within a feature.}
 
 \item{return.pars}{what results should be returned, see return section
 below.}
@@ -88,8 +96,11 @@ adjusted according to \code{p.adj.method} - logScale: (N x S) matrix, samples
 of the log scale from the scale model - logComp: (D x N x S) array,
 samples of the log composition from the multinomial-Dirichlet - streaming:
 boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
-using mixed effects models, return all Pr random effects. Note, logScale
-and logComp are not returned if streaming is active.
+using mixed effects models, return all Pr random-effects covariance terms
+and the residual variance. For \code{method = "blmm"}, correlated
+random-effect covariance terms are returned when present, matching the
+\code{lme4} naming convention as closely as possible. Note, logScale and
+logComp are not returned if streaming is active.
 }
 \description{
 ALDEx3 Linear Models

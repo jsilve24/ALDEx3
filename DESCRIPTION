@@ -1,6 +1,6 @@
 Package: ALDEx3
 Title: Linear Models for Sequence Count Data 
-Version: 1.0.3
+Version: 1.2.0
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
@@ -18,19 +18,26 @@ Suggests:
     knitr,
     rmarkdown
 Config/testthat/edition: 3
-Imports: 
+Imports:
     purrr,
     lme4,
     lmerTest,
+    reformulas,
     parallel,
     MASS,
     nlme,
     abind,
     matrixStats,
     methods,
-    stats
+    stats,
+    TMB
+LinkingTo:
+    TMB,
+    RcppEigen,
+    Matrix
 Depends: 
     R (>= 3.5)
 LazyData: true
 VignetteBuilder: knitr
 Config/roxygen2/version: 8.0.0
+SystemRequirements: C++17
