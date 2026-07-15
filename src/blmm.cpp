@@ -89,7 +89,8 @@ Type objective_function<Type>::operator()() {
   for (int j = 0; j < n_theta; ++j) {
     for (int r = 0; r < q; ++r) {
       for (int c = 0; c < n; ++c) {
-        LambdaZt(r, c) += theta(j) * basis(j, r, c);
+        const int basis_index = j + n_theta * (r + q * c);
+        LambdaZt(r, c) += theta(j) * basis(basis_index);
       }
     }
   }
