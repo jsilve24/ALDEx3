@@ -8,7 +8,7 @@ ALDEx3 is an R package for scalable generalized linear and mixed effects models 
 
 Key papers:
 - Nixon et al. (2025) Genome Biology — scale uncertainty framework
-- McGovern et al. (2025) bioRxiv — SR-MEM method
+- McGovern et al. (2025) Microbiome — SR-MEM method
 
 ## Common Commands
 

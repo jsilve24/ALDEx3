@@ -91,36 +91,15 @@ aldex.gut.summary <- summary(aldex.gut.raw)
 head(aldex.gut.summary)
 ```
 
-## Mixed Effects Models (SR-MEM)
+## Mixed Effects Models
 
-Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with either the lme4 or nlme interfaces. Note, while parallelization can make these model practical, they are still slower than the linear models (enhancements to come). 
-
-```{r}
-set.seed(42)
-# Load Data
-data(oral_mouthwash_data)
-
-# 75% Sparsity Filter
-Y <- oral_mouthwash_data$counts
-keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
-other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
-Y <- Y[keep_names,]
-Y <- rbind(Y, other)
-X <- oral_mouthwash_data$metadata
-
-# Fixed Effects: Interaction between Treatment and Discrete Time Point
-# Random Effects: Random intercept for each study participant
-aldex.mouthwash.raw <- aldex(Y,
-                             ~treat*timec+(1|participant_id),
-                             X,
-                             n.cores=2,
-                             method="lme4",   # Required
-                             nsample=250,
-                             scale=clr.sm,    # CLR assumpsion 
-                             gamma=0)         # Gamma=0 no scale uncertainty
-aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
-head(aldex.mouthwash.summary)
-```
+ALDEx3 implements the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x)
+(Scale Reliant Mixed Effects Models) through the exact `lme4` and `nlme`
+engines and the approximate `blmm` engine. The quickstart no longer walks
+through those models inline. See the dedicated mixed-effects vignette
+`vignettes/ALDEx3-mixed-effects.Rmd` for the model setup, the `blmm`
+mathematical formulation, and a practical comparison between exact `lme4` and
+approximate `blmm` results on the `oral_mouthwash_data` dataset.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
@@ -252,3 +231,30 @@ The output is a data.frame which includes:
 - estimate: The average regression coefficient across Monte Carlo draws
 - std.err: The average regression standard error across Monte Carlo draws
 - p.val.adj: The BH adjusted p-values combined from Monte Carlo draws using special procedure
+
+## Plotting pairwise analyses
+
+ALDEx3 has simple plotting functions available for pairwise plotting of outputs. Plots include: a [volcano plot](https://doi.org/10.1186/gb-2003-4-4-210) that plots the model estimate against the -log10 adjusted p-value; an effect plot that uses `aldex.effect()` to plot the pooled within-group standard deviation against the model estimate; a [Bland-Altman, or MA plot](https://doi.org/10.2307/2987937) that plots reconstructed log abundance (`logComp + logScale`) against the model estimate; and a waterfall plot that displays the largest significant positive and negative estimates. The contrast name must identify one binary model coefficient. The effect plot and MA plot require the Monte Carlo `logComp` and `logScale` arrays, so they are unavailable when `aldex()` streams large jobs and omits those arrays.
+
+The `aldex.effect()` helper reports ALDEx2-inspired effect diagnostics for ALDEx3 model contrasts. It returns the mean contrast estimate, mean pooled within-group standard deviation, mean Cohen's d, and `overlap`. The `overlap` statistic is a directional uncertainty diagnostic based on the signs of the Monte Carlo Cohen's d draws: values near 0 indicate consistent effect direction across Monte Carlo instances, while values near 0.5 indicate uncertainty about direction. It is not a p-value or a literal density-overlap area.
+
+It is possible to change the following aspects of the plots:
+
+  - plot type: `plot`: default is 'volcano
+  - minimum fold-change: `min.diff`, default is 0.5 for the MA plot, this is used as a cutoff by the waterfall plot
+  - Cohen's d: `cohen`, default is 0.5 for effect plot
+  - significant feature color: `sig.col`, default is rgb(1,0,0,0.5)
+  - minimum FDR: `threshold`, default is 0.05
+  - waterfall number of features: `water.show`, default is 5 per group
+  - waterfall colors: `water.col`, default is c("red", "blue")
+  - waterfall names: `water.names`, logical default is TRUE
+
+```{r plots, echo=T, message=F, error=F, warning=F, fig.align='left', fig.dim=c(8,8), out.width="95%", fig.cap="Volcano, effect, Bland-Altman (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot, the horizontal line marks an adjusted p-value of 0.05. In the effect plot, the grey lines mark the requested Cohen's d threshold. In the Bland-Altman or MA plot, the grey lines mark the requested minimum model-estimate difference. Significant features are drawn with the requested significant-feature color. The waterfall plot sorts displayed features by adjusted p-value and estimate."}
+
+par(mfrow=c(2,2))
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='vol', main="Volcano plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='eff', main="Effect plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot='MA', main="MA plot")
+aldex.plot(aldex.gut.raw, contrast="Health.status", plot="water", 
+    water.col=c("orange", "purple"), main="Waterfall plot")
+```

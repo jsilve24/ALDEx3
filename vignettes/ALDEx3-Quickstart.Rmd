@@ -10,7 +10,7 @@ vignette: >
 
 
 
-```{r setup, message=FALSE}
+``` r
 library(ALDEx3)
 ```
 
@@ -56,7 +56,7 @@ devtools::install_github("jsilve24/ALDEx3")
 *Note*: the following examples use the CLR scale model often with zero scale uncertainty `gamma=0`. This is generally a bad idea but is shown here just for backwards comparability with the defaults in ALDEx2. In general we strongly recommend carefully thinking about the choice of scale model (see https://link.springer.com/article/10.1186/s13059-025-03609-3 for a background on the subject). In the worst case scenario where the user is unwilling to carefully design a scale model, we recommend choosing `scale=tss.sm` and `gamma=0.5`as a default. 
 
 
-```{r,eval=T}
+``` r
 set.seed(42)
 # Load Crohn's Disease vs. Control Data
 data(gut_crohns_data)
@@ -96,7 +96,8 @@ head(aldex.gut.summary)
 
 ## Mixed Effects Models
 
-ALDEx3 supports mixed-effects models through the exact `lme4` and `nlme`
+ALDEx3 implements the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x)
+(Scale Reliant Mixed Effects Models) through the exact `lme4` and `nlme`
 engines and the approximate `blmm` engine. The quickstart no longer walks
 through those models inline. See the dedicated mixed-effects vignette
 `vignettes/ALDEx3-mixed-effects.Rmd` for the model setup, the `blmm`
@@ -139,12 +140,16 @@ aldex.gut.abs.raw <- aldex(Y,
                        scale=coefficient.sm,   # coef scale model
                        c.mu=c(0, -2),   # c(intercept, CD)
                        c.cor=rbind(c(0, 0), c(0, 0.5**2)))
-#> Error: object 'coefficient.sm' not found
 
 aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
-#> Error: object 'aldex.gut.abs.raw' not found
 head(aldex.gut.abs.summary)
-#> Error: object 'aldex.gut.abs.summary' not found
+#>         parameter          entity   estimate std.error    p.val.adj
+#> 1 Health.statusCD    Agathobacter -2.3196415  1.585377 2.110150e-01
+#> 2 Health.statusCD     Akkermansia -6.7132973  1.137395 5.479350e-06
+#> 3 Health.statusCD       Alistipes -6.6170540  1.243634 1.377402e-05
+#> 4 Health.statusCD Anaerobutyricum -3.7526945  1.311741 1.652680e-02
+#> 5 Health.statusCD    Anaerostipes -6.7846958  1.098533 1.643941e-06
+#> 6 Health.statusCD     Bacteroides -0.3883664  1.412088 7.682775e-01
 ```
 
 ### External Scale Measurements (Ideal)
@@ -271,7 +276,8 @@ It is possible to change the following aspects of the plots:
   - waterfall colors: `water.col`, default is c("red", "blue")
   - waterfall names: `water.names`, logical default is TRUE
 
-```{r plots, echo=T, message=F, error=F, warning=F, fig.align='left', fig.dim=c(8,8), out.width="95%", fig.cap="Volcano, effect, Bland-Altman (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot, the horizontal line marks an adjusted p-value of 0.05. In the effect plot, the grey lines mark the requested Cohen's d threshold. In the Bland-Altman or MA plot, the grey lines mark the requested minimum model-estimate difference. Significant features are drawn with the requested significant-feature color. The waterfall plot sorts displayed features by adjusted p-value and estimate."}
+
+``` r
 
 par(mfrow=c(2,2))
 aldex.plot(aldex.gut.raw, contrast="Health.status", plot='vol', main="Volcano plot")
@@ -280,3 +286,8 @@ aldex.plot(aldex.gut.raw, contrast="Health.status", plot='MA', main="MA plot")
 aldex.plot(aldex.gut.raw, contrast="Health.status", plot="water", 
     water.col=c("orange", "purple"), main="Waterfall plot")
 ```
+
+<div class="figure" style="text-align: left">
+<img src="figure/plots-1.png" alt="Volcano, effect, Bland-Altman (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot, the horizontal line marks an adjusted p-value of 0.05. In the effect plot, the grey lines mark the requested Cohen's d threshold. In the Bland-Altman or MA plot, the grey lines mark the requested minimum model-estimate difference. Significant features are drawn with the requested significant-feature color. The waterfall plot sorts displayed features by adjusted p-value and estimate." width="95%" />
+<p class="caption">Volcano, effect, Bland-Altman (MA) and waterfall plots of ALDEx3 output for the first example dataset. In the volcano plot, the horizontal line marks an adjusted p-value of 0.05. In the effect plot, the grey lines mark the requested Cohen's d threshold. In the Bland-Altman or MA plot, the grey lines mark the requested minimum model-estimate difference. Significant features are drawn with the requested significant-feature color. The waterfall plot sorts displayed features by adjusted p-value and estimate.</p>
+</div>

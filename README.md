@@ -71,9 +71,11 @@ aldex.gut.summary <- summary(aldex.gut.raw)
 head(aldex.gut.summary)
 ```
 
-## Mixed Effects Models (SR-MEM)
+## Mixed-Effects Models: BLMM, `lme4`, and `nlme`
 
-Here is an example data analysis using the published [SR-MEM method](https://www.biorxiv.org/content/10.1101/2025.08.05.668734v1) (Scale Reliant Mixed Effects Models). Mixed effects modeling can be performed in ALDEx3 with the exact `lme4` and `nlme` interfaces and the approximate `blmm` engine. BLMM parallelizes across features via `n.cores`, and the dedicated mixed-effects vignette covers the model setup, validation, and runtime tradeoffs in more detail.
+ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models) through three engines. The new `method = "blmm"` engine is an ALDEx3-specific approximation that avoids repeated exact variance-component optimization across Monte Carlo draws. It parallelizes across features with `n.cores` and falls back to exact `lme4` fits when the approximation cannot be evaluated cleanly. The exact `lme4` and `nlme` engines remain available for reference analyses.
+
+See the **[ALDEx3 Mixed-Effects Engines vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for model setup, the BLMM formulation, validation guidance, and a runtime and accuracy comparison with exact `lme4` fits.
 
 ``` r
 library(ALDEx3)
@@ -94,13 +96,16 @@ X <- oral_mouthwash_data$metadata
 aldex.mouthwash.raw <- aldex(Y,
                              ~treat*timec+(1|participant_id),
                              X,
-                             method="lme4",   # Required
+                             method="blmm",   # Fast approximate engine
+                             n.cores=4,        # Parallelize across features
                              nsample=250,
-                             scale=clr.sm,    # CLR assumpsion 
+                             scale=clr.sm,    # CLR assumption
                              gamma=0)         # Gamma=0 no scale uncertainty
 aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
 head(aldex.mouthwash.summary)
 ```
+
+To run the same model with exact variance-component optimization, replace `method = "blmm"` with `method = "lme4"`.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
