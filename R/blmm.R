@@ -16,8 +16,8 @@
 #' @details
 #' lme4 constrains variance-component parameters theta >= 0 (lower > -Inf).
 #' To allow unconstrained optimisation those entries are log-transformed:
-#'   phi[j] = log(theta[j])  for constrained parameters
-#'   phi[j] = theta[j]       for unconstrained parameters (e.g. correlations)
+#'   \code{phi[j] = log(theta[j])}  for constrained parameters
+#'   \code{phi[j] = theta[j]}       for unconstrained parameters (e.g. correlations)
 #' phi is the optimisation variable throughout BLMM; theta is only used when
 #' building LambdaZt or reporting random-effect variances.
 #'
@@ -58,12 +58,12 @@ theta_to_phi_blmm <- function(theta, lower) {
 #' LambdaZt = Lambda(theta) \%*\% Zt is linear in theta because
 #' \code{Lambdat@x = theta[Lind]}. We precompute one basis slice per theta_j
 #' by evaluating Lambda(e_j) \%*\% Zt, where e_j is the j-th unit vector.
-#' Then at any theta: LambdaZt = sum_j theta_j * basis[j,,].
+#' Then at any theta: LambdaZt = sum_j theta_j * \code{basis[j,,]}.
 #' This factorisation lets the TMB kernel reconstruct LambdaZt cheaply without
 #' re-parsing the lme4 formula structures in C++.
 #'
 #' @param reTrms random-effects terms list from \code{lme4::lFormula()}
-#' @return array of dimension \code{(n_theta, q, n)}: basis[j,,] is the
+#' @return array of dimension \code{(n_theta, q, n)}: \code{basis[j,,]} is the
 #'   contribution of theta_j to LambdaZt
 #' @noRd
 compute_basis_blmm <- function(reTrms) {
@@ -481,7 +481,7 @@ blmm_fixed_effects_draw <- function(pieces, X, y) {
 #' Recompute Cholesky pieces for a per-draw GLS solve.
 #'
 #' @details
-#' Once per-draw covariance parameters phi_tilde[, s] are available, we need
+#' Once per-draw covariance parameters \code{phi_tilde[, s]} are available, we need
 #' L, RZX, LX, and LambdaZt to run the exact conditional solve. These depend
 #' only on phi, X, and the basis tensors — not on Y — so we recompute them
 #' directly in R rather than re-evaluating the full batched TMB objective,
@@ -578,7 +578,7 @@ blmm_exact_feature <- function(Y_d, formula, data) {
 #' profiled REML objective to get the shared anchor and its Hessian;
 #' (2) compute per-draw score corrections via centred finite differences and
 #' apply a Newton step to get draw-specific covariance parameters phi_tilde;
-#' (3) for each draw, recompute the Cholesky pieces from phi_tilde[, s] and
+#' (3) for each draw, recompute the Cholesky pieces from \code{phi_tilde[, s]} and
 #' run an exact GLS solve for fixed effects.
 #'
 #' On any numerical failure the entire feature falls back silently to exact

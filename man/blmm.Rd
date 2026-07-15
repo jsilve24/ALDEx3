@@ -2,7 +2,7 @@
 % Please edit documentation in R/blmm.R
 \name{blmm}
 \alias{blmm}
-\title{Fast Approximate Mixed-Effects Engine (BLMM)}
+\title{Fast approximate mixed-effects engine for ALDEx3.}
 \usage{
 blmm(logW, formula, data, n.cores = 1L)
 }
@@ -14,29 +14,28 @@ blmm(logW, formula, data, n.cores = 1L)
 \item{data}{data.frame for formula evaluation}
 
 \item{n.cores}{number of worker processes for feature-level parallelism.
-If \code{n.cores > 1}, BLMM distributes features across workers. The
-per-feature draw calculations remain serial.}
+If \code{n.cores > 1}, features are distributed across workers; the
+per-feature draw loop remains serial.}
 }
 \value{
-The same list layout as \code{sr.mem}: named arrays (P x D x S) for
-estimate, std.error, df, p.lower, p.upper, and (Pr x D x S) for
-random.eff.
+named list of arrays (P x D x S): estimate, std.error, df,
+p.lower, p.upper, and (Pr x D x S) random.eff — same layout as
+\code{sr.mem}.
 }
 \description{
-Internal engine called by \code{\link{aldex}} when \code{method = "blmm"}.
+Fast approximate mixed-effects engine for ALDEx3.
 }
 \details{
-The implementation uses an \code{lme4}-style profiled Gaussian LMM
-formulation for efficiency and compatibility with \code{lFormula()}.
-Conceptually, ALDEx3 fits one batched anchor REML problem per feature,
-takes draw-specific local covariance updates around that anchor, then
-performs exact conditional GLS fixed-effect solves for each draw.
+Internal engine called by \code{\link{aldex}} when \code{method = "blmm"}.
 
-\strong{The approximation is ONLY in the variance-component step.}
-Fixed-effect estimates and standard errors remain exact conditional on the
-updated covariance parameters.
+Uses an \code{lme4}-style profiled Gaussian LMM formulation. One batched
+anchor REML problem is fit per feature across all S MC draws; draw-specific
+local covariance updates are obtained via a single Newton step; exact
+conditional GLS fixed-effect solves are then run per draw. The approximation
+is only in the variance-component step — fixed effects and standard errors
+are exact conditional on the updated covariance parameters.
 
-If the approximate path cannot be evaluated cleanly for a feature, BLMM
-warns explicitly and falls back to the exact \code{lme4} engine for that
-feature rather than silently changing the model.
+Features for which the approximate path fails are silently re-fit with the
+exact \code{lme4} engine and a consolidated warning is issued naming the
+affected features and their error messages.
 }
