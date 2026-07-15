@@ -1,5 +1,8 @@
 ^LICENSE\.md$
 ^CLAUDE\.md$
+^\.agent-shell$
+^\.claude$
+^Rplots\.pdf$
 rebuilt-long-vignettes.R
 vignettes/ALDEx3-Quickstart.Rmd.orig
 maintainer-instructions.txt

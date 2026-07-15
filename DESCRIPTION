@@ -1,6 +1,6 @@
 Package: ALDEx3
 Title: Linear Models for Sequence Count Data 
-Version: 1.1.0
+Version: 1.2.0
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
@@ -10,7 +10,6 @@ Description: Provides scalable generalized linear and mixed effects models tailo
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Suggests: 
     rBeta2009,
     testthat (>= 3.0.0),
@@ -31,8 +30,7 @@ Imports:
     matrixStats,
     methods,
     stats,
-    TMB,
-    Matrix
+    TMB
 LinkingTo:
     TMB,
     RcppEigen,
@@ -41,4 +39,5 @@ Depends:
     R (>= 3.5)
 LazyData: true
 VignetteBuilder: knitr
-SystemRequirements: C++14
+Config/roxygen2/version: 8.0.0
+SystemRequirements: C++17
