@@ -1,42 +1,188 @@
 ## scale models
 
+.validate_scale_mean <- function(x, n, name) {
+  if (is.null(x)) {
+    stop(name, " cannot be NULL")
+  }
+  if (!is.numeric(x) || length(x) != n) {
+    stop(name, " should be a numeric vector of length ", n)
+  }
+  if (!all(is.finite(x))) {
+    stop(name, " should contain only finite values")
+  }
+  x
+}
+
+.validate_scale_sd <- function(x, n, name) {
+  if (!is.numeric(x) || length(x) != n) {
+    stop(name, " should be a numeric vector of length ", n)
+  }
+  if (!all(is.finite(x))) {
+    stop(name, " should contain only finite values")
+  }
+  if (any(x < 0)) {
+    stop(name, " should contain only non-negative values")
+  }
+  x
+}
+
+.validate_scale_variance <- function(x, n, name) {
+  if (!is.numeric(x) || length(x) != n) {
+    stop(name, " should be a numeric vector of length ", n)
+  }
+  if (!all(is.finite(x))) {
+    stop(name, " should contain only finite values")
+  }
+  if (any(x < 0)) {
+    stop(name, " should contain only non-negative values")
+  }
+  x
+}
+
+.validate_scale_covariance <- function(x, n, name) {
+  if (!is.matrix(x) || !is.numeric(x) || !identical(dim(x), c(n, n))) {
+    stop(name, " should be a numeric ", n, "x", n, " covariance matrix")
+  }
+  if (!all(is.finite(x))) {
+    stop(name, " should contain only finite values")
+  }
+
+  magnitude <- max(1, max(abs(x)))
+  if (max(abs(x - t(x))) > sqrt(.Machine$double.eps) * magnitude) {
+    stop(name, " should be symmetric")
+  }
+  x <- (x + t(x)) / 2
+  values <- eigen(x, symmetric=TRUE, only.values=TRUE)$values
+  if (min(values) < -1e-8 * max(1, max(abs(values)))) {
+    stop(name, " should be positive semidefinite")
+  }
+  x
+}
+
+.draw_scale_mvn <- function(nsample, mu, covariance) {
+  draws <- MASS::mvrnorm(nsample, mu, covariance)
+  t(matrix(draws, nrow=nsample, ncol=length(mu)))
+}
+
+.resolve_scale_uncertainty <- function(sd, covariance,
+                                       legacy.variance=NULL,
+                                       legacy.covariance=NULL,
+                                       n, sd.name, covariance.name,
+                                       legacy.variance.name=NULL,
+                                       legacy.covariance.name=NULL,
+                                       warn=TRUE) {
+  supplied <- c(!is.null(sd), !is.null(covariance),
+                !is.null(legacy.variance), !is.null(legacy.covariance))
+  if (sum(supplied) != 1) {
+    stop("Exactly one of ", sd.name, ", ", covariance.name,
+         if (!is.null(legacy.variance.name)) {
+           paste0(", ", legacy.variance.name)
+         } else "",
+         if (!is.null(legacy.covariance.name)) {
+           paste0(", or ", legacy.covariance.name)
+         } else "",
+         " should be provided")
+  }
+
+  if (!is.null(legacy.variance)) {
+    legacy.variance <- .validate_scale_variance(
+      legacy.variance, n, legacy.variance.name
+    )
+    if (warn) {
+      warning(legacy.variance.name, " is deprecated; use ", sd.name,
+              " = sqrt(", legacy.variance.name, ") instead",
+              call.=FALSE)
+    }
+    sd <- sqrt(legacy.variance)
+  } else if (!is.null(legacy.covariance)) {
+    legacy.covariance <- .validate_scale_covariance(
+      legacy.covariance, n, legacy.covariance.name
+    )
+    if (warn) {
+      warning(legacy.covariance.name, " is deprecated; use ",
+              covariance.name, " instead", call.=FALSE)
+    }
+    covariance <- legacy.covariance
+  }
+
+  if (!is.null(sd)) {
+    sd <- .validate_scale_sd(sd, n, sd.name)
+  } else {
+    covariance <- .validate_scale_covariance(
+      covariance, n, covariance.name
+    )
+  }
+  list(sd=sd, covariance=covariance)
+}
+
+.upgrade_deprecated_scale_args <- function(scale, args) {
+  if (identical(scale, sample.sm)) {
+    supplied <- c(!is.null(args$s.sd), !is.null(args$s.cov),
+                  !is.null(args$s.var), !is.null(args$s.cor))
+    if (sum(supplied) > 1) {
+      stop("Exactly one of s.sd, s.cov, s.var, or s.cor should be provided")
+    }
+    if (!is.null(args$s.var)) {
+      args$s.var <- .validate_scale_variance(
+        args$s.var, length(args$s.var), "s.var"
+      )
+      warning("s.var is deprecated; use s.sd = sqrt(s.var) instead",
+              call.=FALSE)
+      args$s.sd <- sqrt(args$s.var)
+      args$s.var <- NULL
+    } else if (!is.null(args$s.cor)) {
+      warning("s.cor is deprecated; use s.cov instead", call.=FALSE)
+      args$s.cov <- args$s.cor
+      args$s.cor <- NULL
+    }
+  } else if (identical(scale, coefficient.sm)) {
+    supplied <- c(!is.null(args$c.sd), !is.null(args$c.cov),
+                  !is.null(args$c.cor))
+    if (sum(supplied) > 1) {
+      stop("Exactly one of c.sd, c.cov, or c.cor should be provided")
+    }
+    if (!is.null(args$c.cor)) {
+      warning("c.cor is deprecated; use c.cov instead", call.=FALSE)
+      args$c.cov <- args$c.cor
+      args$c.cor <- NULL
+    }
+  }
+  args
+}
+
 center.sm <- function(logComp) {
   g <- apply(logComp, c(2,3), FUN=`mean`)
   return(sweep(logComp, c(2,3), g, FUN=`-`))
  }
 
-##' Default CLR-based scale model (with optional scale uncertainty)
+##' CLR-based scale model
 ##'
-##' Implements the default scale model described in Nixon et al. (Beyond
-##' Normalizations / scale-uncertainty framework). This model generalizes the
-##' centered log-ratio (CLR) normalization by treating the (log) scale as a
-##' latent random variable and allowing additive uncertainty around the
-##' CLR-implied scale differences via a Gaussian term with standard deviation
-##' \code{gamma}.
+##' Use this model when centered log-ratio (CLR) normalization is a reasonable
+##' starting point, but you do not want to assume that it recovers the sample
+##' scales exactly. For example, in a case-control study, CLR may provide a
+##' plausible center while \code{gamma} allows the true difference in total
+##' abundance between cases and controls to depart from that center.
 ##'
-##' In the limit \code{gamma = 0}, this reduces to the CLR assumption (no scale
-##' uncertainty beyond the CLR-implied scale). Larger \code{gamma} values
-##' represent increasing uncertainty about the CLR-implied scale differences.
+##' Set \code{gamma = 0} to use the CLR-implied scales without additional
+##' uncertainty. A value such as \code{gamma = 0.5} allows each scale-model
+##' coefficient to vary with SD 0.5 on the log2 scale. Larger values express
+##' less confidence in the CLR assumption.
 ##'
-##' @param X A numeric design matrix used to model scale variation across
-##'   samples. This is the covariate/design matrix passed internally by
-##'   \code{aldex()} to the scale model. Rows correspond to regression
-##'   coefficients (e.g., intercept and covariates after contrasts/encoding) and
-##'   columns correspond to samples. If the analysis includes only an intercept
-##'   (no covariates), \code{X} is typically a 1 x N matrix of ones. (This
-##'   parameter is automatically passed by aldex)
+##' The uncertainty applies to model coefficients, not independently to every
+##' sample. Samples with the same covariate values therefore receive the same
+##' random shift in a Monte Carlo draw. This differs from \code{\link{sample.sm}},
+##' which can draw a separate scale for each sample.
 ##'
-##' @param logComp A numeric array of Monte Carlo log-compositions with
-##'   dimensions \code{features x samples x nsample}. This is produced
-##'   internally by ALDEx3 from Dirichlet-multinomial Monte Carlo sampling and
-##'   log-ratio representation. ##'   (This parameter is automatically passed by aldex)
+##' @param X Model matrix passed automatically by \code{aldex()}. Rows are model
+##'   coefficients and columns are samples.
 ##'
-##' @param gamma Non-negative scalar. Standard deviation of the Gaussian
-##'   perturbation that relaxes the CLR assumption about scale. \code{gamma = 0}
-##'   yields the pure CLR assumption; recommended default values in the
-##'   scale-uncertainty literature are often around \code{0.5}, but appropriate
-##'   values depend on how strongly you trust the CLR scale assumption in the
-##'   current study.
+##' @param logComp Monte Carlo log-compositions passed automatically by
+##'   \code{aldex()}, with dimensions \code{features x samples x nsample}.
+##'
+##' @param gamma Non-negative scalar. Standard deviation of the Gaussian random
+##'   shift that relaxes the CLR assumption about scale. \code{gamma = 0}
+##'   yields the fixed CLR assumption. Larger values express less confidence in
+##'   the CLR-implied differences between sample scales.
 ##'
 ##' @return A numeric matrix of dimension \code{N x nsample} giving Monte Carlo samples
 ##'   of the log-scale for each sample (rows) and each Monte Carlo draw (columns).
@@ -46,10 +192,18 @@ center.sm <- function(logComp) {
 ##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
 ##' 
 ##' @author Justin Silverman
+##' @examples
+##' # Allow moderate uncertainty around CLR-implied scale differences.
+##' Y <- matrix(seq_len(60), nrow = 10)
+##' condition <- factor(c("control", "control", "control",
+##'                       "case", "case", "case"))
+##' fit <- aldex(Y, ~ condition, data.frame(condition), nsample = 20,
+##'              scale = clr.sm, gamma = 0.5)
 ##' @export
 clr.sm <- function(X, logComp, gamma=0.5) {
   P <- nrow(X)
   nsample <- dim(logComp)[3]
+  gamma <- .validate_scale_sd(gamma, 1, "gamma")
   logScale <- -colMeans(logComp, dims=1)
 
   tmp <- P*nsample
@@ -58,42 +212,53 @@ clr.sm <- function(X, logComp, gamma=0.5) {
   return(logScale)
 }
 
-##' Sample-specific scale model with user-specified mean and variance/covariance
+##' Per-sample scale model using external information
 ##'
-##' Draws Monte Carlo samples of the log2 scale for each sample using user-supplied
-##' moments. This scale model is useful when external measurements (e.g., qPCR,
-##' flow cytometry, spike-ins) provide information about absolute scale, or when
-##' you want to encode prior information about scale on a per-sample basis.
+##' Use this model when each sample has its own external scale measurement, such
+##' as a flow-cytometry cell count, qPCR concentration, or spike-in estimate.
+##' Put the log2 measurement for each sample in \code{s.mu}. Use \code{s.sd} to
+##' describe the measurement uncertainty for each sample.
 ##'
-##' Exactly one of \code{s.var} or \code{s.cor} must be provided:
-##' \itemize{
-##'   \item \code{s.var}: independent per-sample log2-scale variance (diagonal covariance)
-##'   \item \code{s.cor}: full \code{N x N} log2-scale covariance matrix
-##' }
+##' For example, if four samples have estimated total cell counts of
+##' \code{1e8}, \code{2e8}, \code{8e7}, and \code{1.5e8}, set
+##' \code{s.mu = log2(c(1e8, 2e8, 8e7, 1.5e8))}. If each measurement has an SD
+##' of 0.5 on the log2 scale, set \code{s.sd = rep(0.5, 4)}.
 ##'
-##' The returned matrix has \code{N} rows (samples) and \code{nsample} columns
-##' (Monte Carlo draws), consistent with the ALDEx3 scale-model interface.
+##' Use \code{s.sd} when measurement errors are independent. Use \code{s.cov}
+##' instead when errors are correlated, for
+##' example because several samples share a calibration standard. The diagonal
+##' of \code{s.cov} contains variances, and its off-diagonal entries contain
+##' covariances. Thus independent SDs of 0.5 can also be written as
+##' \code{s.cov = diag(0.5^2, 4)}.
 ##'
-##' @param X A numeric design matrix passed internally by \code{aldex()} to the
-##'   scale model. Columns correspond to samples (\code{N = ncol(X)}). This scale
-##'   model does not use \code{X} directly, but \code{N} is inferred from it.
-##'   (Automatically supplied by \code{aldex()}.)
+##' Supply exactly one of \code{s.sd} or \code{s.cov}. With \code{s.sd}, each
+##' sample receives its own independent scale draw. Samples in the same group
+##' do not automatically share uncertainty as they do in coefficient-based
+##' models.
 ##'
-##' @param logComp A numeric array of Monte Carlo log-compositions with dimensions
-##'   \code{features x samples x nsample}. This scale model uses \code{nsample}
-##'   to determine the number of Monte Carlo draws, but does not otherwise use
-##'   \code{logComp}. (Automatically supplied by \code{aldex()}.)
+##' @param X Model matrix passed automatically by \code{aldex()}. This function
+##'   uses its number of columns to determine the number of samples.
 ##'
-##' @param s.mu Numeric vector of length \code{N} giving the mean of the log2
-##'   scale for each sample. Must not be \code{NULL}.
+##' @param logComp Monte Carlo log-compositions passed automatically by
+##'   \code{aldex()}. This function uses the third dimension to determine the
+##'   number of draws.
 ##'
-##' @param s.var Numeric vector of length \code{N} giving the marginal variance of
-##'   the log2 scale for each sample. Use this when assuming samples' log2 scales
-##'   are independent. Must be \code{NULL} if \code{s.cor} is provided.
+##' @param s.mu Expected log2 scale for each sample, in the same order as the
+##'   columns of the count matrix. Must have length \code{N}.
 ##'
-##' @param s.cor Numeric \code{N x N} covariance matrix for the log2 scale across
-##'   samples. Use this when encoding correlations between samples' log2 scales.
-##'   Must be \code{NULL} if \code{s.var} is provided.
+##' @param s.var Deprecated numeric vector of per-sample log2-scale variances.
+##'   Use \code{s.sd = sqrt(s.var)} instead. Retained until ALDEx3 2.0.0 for
+##'   backward compatibility.
+##'
+##' @param s.cor Deprecated \code{N x N} covariance matrix. Despite its name,
+##'   this argument has always represented covariance rather than correlation.
+##'   Use \code{s.cov} instead. Retained until ALDEx3 2.0.0.
+##'
+##' @param s.sd SD of the log2 scale for each sample. Must have length \code{N}.
+##'   Use this when measurement errors are independent across samples.
+##'
+##' @param s.cov An \code{N x N} covariance matrix for the samples' log2 scales.
+##'   Use this instead of \code{s.sd} when measurement errors are correlated.
 ##'
 ##' @return A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
 ##'   draws of the log2 scale for each sample (rows) across \code{nsample} draws
@@ -101,69 +266,88 @@ clr.sm <- function(X, logComp, gamma=0.5) {
 ##'
 ##' @importFrom MASS mvrnorm
 ##' @author Kyle McGovern
+##' @examples
+##' # External total-cell estimates for four samples.
+##' cell_count <- c(1e8, 2e8, 8e7, 1.5e8)
+##' X <- matrix(1, 1, 4)
+##' logComp <- array(0, c(2, 4, 10))
+##' logScale <- sample.sm(
+##'   X, logComp, s.mu = log2(cell_count), s.sd = rep(0.5, 4)
+##' )
 ##' @export
-sample.sm <- function(X, logComp, s.mu=NULL, s.var=NULL, s.cor=NULL) {
+sample.sm <- function(X, logComp, s.mu=NULL, s.var=NULL, s.cor=NULL,
+                      s.sd=NULL, s.cov=NULL) {
   N <- ncol(X)
-  P <- nrow(X)
   nsample <- dim(logComp)[3]
-  if(is.null(s.mu)) {
-    stop("s.mu cannot be NULL")
-  }
-  if(length(s.mu)!=N) {
-    stop("s.mu should have same length as ncol(X)")
-  }
+  s.mu <- .validate_scale_mean(s.mu, N, "s.mu")
+  uncertainty <- .resolve_scale_uncertainty(
+    sd=s.sd, covariance=s.cov,
+    legacy.variance=s.var, legacy.covariance=s.cor,
+    n=N, sd.name="s.sd", covariance.name="s.cov",
+    legacy.variance.name="s.var", legacy.covariance.name="s.cor"
+  )
 
-  if((!is.null(s.var))&is.null(s.cor)) {
-    if(length(s.var)!=N) {
-      stop("s.var should have same length as ncol(X)")
-    }
-    logScale <- replicate(nsample, rnorm(N, s.mu, sqrt(s.var)))
-  } else if((!is.null(s.cor))&is.null(s.var)) {
-    if(any(dim(s.cor) != c(N, N))) {
-      stop("s.cor should be an NxN matrix where N=ncol(X)")
-    }
-    logScale <- t(mvrnorm(nsample, s.mu, s.cor))
+  if (!is.null(uncertainty$sd)) {
+    logScale <- matrix(
+      rnorm(N * nsample, rep(s.mu, nsample),
+            rep(uncertainty$sd, nsample)),
+      N, nsample
+    )
   } else {
-    stop("One of s.var and s.cor should be NULL")
+    logScale <- .draw_scale_mvn(nsample, s.mu, uncertainty$covariance)
   }
 
   return(logScale)
 }
 
 
-##' Coefficient-based scale model with user-specified prior on fixed effects
+##' Scale model using prior information about groups or treatments
 ##'
-##' Draws Monte Carlo samples of the log2 scale by sampling fixed-effect
-##' coefficients from a multivariate normal distribution and mapping them
-##' through the design matrix \code{X}. This scale model is useful when you
-##' want to encode prior information about how covariates (e.g., treatment,
-##' batch, time) affect scale, rather than specifying scale moments directly
-##' per sample.
+##' Use this model when prior information describes a treatment, group, time, or
+##' other model coefficient rather than an individual sample. Samples with the
+##' same covariate values share the same scale shift in each Monte Carlo draw.
 ##'
-##' Specifically, for each Monte Carlo draw \eqn{b^{(m)} \sim N(c.mu, c.cor)},
-##' the per-sample log2 scale is computed as \eqn{b^{(m)T} X}, producing an
-##' \code{N x nsample} matrix of log2-scale draws.
+##' Suppose an effect plot from a control-versus-treatment experiment is
+##' centered near -8, even though prior knowledge suggests that most features
+##' should not change. One way to represent that knowledge is to shift the
+##' treatment samples upward by 8 log2 units relative to the controls. With
+##' control as the reference level, use \code{c.mu = c(0, 8)}: the first value
+##' leaves the common intercept unchanged, and the second adds 8 to treatment.
+##' Setting \code{c.sd = c(0, 0.5)} expresses an SD of 0.5 around that treatment
+##' shift. If the plot were centered near +8, use -8 instead. Adding 8 to both
+##' groups would not recenter the plot because it would leave their difference
+##' unchanged.
 ##'
-##' For example, with an intercept and a treatment indicator where treatment is
-##' expected to increase log2 scale by ~1 on average, one might use
-##' \code{c.mu = c(0, 1)} and \code{c.cor = diag(c(0.25, 0.25))} (i.e., SD 0.5
-##' for each coefficient, independent).
+##' More generally, \code{c.mu} gives the expected log2 scale change for each
+##' model coefficient and \code{c.sd} gives its SD. Use \code{c.cov} when the
+##' coefficient uncertainties are correlated. For each Monte Carlo draw,
+##' ALDEx3 samples a coefficient vector and applies it to the model matrix
+##' \code{X}; mathematically, \eqn{b^{(m)} \sim N(c.mu, Sigma)} and the sample
+##' scales are \eqn{b^{(m)T} X}.
 ##'
-##' @param X A numeric design matrix passed internally by \code{aldex()} to the
-##'   scale model. Rows correspond to fixed-effect coefficients/covariates
-##'   (\code{P = nrow(X)}) and columns correspond to samples
-##'   (\code{N = ncol(X)}). (Automatically supplied by \code{aldex()}.)
+##' Exactly one of \code{c.sd} or \code{c.cov} must be provided. The deprecated
+##' \code{c.cor} argument may be used in place of \code{c.cov} during the
+##' compatibility period.
 ##'
-##' @param logComp A numeric array of Monte Carlo log-compositions with
-##'   dimensions \code{features x samples x nsample}. This scale model uses
-##'   \code{nsample} (the number of Monte Carlo draws) but does not otherwise use
-##'   \code{logComp}. (Automatically supplied by \code{aldex()}.)
+##' @param X Model matrix passed automatically by \code{aldex()}. Rows are model
+##'   coefficients and columns are samples.
 ##'
-##' @param c.mu Numeric vector of length \code{P} giving the mean of the fixed
-##'   effect coefficients in log2-scale space. Must not be \code{NULL}.
+##' @param logComp Monte Carlo log-compositions passed automatically by
+##'   \code{aldex()}. This function uses the third dimension to determine the
+##'   number of draws.
 ##'
-##' @param c.cor Numeric \code{P x P} covariance matrix for the fixed effect
-##'   coefficients in log2-scale space. Must not be \code{NULL}.
+##' @param c.mu Expected log2 scale change for each model coefficient, in the
+##'   same order as the rows of \code{X}. Must have length \code{P}.
+##'
+##' @param c.cor Deprecated \code{P x P} covariance matrix for the fixed-effect
+##'   coefficients. Use \code{c.cov} instead. Retained until ALDEx3 2.0.0.
+##'
+##' @param c.sd SD of the log2 scale change for each model coefficient. Must
+##'   have length \code{P}; coefficients are treated as independent.
+##'
+##' @param c.cov A \code{P x P} covariance matrix for the model coefficients'
+##'   log2 scale changes. Use this instead of \code{c.sd} when coefficient
+##'   uncertainties are correlated.
 ##'
 ##' @return A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
 ##'   draws of the log2 scale for each sample (rows) across \code{nsample} draws
@@ -171,61 +355,77 @@ sample.sm <- function(X, logComp, s.mu=NULL, s.var=NULL, s.cor=NULL) {
 ##'
 ##' @importFrom MASS mvrnorm
 ##' @author Kyle McGovern
+##' @examples
+##' # Three control samples followed by three treatment samples.
+##' condition <- factor(
+##'   c("control", "control", "control", "treatment", "treatment", "treatment"),
+##'   levels = c("control", "treatment")
+##' )
+##' X <- t(model.matrix(~ condition))
+##' logComp <- array(0, c(2, 6, 10))
+##' logScale <- coefficient.sm(
+##'   # Shift treatment upward by 8, with SD 0.5 around that shift.
+##'   X, logComp, c.mu = c(0, 8), c.sd = c(0, 0.5)
+##' )
 ##' @export
-coefficient.sm <- function(X, logComp, c.mu=NULL, c.cor=NULL) {
-  N <- ncol(X)
+coefficient.sm <- function(X, logComp, c.mu=NULL, c.cor=NULL,
+                           c.sd=NULL, c.cov=NULL) {
   P <- nrow(X)
   nsample <- dim(logComp)[3]
 
-  if(is.null(c.mu)) {
-    stop("c.mu cannot be NULL")
-  } else if(length(c.mu)!=P) {
-    stop("c.mu should have length of P=nrow(X)")
-  }
-  if(is.null(c.cor)) {
-    stop("c.cor cannot be NULL")
-  } else if(any(dim(c.cor)!=c(P, P))) {
-    stop("c.cor should be a PxP matrix where P=nrow(X)")
-  }
+  c.mu <- .validate_scale_mean(c.mu, P, "c.mu")
+  uncertainty <- .resolve_scale_uncertainty(
+    sd=c.sd, covariance=c.cov, legacy.covariance=c.cor,
+    n=P, sd.name="c.sd", covariance.name="c.cov",
+    legacy.covariance.name="c.cor"
+  )
 
-  logScale <- matrix(NA, N, nsample)
-  for(i in 1:nsample) {
-    logScale[,i] <- mvrnorm(1, c.mu, c.cor)%*%X
+  if (!is.null(uncertainty$sd)) {
+    coefficients <- matrix(
+      rnorm(P * nsample, rep(c.mu, nsample), rep(uncertainty$sd, nsample)),
+      P, nsample
+    )
+  } else {
+    coefficients <- matrix(NA_real_, P, nsample)
+    for (i in seq_len(nsample)) {
+      coefficients[, i] <- MASS::mvrnorm(
+        1, c.mu, uncertainty$covariance
+      )
+    }
   }
+  logScale <- t(X) %*% coefficients
   return(logScale)
 }
 
-##' TSS-centered scale model (with optional scale uncertainty)
+##' TSS-centered scale model
 ##'
-##' Implements a total-sum-scaling (TSS)-centered variant of the default
-##' scale-uncertainty model described in Nixon et al. (Beyond Normalizations /
-##' scale-uncertainty framework). Unlike \code{\link{clr.sm}}, which is centered
-##' on the CLR-implied scale, this model is centered on the TSS assumption that
-##' there is no systematic change in scale across.
+##' Total-sum scaling (TSS) starts from the assumption that total scale does not
+##' change systematically between experimental groups. Use this model when that
+##' is a reasonable starting point but you want to express uncertainty about it.
+##' For example, if a treatment is expected to redistribute features without
+##' changing total biomass, TSS centers the treatment-versus-control scale
+##' difference at zero.
 ##'
-##' Scale uncertainty is introduced via an additive Gaussian perturbation on the
-##' (log2) fixed effects. For each Monte Carlo draw, a coefficient vector is
-##' sampled as \eqn{b^{(m)} \sim N(0, \gamma^2 I)}, and the per-sample log2 scale
-##' is computed as \eqn{b^{(m)T} X}. Larger values of \code{gamma} correspond to
-##' weaker confidence in the TSS-centered assumption (more allowed scale
-##' variation); \code{gamma = 0} yields no scale variation beyond the model
-##' center.
+##' Set \code{gamma = 0} to enforce no scale difference. Setting
+##' \code{gamma = 0.5} keeps the expected difference at zero but allows each
+##' scale-model coefficient to vary with SD 0.5 on the log2 scale. Larger values
+##' express less confidence that total scale is unchanged.
 ##'
-##' Note: \code{logComp} is included to match the ALDEx3 scale-model interface
-##' and to determine \code{nsample}, but it is not otherwise used by this model.
+##' ALDEx3 applies this uncertainty to model coefficients: for each draw,
+##' \eqn{b^{(m)} \sim N(0, \gamma^2 I)}, and the sample scales are
+##' \eqn{b^{(m)T} X}. Samples with the same covariate values therefore share a
+##' random shift. This differs from \code{\link{sample.sm}}, which can draw
+##' independent uncertainty for every sample.
 ##'
-##' @param X A numeric design matrix passed internally by \code{aldex()} to the
-##'   scale model. Rows correspond to fixed-effect coefficients/covariates
-##'   (\code{P = nrow(X)}) and columns correspond to samples
-##'   (\code{N = ncol(X)}). (Automatically supplied by \code{aldex()}.)
+##' @param X Model matrix passed automatically by \code{aldex()}. Rows are model
+##'   coefficients and columns are samples.
 ##'
-##' @param logComp A numeric array of Monte Carlo log-compositions with
-##'   dimensions \code{features x samples x nsample}. This scale model uses
-##'   \code{nsample} (the number of Monte Carlo draws) but does not otherwise use
-##'   \code{logComp}. (Automatically supplied by \code{aldex()}.)
+##' @param logComp Monte Carlo log-compositions passed automatically by
+##'   \code{aldex()}. This function uses the third dimension to determine the
+##'   number of draws.
 ##'
-##' @param gamma Non-negative scalar. Standard deviation of the Gaussian
-##'   perturbation applied to the scale-model coefficients (in log2 space).
+##' @param gamma Non-negative scalar. Standard deviation of the Gaussian random
+##'   shift applied to the scale-model coefficients (in log2 space).
 ##'   \code{gamma = 0} implies no scale uncertainty (all draws are centered at
 ##'   zero effect); larger values allow greater departures from the TSS-centered
 ##'   assumption.
@@ -239,10 +439,18 @@ coefficient.sm <- function(X, logComp, c.mu=NULL, c.cor=NULL) {
 ##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
 ##'
 ##' @author Justin Silverman
+##' @examples
+##' # Center the group-scale difference at zero, with moderate uncertainty.
+##' Y <- matrix(seq_len(60), nrow = 10)
+##' condition <- factor(c("control", "control", "control",
+##'                       "treatment", "treatment", "treatment"))
+##' fit <- aldex(Y, ~ condition, data.frame(condition), nsample = 20,
+##'              scale = tss.sm, gamma = 0.5)
 ##' @export
 tss.sm <- function(X, logComp, gamma=0.5) {
   P <- nrow(X)
   nsample <- dim(logComp)[3]
+  gamma <- .validate_scale_sd(gamma, 1, "gamma")
   LambdaScale <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
   logScale <- t(X)%*% LambdaScale
   return(logScale)

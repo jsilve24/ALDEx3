@@ -6,16 +6,19 @@
 
 Like ALDEx2, ALDEx3 models sequencing counts using a **Dirichlet–multinomial** framework, which accounts for sampling variability and naturally accommodates zero counts through the multinomial likelihood (e.g., the model does not require treating zeros as true structural absences). 
 
-High-throughput sequencing data contain only **relative information**: the overall biological *scale* is unobserved (unidentifiable). Here, *scale* refers to quantities such as total microbial load, total cellular RNA content, or total biomass. Standard normalization-based workflows implicitly fix this unmeasured scale using strong and often untestable assumptions. When these assumptions are violated, normalization can induce substantial bias, inflate false discovery rates, or mask true biological effects.
+High-throughput sequencing data tell us how reads are divided among features, but not how much biological material was present in each sample. We call that missing total the sample's **scale**. Depending on the experiment, scale might mean total microbial load, total cellular RNA, or total biomass. A normalization method fills in this missing information by assumption; ALDEx3 instead lets the user state the assumption and its uncertainty explicitly.
 
 ALDEx3 addresses this limitation by explicitly modeling **scale uncertainty**. Rather than fixing scale through normalization, ALDEx3 uses **scale models**—probability distributions that represent uncertainty in the unobserved scale and propagate that uncertainty into downstream inference. This approach generalizes normalization while making its assumptions explicit and testable.
 
-Scale models can be specified in several ways, including:
-1. As uncertainty induced by normalization procedures (e.g., total-sum scaling or log-ratio–based approaches),
-2. Using external measurements of scale (e.g., flow cytometry, qPCR, or spike-ins), or
-3. Through weak biological prior information (e.g., assuming an antibiotic reduces total microbial load by 20–80%).
+Choose the scale model that matches the information available:
 
-By treating scale as a latent random variable rather than a fixed normalization constant, ALDEx3 enables coherent inference for both relative and absolute effects and supports complex experimental designs via mixed-effects modeling.
+1. Use `sample.sm` when each sample has an external measurement, such as flow cytometry, qPCR, or a spike-in estimate.
+2. Use `coefficient.sm` when prior knowledge concerns a group difference or another model term, such as an expected treatment-related reduction in total microbial load.
+3. Use `clr.sm` when CLR normalization is a reasonable center but its implied scale differences are uncertain.
+4. Use `tss.sm` when total-sum scaling (TSS)—no systematic scale difference between groups—is a reasonable starting assumption.
+5. Write a custom scale-model function when the built-in models do not match the study. See `?aldex`, under “Writing a custom scale model,” for the required function interface and output.
+
+ALDEx3 carries this uncertainty through the analysis instead of treating one normalization as exact. This supports inference about relative or absolute changes and works with both fixed- and mixed-effects models.
 
 Before using ALDEx3, users are **strongly encouraged** to read:
 
@@ -37,7 +40,7 @@ devtools::install_github("jsilve24/ALDEx3")
 
 ## Quickstart (Inference with Relative Abundances)
 
-*Note*: the following examples use the CLR scale model often with zero scale uncertainty `gamma=0`. This is generally a bad idea but is shown here just for backwards comparability with the defaults in ALDEx2. In general we strongly recommend carefully thinking about the choice of scale model (see https://link.springer.com/article/10.1186/s13059-025-03609-3 for a background on the subject). In the worst case scenario where the user is unwilling to carefully design a scale model, we recommend choosing `scale=tss.sm` and `gamma=0.5`as a default. 
+The first example uses `clr.sm` with `gamma=0` to reproduce the fixed CLR assumption used by ALDEx2. This is a compatibility example, not a general recommendation. When no external scale measurements or biological prior information are available, `tss.sm` with `gamma=0.5` is a reasonable starting point. Results should still be checked across scientifically plausible scale models.
 
 ``` r
 library(ALDEx3)
@@ -109,11 +112,11 @@ To run the same model with exact variance-component optimization, replace `metho
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
-The Quickstart considered the relative abundances of taxa in the guts of patients with Crohn's Disease (CD) vs. Control. Here **absolute abundances** are modeled using three different approaches to **scale models**.
+The first analysis compared relative abundances in Crohn's disease (CD) and control samples. The following examples show how different kinds of scale information change that analysis.
 
-### Weak Prior Biological Knowledge
+### Prior Knowledge About a Group Difference
 
-Consider prior studies suggest individuals with CD have on average 2 log2-fold lower total gut microbial load. If θ<sup>tot</sup><sub>CD</sub> is the average log2-fold change in gut microbial load in CD vs. Control, we assume θ<sup>tot</sup><sub>CD</sub>=-2. However, to account for potential uncertainty in this assumption, we define a scale model as a Normal distribution with standard deviation of $0.5$: θ<sup>tot</sup><sub>CD</sub> ~ *N* (-2, 0.5<sup>2</sup>). In ALDEx3 this is done with the `coef.sm` scale model and the parameters `c.mu` and `c.cor`:
+Suppose previous studies suggest that total microbial load is about fourfold lower in CD than in controls. A fourfold reduction is -2 on the log2 scale. We are not certain that the reduction is exactly fourfold, so we place an SD of 0.5 around it. Because `Health.status` uses Control as its reference level, the second model coefficient is the CD-minus-Control difference. We therefore set `c.mu = c(0, -2)` and `c.sd = c(0, 0.5)`: the first entries leave the intercept fixed, and the second entries describe the expected CD shift and its uncertainty.
 
 ``` r
 library(ALDEx3)
@@ -134,23 +137,22 @@ Y <- rbind(Y, other)
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
                            levels=c("Control", "CD"))
-# Fit Before vs. After teeth brushing
-# relative abundance changes
+# Prior for c(intercept, CD-minus-Control)
 aldex.gut.abs.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
-                       scale=coefficient.sm,   # coef scale model
-                       c.mu=c(0, -2),   # c(intercept, CD)
-                       c.cor=rbind(c(0, 0), c(0, 0.5**2)))
+                       scale=coefficient.sm,
+                       c.mu=c(0, -2),
+                       c.sd=c(0, 0.5))
 
 aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
 head(aldex.gut.abs.summary)
 ```
 
-### External Scale Measurements (Ideal)
+### External Measurements for Individual Samples
 
-In the Crohn's dataset we have flow cytometry measurements of fecal microbial load for each sample. If w<sup>tot</sup><sub>n</sub> and q<sub>n</sub> are the scale and flow cytometry measurement for sample n, respectively, we define the scale model as w<sup>tot</sup><sub>n</sub> ~ *N* (log2 q<sub>n</sub>, 0.5<sup>2</sup>). In ALDEx3, here we use the `sample.sm` scale model which takes `s.mu` and `s.var` as arguments:
+The Crohn's dataset also contains a flow-cytometry estimate of microbial load for every sample. This is more direct information than a group-level prior, so we use `sample.sm`. The mean scale for each sample is the log2 flow-cytometry measurement. We use `s.sd = 0.5` to allow measurement error around each value. These errors are independent across samples; if the measurement errors were correlated, we would supply their covariance matrix through `s.cov` instead.
 
 ``` r
 library(ALDEx3)
@@ -174,22 +176,22 @@ X$Health.status <- factor(X$Health.status,
 # Log2 Scale Measurements
 s.mu <- log2(X$Average.cell.count..per.gram.of.frozen.feces.)
 # Account For Potential Technical Error in Measurements
-s.var <- rep(0.25, length(s.mu))
+s.sd <- rep(0.5, length(s.mu))
 # Estimate Absolute Abundance Changes
 aldex.gut.abs.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
-                       scale=sample.sm,         # coef scale model
+                       scale=sample.sm,         # sample scale model
                        s.mu=s.mu,
-                       s.var=s.var)
+                       s.sd=s.sd)
 aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
 head(aldex.gut.abs.summary)
 ```
 
-## Normalization Uncertainty
+## CLR with Scale Uncertainty
 
-The Quickstart used the CLR to infer changes in relative abundances. While not the most powerful approach, we can define a scale model to account for uncertainty in how closely CLR transformed abudances match absolute abundances. [Nixon et al. show for this exact dataset that this approach can still substantially reduce false positives](https://link.springer.com/article/10.1186/s13059-025-03609-3). 
+When no external measurement or group-level prior is available, CLR can supply a starting point rather than a fixed answer. The `clr.sm` model centers the analysis on the CLR-implied sample scales. Here, `gamma=1` allows each scale-model coefficient to vary around that center with an SD of one log2 unit. This uncertainty can reduce false positives caused by treating CLR normalization as exact, as demonstrated for this dataset by [Nixon et al.](https://link.springer.com/article/10.1186/s13059-025-03609-3).
 
 ``` r
 library(ALDEx3)
@@ -210,13 +212,13 @@ Y <- rbind(Y, other)
 X <- gut_crohns_data$metadata
 X$Health.status <- factor(X$Health.status,
                            levels=c("Control", "CD"))
-# Fit Before vs. After teeth brushing; absolute abundances
+# Allow uncertainty around the CLR-implied scale differences
 aldex.gut.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
                        scale=clr.sm,  # CLR assumption
-                       gamma=1)       # Gamma=1: variance in CLR assumption 
+                       gamma=1)       # Gamma=1: SD around CLR assumption
 aldex.gut.summary <- summary(aldex.gut.raw)
 head(aldex.gut.summary)
 ```

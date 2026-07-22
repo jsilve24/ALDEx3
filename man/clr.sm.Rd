@@ -2,47 +2,51 @@
 % Please edit documentation in R/scale.R
 \name{clr.sm}
 \alias{clr.sm}
-\title{Default CLR-based scale model (with optional scale uncertainty)}
+\title{CLR-based scale model}
 \usage{
 clr.sm(X, logComp, gamma = 0.5)
 }
 \arguments{
-\item{X}{A numeric design matrix used to model scale variation across
-samples. This is the covariate/design matrix passed internally by
-\code{aldex()} to the scale model. Rows correspond to regression
-coefficients (e.g., intercept and covariates after contrasts/encoding) and
-columns correspond to samples. If the analysis includes only an intercept
-(no covariates), \code{X} is typically a 1 x N matrix of ones. (This
-parameter is automatically passed by aldex)}
+\item{X}{Model matrix passed automatically by \code{aldex()}. Rows are model
+coefficients and columns are samples.}
 
-\item{logComp}{A numeric array of Monte Carlo log-compositions with
-dimensions \code{features x samples x nsample}. This is produced
-internally by ALDEx3 from Dirichlet-multinomial Monte Carlo sampling and
-log-ratio representation. ##'   (This parameter is automatically passed by aldex)}
+\item{logComp}{Monte Carlo log-compositions passed automatically by
+\code{aldex()}, with dimensions \code{features x samples x nsample}.}
 
-\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian
-perturbation that relaxes the CLR assumption about scale. \code{gamma = 0}
-yields the pure CLR assumption; recommended default values in the
-scale-uncertainty literature are often around \code{0.5}, but appropriate
-values depend on how strongly you trust the CLR scale assumption in the
-current study.}
+\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian random
+shift that relaxes the CLR assumption about scale. \code{gamma = 0}
+yields the fixed CLR assumption. Larger values express less confidence in
+the CLR-implied differences between sample scales.}
 }
 \value{
 A numeric matrix of dimension \code{N x nsample} giving Monte Carlo samples
 of the log-scale for each sample (rows) and each Monte Carlo draw (columns).
 }
 \description{
-Implements the default scale model described in Nixon et al. (Beyond
-Normalizations / scale-uncertainty framework). This model generalizes the
-centered log-ratio (CLR) normalization by treating the (log) scale as a
-latent random variable and allowing additive uncertainty around the
-CLR-implied scale differences via a Gaussian term with standard deviation
-\code{gamma}.
+Use this model when centered log-ratio (CLR) normalization is a reasonable
+starting point, but you do not want to assume that it recovers the sample
+scales exactly. For example, in a case-control study, CLR may provide a
+plausible center while \code{gamma} allows the true difference in total
+abundance between cases and controls to depart from that center.
 }
 \details{
-In the limit \code{gamma = 0}, this reduces to the CLR assumption (no scale
-uncertainty beyond the CLR-implied scale). Larger \code{gamma} values
-represent increasing uncertainty about the CLR-implied scale differences.
+Set \code{gamma = 0} to use the CLR-implied scales without additional
+uncertainty. A value such as \code{gamma = 0.5} allows each scale-model
+coefficient to vary with SD 0.5 on the log2 scale. Larger values express
+less confidence in the CLR assumption.
+
+The uncertainty applies to model coefficients, not independently to every
+sample. Samples with the same covariate values therefore receive the same
+random shift in a Monte Carlo draw. This differs from \code{\link{sample.sm}},
+which can draw a separate scale for each sample.
+}
+\examples{
+# Allow moderate uncertainty around CLR-implied scale differences.
+Y <- matrix(seq_len(60), nrow = 10)
+condition <- factor(c("control", "control", "control",
+                      "case", "case", "case"))
+fit <- aldex(Y, ~ condition, data.frame(condition), nsample = 20,
+             scale = clr.sm, gamma = 0.5)
 }
 \references{
 Nixon G, Gloor GB, Silverman JD (2025).

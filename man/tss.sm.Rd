@@ -2,23 +2,20 @@
 % Please edit documentation in R/scale.R
 \name{tss.sm}
 \alias{tss.sm}
-\title{TSS-centered scale model (with optional scale uncertainty)}
+\title{TSS-centered scale model}
 \usage{
 tss.sm(X, logComp, gamma = 0.5)
 }
 \arguments{
-\item{X}{A numeric design matrix passed internally by \code{aldex()} to the
-scale model. Rows correspond to fixed-effect coefficients/covariates
-(\code{P = nrow(X)}) and columns correspond to samples
-(\code{N = ncol(X)}). (Automatically supplied by \code{aldex()}.)}
+\item{X}{Model matrix passed automatically by \code{aldex()}. Rows are model
+coefficients and columns are samples.}
 
-\item{logComp}{A numeric array of Monte Carlo log-compositions with
-dimensions \code{features x samples x nsample}. This scale model uses
-\code{nsample} (the number of Monte Carlo draws) but does not otherwise use
-\code{logComp}. (Automatically supplied by \code{aldex()}.)}
+\item{logComp}{Monte Carlo log-compositions passed automatically by
+\code{aldex()}. This function uses the third dimension to determine the
+number of draws.}
 
-\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian
-perturbation applied to the scale-model coefficients (in log2 space).
+\item{gamma}{Non-negative scalar. Standard deviation of the Gaussian random
+shift applied to the scale-model coefficients (in log2 space).
 \code{gamma = 0} implies no scale uncertainty (all draws are centered at
 zero effect); larger values allow greater departures from the TSS-centered
 assumption.}
@@ -29,23 +26,32 @@ draws of the log2 scale for each sample (rows) across \code{nsample} draws
 (columns).
 }
 \description{
-Implements a total-sum-scaling (TSS)-centered variant of the default
-scale-uncertainty model described in Nixon et al. (Beyond Normalizations /
-scale-uncertainty framework). Unlike \code{\link{clr.sm}}, which is centered
-on the CLR-implied scale, this model is centered on the TSS assumption that
-there is no systematic change in scale across.
+Total-sum scaling (TSS) starts from the assumption that total scale does not
+change systematically between experimental groups. Use this model when that
+is a reasonable starting point but you want to express uncertainty about it.
+For example, if a treatment is expected to redistribute features without
+changing total biomass, TSS centers the treatment-versus-control scale
+difference at zero.
 }
 \details{
-Scale uncertainty is introduced via an additive Gaussian perturbation on the
-(log2) fixed effects. For each Monte Carlo draw, a coefficient vector is
-sampled as \eqn{b^{(m)} \sim N(0, \gamma^2 I)}, and the per-sample log2 scale
-is computed as \eqn{b^{(m)T} X}. Larger values of \code{gamma} correspond to
-weaker confidence in the TSS-centered assumption (more allowed scale
-variation); \code{gamma = 0} yields no scale variation beyond the model
-center.
+Set \code{gamma = 0} to enforce no scale difference. Setting
+\code{gamma = 0.5} keeps the expected difference at zero but allows each
+scale-model coefficient to vary with SD 0.5 on the log2 scale. Larger values
+express less confidence that total scale is unchanged.
 
-Note: \code{logComp} is included to match the ALDEx3 scale-model interface
-and to determine \code{nsample}, but it is not otherwise used by this model.
+ALDEx3 applies this uncertainty to model coefficients: for each draw,
+\eqn{b^{(m)} \sim N(0, \gamma^2 I)}, and the sample scales are
+\eqn{b^{(m)T} X}. Samples with the same covariate values therefore share a
+random shift. This differs from \code{\link{sample.sm}}, which can draw
+independent uncertainty for every sample.
+}
+\examples{
+# Center the group-scale difference at zero, with moderate uncertainty.
+Y <- matrix(seq_len(60), nrow = 10)
+condition <- factor(c("control", "control", "control",
+                      "treatment", "treatment", "treatment"))
+fit <- aldex(Y, ~ condition, data.frame(condition), nsample = 20,
+             scale = tss.sm, gamma = 0.5)
 }
 \references{
 Nixon G, Gloor GB, Silverman JD (2025).

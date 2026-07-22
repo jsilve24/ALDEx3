@@ -47,10 +47,11 @@ runtime comparison with exact \code{lme4}.}
 
 \item{nsample}{number of monte carlo replicates}
 
-\item{scale}{the scale model, can be a function or an N x nsample matrix
-(samples should be given on log2-scale; e.g., samples should be of log of
-system scale). The API for writing your own scale models is documented
-below in examples.}
+\item{scale}{A scale-model function, such as \code{clr.sm}, \code{tss.sm},
+\code{sample.sm}, or \code{coefficient.sm}; alternatively, an
+\code{N x nsample} matrix of log2-scale draws. Additional arguments for a
+scale-model function are passed through \code{...}. See "Writing a custom
+scale model" in the Examples section for the required interface.}
 
 \item{streamsize}{(default 8000) memory footprint (approximate) at which to
 use streaming. This should be thought of as the number of Mb for each
@@ -83,8 +84,9 @@ Model, The American Statistician.}
 test. Otherwise if "lower" or "upper" return one-sided test corresponding
 to test that estimate is negative or positive respectively.}
 
-\item{...}{parameters to be passed to the scale model (if a function is
-provided), may also be random or correlation arguments for nlme.}
+\item{...}{Additional scale-model arguments, such as \code{gamma},
+\code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
+include \code{random} or \code{correlation}.}
 }
 \value{
 a list with elements controled by parameter resturn.pars. Options
@@ -105,30 +107,44 @@ logComp are not returned if streaming is active.
 \description{
 ALDEx3 Linear Models
 }
+\details{
+Sequence counts determine the relative composition of each sample, but not
+its total abundance or scale. The \code{scale} argument tells ALDEx3 what is
+known about that missing quantity and how uncertain that knowledge is.
+
+Choose a scale model based on the information available:
+\itemize{
+\item Use \code{\link{sample.sm}} for external measurements such as flow
+cytometry, qPCR, or spike-ins for individual samples.
+\item Use \code{\link{coefficient.sm}} when prior knowledge concerns a
+group difference, treatment effect, time trend, or another model term.
+\item Use \code{\link{clr.sm}} when CLR normalization is a reasonable
+center but its implied scale differences are uncertain.
+\item Use \code{\link{tss.sm}} when the starting assumption is no
+systematic scale difference between groups.
+\item Write a custom scale-model function when the built-in models do not
+match the information available for the study. The "Writing a custom
+scale model" example below describes the required function interface
+and \code{N x nsample} output.
+}
+}
 \examples{
 \donttest{
 Y <- matrix(1:110, 10, 11)
 condition <- c(rep(0, 5), rep(1, 6))
 data <- data.frame(condition=condition)
-## demonstrate formula interface and passing optional argument (gamma) to
-## the scale model (clr)
+## Use CLR as the center and allow coefficient-scale uncertainty of SD 0.5.
 res <- aldex(Y, ~condition, data, nsample=2000, scale=clr.sm, gamma=0.5)
 
-## demonstrating how to write a custom scale model, I will write a model
-## that generalizes total sum scaling (where we assume no change between 
-## conditions)
-## Functions can include parameters X (model matrix), Y, and logComp.
-## If included in the function definition, those parameters will be passed
-## dynamically when aldex is running. Other optional parameters (gamma)
-## can be passed as additional arguments to the aldex function
-tss <- function(X, logComp, gamma=0.5) {
-  P <- nrow(X)
+## Writing a custom scale model
+## A custom model must return one log2-scale draw per sample and Monte
+## Carlo replicate. Here, external_scale supplies a known value per sample.
+known_scale <- function(X, logComp, external_scale) {
   nsample <- dim(logComp)[3]
-  LambdaScale <- matrix(rnorm(P*nsample,0,gamma), P, nsample)
-  logScale <- t(X)\%*\% LambdaScale
-  return(logScale)
+  matrix(rep(external_scale, nsample), nrow=ncol(X), ncol=nsample)
 }
-res <- aldex(Y, ~condition, data, nsample=2000, scale=tss, gamma=0.75)
+res <- aldex(Y, ~condition, data, nsample=2000, scale=known_scale,
+             external_scale=rep(0, ncol(Y)))
 }
 }
 \author{

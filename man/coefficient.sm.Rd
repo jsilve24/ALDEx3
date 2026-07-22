@@ -2,26 +2,37 @@
 % Please edit documentation in R/scale.R
 \name{coefficient.sm}
 \alias{coefficient.sm}
-\title{Coefficient-based scale model with user-specified prior on fixed effects}
+\title{Scale model using prior information about groups or treatments}
 \usage{
-coefficient.sm(X, logComp, c.mu = NULL, c.cor = NULL)
+coefficient.sm(
+  X,
+  logComp,
+  c.mu = NULL,
+  c.cor = NULL,
+  c.sd = NULL,
+  c.cov = NULL
+)
 }
 \arguments{
-\item{X}{A numeric design matrix passed internally by \code{aldex()} to the
-scale model. Rows correspond to fixed-effect coefficients/covariates
-(\code{P = nrow(X)}) and columns correspond to samples
-(\code{N = ncol(X)}). (Automatically supplied by \code{aldex()}.)}
+\item{X}{Model matrix passed automatically by \code{aldex()}. Rows are model
+coefficients and columns are samples.}
 
-\item{logComp}{A numeric array of Monte Carlo log-compositions with
-dimensions \code{features x samples x nsample}. This scale model uses
-\code{nsample} (the number of Monte Carlo draws) but does not otherwise use
-\code{logComp}. (Automatically supplied by \code{aldex()}.)}
+\item{logComp}{Monte Carlo log-compositions passed automatically by
+\code{aldex()}. This function uses the third dimension to determine the
+number of draws.}
 
-\item{c.mu}{Numeric vector of length \code{P} giving the mean of the fixed
-effect coefficients in log2-scale space. Must not be \code{NULL}.}
+\item{c.mu}{Expected log2 scale change for each model coefficient, in the
+same order as the rows of \code{X}. Must have length \code{P}.}
 
-\item{c.cor}{Numeric \code{P x P} covariance matrix for the fixed effect
-coefficients in log2-scale space. Must not be \code{NULL}.}
+\item{c.cor}{Deprecated \code{P x P} covariance matrix for the fixed-effect
+coefficients. Use \code{c.cov} instead. Retained until ALDEx3 2.0.0.}
+
+\item{c.sd}{SD of the log2 scale change for each model coefficient. Must
+have length \code{P}; coefficients are treated as independent.}
+
+\item{c.cov}{A \code{P x P} covariance matrix for the model coefficients'
+log2 scale changes. Use this instead of \code{c.sd} when coefficient
+uncertainties are correlated.}
 }
 \value{
 A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
@@ -29,22 +40,45 @@ draws of the log2 scale for each sample (rows) across \code{nsample} draws
 (columns).
 }
 \description{
-Draws Monte Carlo samples of the log2 scale by sampling fixed-effect
-coefficients from a multivariate normal distribution and mapping them
-through the design matrix \code{X}. This scale model is useful when you
-want to encode prior information about how covariates (e.g., treatment,
-batch, time) affect scale, rather than specifying scale moments directly
-per sample.
+Use this model when prior information describes a treatment, group, time, or
+other model coefficient rather than an individual sample. Samples with the
+same covariate values share the same scale shift in each Monte Carlo draw.
 }
 \details{
-Specifically, for each Monte Carlo draw \eqn{b^{(m)} \sim N(c.mu, c.cor)},
-the per-sample log2 scale is computed as \eqn{b^{(m)T} X}, producing an
-\code{N x nsample} matrix of log2-scale draws.
+Suppose an effect plot from a control-versus-treatment experiment is
+centered near -8, even though prior knowledge suggests that most features
+should not change. One way to represent that knowledge is to shift the
+treatment samples upward by 8 log2 units relative to the controls. With
+control as the reference level, use \code{c.mu = c(0, 8)}: the first value
+leaves the common intercept unchanged, and the second adds 8 to treatment.
+Setting \code{c.sd = c(0, 0.5)} expresses an SD of 0.5 around that treatment
+shift. If the plot were centered near +8, use -8 instead. Adding 8 to both
+groups would not recenter the plot because it would leave their difference
+unchanged.
 
-For example, with an intercept and a treatment indicator where treatment is
-expected to increase log2 scale by ~1 on average, one might use
-\code{c.mu = c(0, 1)} and \code{c.cor = diag(c(0.25, 0.25))} (i.e., SD 0.5
-for each coefficient, independent).
+More generally, \code{c.mu} gives the expected log2 scale change for each
+model coefficient and \code{c.sd} gives its SD. Use \code{c.cov} when the
+coefficient uncertainties are correlated. For each Monte Carlo draw,
+ALDEx3 samples a coefficient vector and applies it to the model matrix
+\code{X}; mathematically, \eqn{b^{(m)} \sim N(c.mu, Sigma)} and the sample
+scales are \eqn{b^{(m)T} X}.
+
+Exactly one of \code{c.sd} or \code{c.cov} must be provided. The deprecated
+\code{c.cor} argument may be used in place of \code{c.cov} during the
+compatibility period.
+}
+\examples{
+# Three control samples followed by three treatment samples.
+condition <- factor(
+  c("control", "control", "control", "treatment", "treatment", "treatment"),
+  levels = c("control", "treatment")
+)
+X <- t(model.matrix(~ condition))
+logComp <- array(0, c(2, 6, 10))
+logScale <- coefficient.sm(
+  # Shift treatment upward by 8, with SD 0.5 around that shift.
+  X, logComp, c.mu = c(0, 8), c.sd = c(0, 0.5)
+)
 }
 \author{
 Kyle McGovern

@@ -2,31 +2,42 @@
 % Please edit documentation in R/scale.R
 \name{sample.sm}
 \alias{sample.sm}
-\title{Sample-specific scale model with user-specified mean and variance/covariance}
+\title{Per-sample scale model using external information}
 \usage{
-sample.sm(X, logComp, s.mu = NULL, s.var = NULL, s.cor = NULL)
+sample.sm(
+  X,
+  logComp,
+  s.mu = NULL,
+  s.var = NULL,
+  s.cor = NULL,
+  s.sd = NULL,
+  s.cov = NULL
+)
 }
 \arguments{
-\item{X}{A numeric design matrix passed internally by \code{aldex()} to the
-scale model. Columns correspond to samples (\code{N = ncol(X)}). This scale
-model does not use \code{X} directly, but \code{N} is inferred from it.
-(Automatically supplied by \code{aldex()}.)}
+\item{X}{Model matrix passed automatically by \code{aldex()}. This function
+uses its number of columns to determine the number of samples.}
 
-\item{logComp}{A numeric array of Monte Carlo log-compositions with dimensions
-\code{features x samples x nsample}. This scale model uses \code{nsample}
-to determine the number of Monte Carlo draws, but does not otherwise use
-\code{logComp}. (Automatically supplied by \code{aldex()}.)}
+\item{logComp}{Monte Carlo log-compositions passed automatically by
+\code{aldex()}. This function uses the third dimension to determine the
+number of draws.}
 
-\item{s.mu}{Numeric vector of length \code{N} giving the mean of the log2
-scale for each sample. Must not be \code{NULL}.}
+\item{s.mu}{Expected log2 scale for each sample, in the same order as the
+columns of the count matrix. Must have length \code{N}.}
 
-\item{s.var}{Numeric vector of length \code{N} giving the marginal variance of
-the log2 scale for each sample. Use this when assuming samples' log2 scales
-are independent. Must be \code{NULL} if \code{s.cor} is provided.}
+\item{s.var}{Deprecated numeric vector of per-sample log2-scale variances.
+Use \code{s.sd = sqrt(s.var)} instead. Retained until ALDEx3 2.0.0 for
+backward compatibility.}
 
-\item{s.cor}{Numeric \code{N x N} covariance matrix for the log2 scale across
-samples. Use this when encoding correlations between samples' log2 scales.
-Must be \code{NULL} if \code{s.var} is provided.}
+\item{s.cor}{Deprecated \code{N x N} covariance matrix. Despite its name,
+this argument has always represented covariance rather than correlation.
+Use \code{s.cov} instead. Retained until ALDEx3 2.0.0.}
+
+\item{s.sd}{SD of the log2 scale for each sample. Must have length \code{N}.
+Use this when measurement errors are independent across samples.}
+
+\item{s.cov}{An \code{N x N} covariance matrix for the samples' log2 scales.
+Use this instead of \code{s.sd} when measurement errors are correlated.}
 }
 \value{
 A numeric matrix of dimension \code{N x nsample} giving Monte Carlo
@@ -34,20 +45,37 @@ draws of the log2 scale for each sample (rows) across \code{nsample} draws
 (columns).
 }
 \description{
-Draws Monte Carlo samples of the log2 scale for each sample using user-supplied
-moments. This scale model is useful when external measurements (e.g., qPCR,
-flow cytometry, spike-ins) provide information about absolute scale, or when
-you want to encode prior information about scale on a per-sample basis.
+Use this model when each sample has its own external scale measurement, such
+as a flow-cytometry cell count, qPCR concentration, or spike-in estimate.
+Put the log2 measurement for each sample in \code{s.mu}. Use \code{s.sd} to
+describe the measurement uncertainty for each sample.
 }
 \details{
-Exactly one of \code{s.var} or \code{s.cor} must be provided:
-\itemize{
-\item \code{s.var}: independent per-sample log2-scale variance (diagonal covariance)
-\item \code{s.cor}: full \code{N x N} log2-scale covariance matrix
-}
+For example, if four samples have estimated total cell counts of
+\code{1e8}, \code{2e8}, \code{8e7}, and \code{1.5e8}, set
+\code{s.mu = log2(c(1e8, 2e8, 8e7, 1.5e8))}. If each measurement has an SD
+of 0.5 on the log2 scale, set \code{s.sd = rep(0.5, 4)}.
 
-The returned matrix has \code{N} rows (samples) and \code{nsample} columns
-(Monte Carlo draws), consistent with the ALDEx3 scale-model interface.
+Use \code{s.sd} when measurement errors are independent. Use \code{s.cov}
+instead when errors are correlated, for
+example because several samples share a calibration standard. The diagonal
+of \code{s.cov} contains variances, and its off-diagonal entries contain
+covariances. Thus independent SDs of 0.5 can also be written as
+\code{s.cov = diag(0.5^2, 4)}.
+
+Supply exactly one of \code{s.sd} or \code{s.cov}. With \code{s.sd}, each
+sample receives its own independent scale draw. Samples in the same group
+do not automatically share uncertainty as they do in coefficient-based
+models.
+}
+\examples{
+# External total-cell estimates for four samples.
+cell_count <- c(1e8, 2e8, 8e7, 1.5e8)
+X <- matrix(1, 1, 4)
+logComp <- array(0, c(2, 4, 10))
+logScale <- sample.sm(
+  X, logComp, s.mu = log2(cell_count), s.sd = rep(0.5, 4)
+)
 }
 \author{
 Kyle McGovern
