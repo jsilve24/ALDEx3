@@ -100,8 +100,15 @@ test_that("test-aldex.R gives similar results to ALDEx2's aldex.glm", {
                     0.0288, 0.7173, 0.1124, 0.0856, 0.3076, 0.1840, 0.0000,
                     0.4145, 0.0315, 0.4228, 0.7550, 0.6594, 0.0053, 0.6207,
                     0.4911, 0.1164, 0.7438, 0.0123, 0.662)
-   expect_true(all(abs(round(aldex3.res$p.val[2,], 4)-aldex2.pvals)<0.015))
-   expect_true(all(abs(round(aldex3.res$p.val.adj[2,], 4)-aldex2.adj.pvals)<0.015))
+   aldex3.p <- aldex3.res$p.val[2,]
+   expect_gt(cor(aldex3.p, aldex2.pvals), 0.995)
+   expect_lt(mean(abs(aldex3.p - aldex2.pvals)), 0.02)
+   expect_equal(unname(aldex3.p < 0.05), aldex2.pvals < 0.05)
+
+   aldex3.p.adj <- aldex3.res$p.val.adj[2,]
+   expect_gt(cor(aldex3.p.adj, aldex2.adj.pvals), 0.995)
+   expect_lt(mean(abs(aldex3.p.adj - aldex2.adj.pvals)), 0.02)
+   expect_equal(unname(aldex3.p.adj < 0.05), aldex2.adj.pvals < 0.05)
 })
 
 test_that("aldex returns posterior samples when it should", {

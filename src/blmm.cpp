@@ -7,6 +7,7 @@
 // multi-right-hand-side solve against the draw block Y, and one average of the
 // per-draw profiled REML residual terms across draws.
 
+#define TMB_LIB_INIT R_init_ALDEx3
 #include <TMB.hpp>
 
 // TMB's matrix type is not directly compatible with Eigen LLT/TriangularView

@@ -1,3 +1,13 @@
+# ALDEx3 1.3.1
+
+## Maintenance
+
+- Registered TMB native routines and disabled dynamic symbol lookup for
+  portable compiled-code checks.
+- Made the ALDEx2 compatibility regression test robust to the R 4.7.0
+  binomial RNG change by checking overall p-value agreement and matching
+  significance decisions instead of a strict elementwise tolerance.
+
 # ALDEx3 1.3.0
 
 ## User Facing Changes

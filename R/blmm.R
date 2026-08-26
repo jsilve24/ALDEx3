@@ -713,7 +713,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #'   \code{sr.mem}.
 #' @importFrom lme4 lFormula lmerControl
 #' @importFrom TMB MakeADFun
-#' @useDynLib ALDEx3
+#' @useDynLib ALDEx3, .registration = TRUE
 blmm <- function(logW, formula, data, n.cores = 1L) {
   N <- dim(logW)[1]
   D <- dim(logW)[2]
