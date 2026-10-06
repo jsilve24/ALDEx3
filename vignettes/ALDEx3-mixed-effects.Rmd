@@ -30,19 +30,24 @@ Monte Carlo draws within a feature.
 ## What BLMM Approximates
 
 For one feature and one Monte Carlo draw, the target remains the usual Gaussian
-linear mixed model fitted in profiled REML form. BLMM does **not** approximate
-the fixed-effects solve once covariance parameters are chosen.
+linear mixed model fitted by profiled restricted maximum likelihood (REML).
+BLMM does **not** approximate the fixed-effects solve once covariance parameters
+are chosen.
 
 The approximation is only this:
 
 1. Fit one feature-specific batched anchor covariance model across all draws.
 2. Build draw-specific local score updates around that anchor.
 3. Update the covariance parameters per draw with a local Newton step.
-4. Solve the fixed effects exactly for each draw conditional on the updated
+4. Check that each proposed update does not materially worsen its draw's
+   profiled REML objective; refit rejected draws with exact `lme4`.
+5. Solve the fixed effects exactly for each accepted draw conditional on the updated
    covariance parameters.
 
-If the approximate path cannot be evaluated cleanly for a feature, ALDEx3 warns
-and falls back to the exact `lme4` engine for that feature.
+If the shared anchor optimisation fails or its Hessian is unusable, ALDEx3
+falls back to exact `lme4` for the entire feature. If only particular
+draw-specific updates fail, ALDEx3 refits those draws exactly and retains the
+accepted BLMM draws. In either case, it emits one consolidated warning.
 
 ## Conceptual Formulation
 
@@ -52,7 +57,8 @@ and grouping structure but a different response vector. BLMM introduces:
 1. One anchor fit per feature.
 2. One shared local curvature matrix at the anchor.
 3. Draw-specific local score corrections around the anchor.
-4. Exact conditional GLS fixed-effect solves for each draw.
+4. Exact conditional generalized least-squares (GLS) fixed-effect solves for
+   each draw.
 
 This is the cleanest way to describe the method statistically.
 
@@ -73,15 +79,45 @@ u_s \sim N(0, \sigma_s^2 \Sigma_{\theta_s}),
 \varepsilon_s \sim N(0, \sigma_s^2 I_N).
 \]
 
-Here \(X\) is the fixed-effects design matrix, \(Z\) is the random-effects
-design matrix, \(\beta_s\) is the draw-specific fixed-effects vector, and
-\(\theta_s\) denotes the top-level covariance parameters for draw \(s\). As in
-`lme4`, BLMM works with a relative covariance parameterisation in which
-\(\Sigma_{\theta_s}\) is represented through a lower-triangular factor
-\(\Lambda_{\theta_s}\).
+Here \(X \in \mathbb{R}^{N \times p}\) is the fixed-effects design matrix,
+\(\beta_s \in \mathbb{R}^{p}\) is the draw-specific fixed-effects vector,
+\(Z \in \mathbb{R}^{N \times q}\) is the random-effects design matrix, and
+\(u_s \in \mathbb{R}^{q}\) is the draw-specific random-effects vector. Thus
+\(p\) is the number of fixed-effect coefficients and \(q\) is the number of
+random-effect coefficients. The residual standard deviation is \(\sigma_s>0\),
+\(I_N\) denotes the \(N \times N\) identity matrix, and the superscript \(T\)
+denotes matrix transpose.
 
-Write \(p = \mathrm{ncol}(X)\) for the number of fixed-effect coefficients and
-\(q = \mathrm{ncol}(Z)\) for the number of random-effect coefficients.
+The parameter vector \(\theta_s\) determines the random-effects covariance
+relative to the residual variance. As in `lme4`, BLMM represents this relative
+covariance by a lower-triangular factor
+\(\Lambda_{\theta_s} \in \mathbb{R}^{q \times q}\):
+\[
+\Sigma_{\theta_s}
+=
+\Lambda_{\theta_s}\Lambda_{\theta_s}^T,
+\qquad
+\operatorname{Var}(u_s)
+=
+\sigma_s^2\Lambda_{\theta_s}\Lambda_{\theta_s}^T.
+\]
+For a random-intercept term with \(m\) grouping levels,
+\(\Lambda_{\theta_s}=\theta_s I_m\), where \(I_m\) is the \(m \times m\)
+identity matrix. In that special case, \(\theta_s\) is the ratio of the
+random-intercept standard deviation to the residual standard deviation.
+
+BLMM optimises an unconstrained parameter vector \(\phi_s\) rather than
+\(\theta_s\) directly. For each covariance-factor component constrained to be
+nonnegative, BLMM uses
+\[
+\phi_{sj}=\log(\theta_{sj}),
+\qquad
+\theta_{sj}=\exp(\phi_{sj}).
+\]
+Components without a lower bound, such as off-diagonal covariance-factor
+entries, are not log-transformed. Accordingly, the scalar relation
+\(\theta_s=\exp(\phi_s)\) applies directly to a random-intercept-only model but
+not necessarily to every component of a correlated random-effects model.
 
 BLMM is implemented in the profiled `lme4` formulation rather than through a
 dense \(N \times N\) covariance matrix. This does not change the statistical
@@ -98,7 +134,14 @@ R_{ZX,\theta_s} = L_{\theta_s}^{-1}\Lambda_{\theta_s} Z^T X,
 \qquad
 M_{\theta_s} = X^T X - R_{ZX,\theta_s}^T R_{ZX,\theta_s},
 \]
-where \(L_{\theta_s}\) is the Cholesky factor of \(A_{\theta_s}\).
+where \(I_q\) is the \(q \times q\) identity matrix and
+\(L_{\theta_s}\) is the lower Cholesky factor defined by
+\[
+A_{\theta_s}=L_{\theta_s}L_{\theta_s}^T.
+\]
+Thus \(\Lambda_{\theta_s}\) describes the random-effects covariance, whereas
+\(L_{\theta_s}\) is a computational factor derived from that covariance and
+the random-effects design matrix.
 
 The response-dependent part of the draw-specific criterion is the profiled
 weighted residual sum of squares
@@ -119,12 +162,15 @@ L_{X,\theta_s}^{-1}
 X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}
 \right),
 \]
-and \(L_{X,\theta_s}\) the Cholesky factor of \(M_{\theta_s}\).
+where \(L_{X,\theta_s}\) is the lower Cholesky factor defined by
+\(M_{\theta_s}=L_{X,\theta_s}L_{X,\theta_s}^T\). Here \(\|\cdot\|\) denotes
+the Euclidean norm, and \(|\cdot|\) below denotes a matrix determinant.
 
-Up to constants, the profiled REML criterion for one draw is
+Let \(\ell_s\) denote the profiled REML objective that BLMM minimises. Up to an
+additive constant that does not depend on the covariance parameters, it is
 \[
 \ell_s(\theta_s)
-\propto
+=
 \frac{1}{2}
 \left\{
 \log |A_{\theta_s}|
@@ -179,6 +225,13 @@ which is, up to constants,
 \right)
 \right\}.
 \]
+Here expressions such as \(A_\phi\) and \(M_\phi\) mean that \(\phi\) is first
+mapped to \(\theta\), after which the corresponding covariance factor
+\(\Lambda_\theta\) and profiled matrices are constructed. The anchor is the
+minimiser
+\[
+\bar{\phi}=\operatorname*{arg\,min}_{\phi}\bar{\ell}(\phi).
+\]
 
 This point is important: the batched anchor uses the **average of the per-draw
 profiled REML criteria**, not a surrogate such as
@@ -187,17 +240,35 @@ correction, and the curvature matrix are all defined with respect to this same
 averaged profiled objective.
 
 BLMM then takes a local second-order approximation around the anchor
-\(\bar{\phi}\). Let \(H\) denote the observed Hessian of \(\bar{\ell}\) at that
-anchor. For draw \(s\), BLMM computes a draw-specific score correction
-\(g_s\), defined as the difference between the average profiled score and the
-draw-specific profiled score at \(\bar{\phi}\), and applies the local Newton
-update
+\(\bar{\phi}\). Let
+\[
+H=\nabla^2\bar{\ell}(\bar{\phi})
+\]
+denote the observed Hessian of the averaged objective at that anchor. For draw
+\(s\), BLMM computes the score correction
+\[
+g_s
+=
+\nabla\bar{\ell}(\bar{\phi})-\nabla\ell_s(\bar{\phi}),
+\]
+the difference between the average and draw-specific profiled gradients. It
+then applies the local Newton update
 \[
 \phi_s \approx \bar{\phi} + H^{-1} g_s.
 \]
 
-This yields one updated covariance parameter vector per draw without rerunning a
-full REML optimisation from scratch.
+This yields one proposed covariance parameter vector per draw without rerunning
+a full REML optimisation from scratch. Because the shared Hessian may be a poor
+local approximation for a particular draw, BLMM accepts the proposal only when
+\[
+\ell_s(\phi_s)
+\leq
+\ell_s(\bar{\phi}) + \tau_s,
+\]
+where \(\tau_s\) is a scale-aware numerical tolerance. A non-finite proposal or
+an objective increase larger than \(\tau_s\) triggers exact `lme4` fallback for
+that draw. This check rejects demonstrably harmful local updates without
+requiring a damped Newton or trust-region algorithm.
 
 Conditional on \(\phi_s\), BLMM then solves the fixed effects exactly by
 generalized least squares:
@@ -206,8 +277,20 @@ generalized least squares:
 =
 \left(X^T V_s^{-1}X\right)^{-1}X^T V_s^{-1} y_s,
 \]
-where \(V_s = Z\Sigma_{\theta_s}Z^T + \sigma_s^2 I_N\) is the covariance model
-implied by the updated parameters.
+where the marginal covariance implied by the updated parameters is
+\[
+V_s
+=
+\sigma_s^2
+\left(
+Z\Sigma_{\theta_s}Z^T+I_N
+\right)
+=
+\sigma_s^2
+\left(
+Z\Lambda_{\theta_s}\Lambda_{\theta_s}^T Z^T+I_N
+\right).
+\]
 
 The approximation is therefore confined to the repeated covariance-optimisation
 step. The per-draw fixed-effects solve remains exact conditional on the updated
@@ -251,7 +334,9 @@ The BLMM test suite focuses on algorithmic correctness first.
 4. Random-slope and correlated-random-effect tests verify that covariance terms
    are retained in the returned random-effects output.
 5. Failure-mode tests verify that BLMM warns and falls back to exact `lme4`
-   instead of silently changing the model.
+   when shared-anchor optimisation or Hessian validation fails, and for
+   rejected draw-specific updates, instead of silently returning an unreliable
+   approximation.
 
 The practical target is that approximation error in posterior means should stay
 materially smaller than posterior uncertainty used for inference, and that
@@ -289,6 +374,11 @@ fit_blmm <- aldex(
 
 head(summary(fit_blmm))
 ```
+
+In this example, `clr.sm` centers the scale model on the scales implied by the
+centered log-ratio (CLR) transformation, and `gamma = 0` adds no scale
+uncertainty around that center. These choices reproduce a fixed CLR scale
+assumption; they are not required by the BLMM engine.
 
 Switching between exact and approximate fitting only changes the engine:
 replace `method = "blmm"` with `method = "lme4"` for exact variance-component
@@ -400,7 +490,7 @@ knitr::kable(
   caption = paste0(
     "Elapsed runtime on the shared-draw vignette subset averaged over K = ",
     K,
-    " repeated runs. Times will vary by hardware."
+    " timing run(s). Times will vary by hardware."
   )
 )
 cat('\n</div>\n')
@@ -411,15 +501,17 @@ Carlo draws. The duplicated `set.seed(42)` above enforces that. Without that
 reset, the comparison would conflate engine differences with differences in the
 posterior draw block itself.
 
-With identical draws on this vignette subset, the comparison gave a maximum
-absolute posterior-mean coefficient difference of about `0.023`, a median
-absolute difference effectively `0`, a maximum absolute posterior
-standard-error difference of about `0.025`, and a median standard-error
-difference of about `0.003`. Averaging the runtime over `K = 10` repeated runs
-gave a `blmm` speedup of about `11.95x` relative to `lme4` on this subset.
-That is the practical target for BLMM on this example: when compared on the
-same posterior draws, `blmm` should stay very close to the exact `lme4`
-engine while avoiding repeated exact variance-component optimisation.
+With identical draws on this vignette subset, the maximum absolute
+posterior-mean coefficient difference was
+`r round(max(cmp$abs_est_diff), 3)`, and the median absolute difference was
+`r round(median(cmp$abs_est_diff), 3)`. The maximum absolute posterior
+standard-error difference was `r round(max(cmp$abs_se_diff), 3)`, and the
+median standard-error difference was `r round(median(cmp$abs_se_diff), 3)`.
+Across `r K` timing replicate`r if (K == 1) "" else "s"`, `blmm` was
+approximately `r round(mean(time_lme4) / mean(time_blmm), 2)` times as fast as
+`lme4` on this subset. These comparisons illustrate the practical target for
+BLMM: on identical posterior draws, it should stay close to exact `lme4` while
+avoiding repeated exact variance-component optimisation.
 
 ## Runtime Scaling
 

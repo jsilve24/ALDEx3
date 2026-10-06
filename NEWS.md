@@ -1,3 +1,12 @@
+# ALDEx3 1.4.0
+
+## Maintenance
+
+- Made BLMM reject invalid or ill-conditioned raw anchor Hessians instead of
+  ridge-regularising and inverting them. Draw-specific Newton updates are now
+  checked against their profiled REML objective, and rejected draws fall back
+  selectively to exact `lme4` rather than returning pathological uncertainty.
+
 # ALDEx3 1.3.1
 
 ## Maintenance

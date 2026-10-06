@@ -250,20 +250,24 @@ blmm_anchor_objective_from_report <- function(report, n, p) {
 # Anchor optimisation and curvature handling
 # ---------------------------------------------------------------------------
 
-#' Symmetrise and regularise the observed Hessian at the anchor.
+#' Symmetrise and validate the observed Hessian at the anchor.
 #'
 #' @details
-#' Adds a diagonal ridge just large enough to make the smallest eigenvalue
-#' exceed \code{tol}. Small negative eigenvalues from numerical noise are
-#' handled conservatively and explicitly rather than silently ignored.
-#' Sets \code{attr(H, "ridge_delta")} when regularisation is applied so
-#' callers can detect and diagnose near-flat curvature.
+#' A non-finite, non-positive-definite, or numerically ill-conditioned Hessian
+#' is not safe to invert for the shared Newton update. Such matrices are
+#' rejected rather than regularised so the caller can fall back to exact
+#' \code{lme4}. The relative eigenvalue criterion is scale invariant; for a
+#' one-dimensional positive Hessian its value is necessarily one.
 #'
 #' @param H square numeric matrix: raw observed Hessian from \code{obj$he()}
-#' @param tol minimum acceptable eigenvalue; values at or below trigger ridge
-#' @return symmetric positive-definite matrix of the same dimension as H
+#' @param tol minimum acceptable ratio of smallest to largest eigenvalue
+#' @return the symmetrised Hessian, unchanged apart from symmetrisation
 #' @noRd
-blmm_regularise_H <- function(H, tol = 1e-8) {
+blmm_validate_H <- function(H, tol = 1e-6) {
+  if (!is.matrix(H) || nrow(H) == 0L || nrow(H) != ncol(H)) {
+    stop("blmm: observed Hessian must be a non-empty square matrix")
+  }
+
   H <- (H + t(H)) / 2
   if (any(!is.finite(H))) {
     stop("blmm: observed Hessian contains non-finite values")
@@ -271,10 +275,18 @@ blmm_regularise_H <- function(H, tol = 1e-8) {
 
   ev <- eigen(H, symmetric = TRUE, only.values = TRUE)$values
   min_ev <- min(ev)
-  if (min_ev <= tol) {
-    delta <- tol - min_ev + max(abs(diag(H)), 1) * 1e-8
-    H <- H + diag(delta, nrow(H))
-    attr(H, "ridge_delta") <- delta
+  max_ev <- max(ev)
+  if (min_ev <= 0) {
+    stop("blmm: observed Hessian is not positive definite")
+  }
+
+  relative_min <- min_ev / max_ev
+  if (!is.finite(relative_min) || relative_min < tol) {
+    stop(
+      "blmm: observed Hessian is numerically ill-conditioned ",
+      sprintf("(minimum/maximum eigenvalue ratio %.3g < %.3g)",
+              relative_min, tol)
+    )
   }
 
   H
@@ -289,7 +301,7 @@ blmm_regularise_H <- function(H, tol = 1e-8) {
 #'
 #' @param obj TMB autodiff object from \code{blmm_make_adfun()}
 #' @param phi_init starting values for the optimiser
-#' @return list with \code{phi_bar} (optimal phi) and \code{H_d} (regularised
+#' @return list with \code{phi_bar} (optimal phi) and \code{H_d} (validated
 #'   observed Hessian at the optimum)
 #' @noRd
 blmm_fit_anchor <- function(obj, phi_init) {
@@ -317,7 +329,7 @@ blmm_fit_anchor <- function(obj, phi_init) {
          conditionMessage(H_raw))
   }
 
-  list(phi_bar = fit$par, H_d = blmm_regularise_H(H_raw))
+  list(phi_bar = fit$par, H_d = blmm_validate_H(H_raw))
 }
 
 # ---------------------------------------------------------------------------
@@ -404,7 +416,7 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
 #' optimising separately for each of the S draws.
 #'
 #' @param phi_bar numeric vector: anchor (shared optimal phi)
-#' @param H_d positive-definite matrix: regularised Hessian at the anchor
+#' @param H_d positive-definite matrix: validated Hessian at the anchor
 #' @param scores matrix (length(phi_bar) x S): per-draw score vectors from
 #'   \code{blmm_scores_batch()}
 #' @return matrix of the same dimension as \code{scores}: column s is the
@@ -478,6 +490,33 @@ blmm_fixed_effects_draw <- function(pieces, X, y) {
   )
 }
 
+#' Profiled REML objective from one draw's conditional solve.
+#'
+#' @details
+#' Reconstructs the same profiled objective used by the TMB anchor from the
+#' Cholesky factors and residual variance already computed for a proposed
+#' draw-specific covariance update. This avoids a second TMB evaluation.
+#'
+#' @param pieces list from \code{blmm_common_pieces()}
+#' @param sigma2 positive profiled residual variance from
+#'   \code{blmm_fixed_effects_draw()}
+#' @param n number of observations
+#' @param p number of fixed-effect columns
+#' @return scalar profiled REML objective, up to the same additive constant as
+#'   \code{blmm_profiled_objectives()}
+#' @noRd
+blmm_profiled_objective_from_pieces <- function(pieces, sigma2, n, p) {
+  diag_L <- diag(pieces$L)
+  diag_LX <- diag(pieces$LX)
+  if (!is.finite(sigma2) || sigma2 <= 0 ||
+      any(!is.finite(diag_L)) || any(diag_L <= 0) ||
+      any(!is.finite(diag_LX)) || any(diag_LX <= 0)) {
+    stop("blmm: invalid quantities in the proposed profiled REML objective")
+  }
+
+  sum(log(diag_L)) + sum(log(diag_LX)) + (n - p) / 2 * log(sigma2)
+}
+
 #' Recompute Cholesky pieces for a per-draw GLS solve.
 #'
 #' @details
@@ -497,6 +536,9 @@ blmm_fixed_effects_draw <- function(pieces, X, y) {
 #' @noRd
 blmm_common_pieces <- function(phi, X, basis, lower) {
   theta <- phi_to_theta_blmm(phi, lower)
+  if (any(!is.finite(theta))) {
+    stop("blmm: proposed covariance parameters are non-finite")
+  }
   q <- dim(basis)[2]
   n <- nrow(X)
   LambdaZt <- matrix(0, nrow = q, ncol = n)
@@ -538,10 +580,11 @@ blmm_common_pieces <- function(phi, X, basis, lower) {
 # Exact lme4 fallback
 # ---------------------------------------------------------------------------
 
-#' Exact lme4 fallback fit for one feature (all S draws).
+#' Exact lme4 fallback fit for one feature and one or more draws.
 #'
 #' @details
-#' Called when the approximate BLMM path fails for a feature. Wraps
+#' Called when the approximate BLMM path fails for a feature or selected draws.
+#' Wraps
 #' \code{sr.mem()} with a singleton feature dimension so the output layout
 #' matches what \code{blmm_fit_feature()} expects.
 #'
@@ -581,9 +624,12 @@ blmm_exact_feature <- function(Y_d, formula, data) {
 #' (3) for each draw, recompute the Cholesky pieces from \code{phi_tilde[, s]} and
 #' run an exact GLS solve for fixed effects.
 #'
-#' On any numerical failure the entire feature falls back silently to exact
-#' lme4 via \code{blmm_exact_feature()}, and \code{fallback = TRUE} is
-#' returned so the caller can warn the user.
+#' Failure of the shared anchor optimisation, or an unusable anchor Hessian,
+#' causes the entire feature to fall back to exact \code{lme4}. Once an anchor
+#' is available, each proposed draw-specific update must leave that draw's
+#' profiled REML objective unchanged within numerical tolerance or improve it.
+#' Rejected draws are re-fit exactly and spliced into the feature result;
+#' accepted draws retain the fast BLMM approximation.
 #'
 #' @param d integer feature index (column of logW)
 #' @param logW numeric array (N x D x S)
@@ -597,8 +643,8 @@ blmm_exact_feature <- function(Y_d, formula, data) {
 #' @param data data.frame
 #' @param forced_fallback integer vector of feature indices to force onto the
 #'   exact lme4 path; a testing hook, not used in normal operation
-#' @return list with \code{fit} (arrays), \code{fallback} (logical), and
-#'   \code{fallback_message} (character)
+#' @return list with \code{fit} (arrays), fallback status and counts, and a
+#'   diagnostic \code{fallback_message}
 #' @noRd
 blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
                              reTrms, formula, data, forced_fallback = integer(0)) {
@@ -613,7 +659,9 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     return(list(
       fit = blmm_exact_feature(Y_d, formula, data),
       fallback = TRUE,
-      fallback_message = "forced approximate failure for testing"
+      fallback_message = "forced approximate failure for testing",
+      fallback_draws = S,
+      full_fallback = TRUE
     ))
   }
 
@@ -626,6 +674,10 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     # the anchor, then Newton-step to draw-specific covariance parameters.
     obj_full$fn(anchor$phi_bar)
     anchor_report <- obj_full$report()
+    anchor_objectives <- blmm_profiled_objectives(anchor_report, N, p)
+    if (any(!is.finite(anchor_objectives))) {
+      stop("blmm: non-finite profiled REML objective at the anchor")
+    }
     g_mat <- blmm_scores_batch(obj_full, anchor$phi_bar,
                                anchor_report$PWRSS_s, N, p)
     phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat)
@@ -636,13 +688,57 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     feature_p.lower <- matrix(NA_real_, nrow = p, ncol = S)
     feature_p.upper <- matrix(NA_real_, nrow = p, ncol = S)
     feature_random <- matrix(NA_real_, nrow = feature_random_rows, ncol = S)
+    rejected <- rep(FALSE, S)
+    rejection_messages <- rep("", S)
 
-    # Step 3: exact conditional GLS solve per draw. p-values use a
-    # t-distribution with residual df (n - p), not Satterthwaite.
+    # Step 3: exact conditional GLS solve per draw. Accept the local covariance
+    # update only if it does not materially worsen that draw's profiled REML
+    # objective. p-values use a t-distribution with residual df (n - p), not
+    # Satterthwaite.
     for (s in seq_len(S)) {
-      pieces <- blmm_common_pieces(phi_tilde[, s], X, basis, lower)
-      fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
+      draw_result <- tryCatch({
+        pieces <- blmm_common_pieces(phi_tilde[, s], X, basis, lower)
+        fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
+        proposed_objective <- blmm_profiled_objective_from_pieces(
+          pieces, fe$sigma2, N, p
+        )
+        objective_delta <- proposed_objective - anchor_objectives[s]
+        objective_tol <- sqrt(.Machine$double.eps) *
+          (1 + abs(anchor_objectives[s]))
+        if (!is.finite(objective_delta) || objective_delta > objective_tol) {
+          stop(
+            sprintf(
+              paste0(
+                "proposed covariance update worsened the profiled REML ",
+                "objective by %.6g (tolerance %.6g)"
+              ),
+              objective_delta,
+              objective_tol
+            )
+          )
+        }
 
+        theta_draw <- phi_to_theta_blmm(phi_tilde[, s], lower)
+        random_draw <- blmm_random_effect_vector(
+          theta = theta_draw,
+          sigma2 = fe$sigma2,
+          reTrms = reTrms
+        )
+        if (any(!is.finite(fe$beta)) || any(!is.finite(fe$se)) ||
+            any(!is.finite(random_draw))) {
+          stop("proposed covariance update produced non-finite results")
+        }
+
+        list(fe = fe, random = random_draw)
+      }, error = function(e) e)
+
+      if (inherits(draw_result, "error")) {
+        rejected[s] <- TRUE
+        rejection_messages[s] <- conditionMessage(draw_result)
+        next
+      }
+
+      fe <- draw_result$fe
       feature_estimate[, s] <- fe$beta
       feature_std.error[, s] <- fe$se
       feature_df[, s] <- fe$df
@@ -650,13 +746,49 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
       t_stat <- fe$beta / fe$se
       feature_p.lower[, s] <- pt(t_stat, df = fe$df, lower.tail = TRUE)
       feature_p.upper[, s] <- 1 - feature_p.lower[, s]
+      feature_random[, s] <- draw_result$random
+    }
 
-      theta_draw <- phi_to_theta_blmm(phi_tilde[, s], lower)
-      feature_random[, s] <- blmm_random_effect_vector(
-        theta = theta_draw,
-        sigma2 = fe$sigma2,
-        reTrms = reTrms
+    # Refit rejected draws together so exact-rescue overhead is paid once per
+    # affected feature rather than once per draw.
+    rejected_idx <- which(rejected)
+    if (length(rejected_idx) > 0L) {
+      exact_rejected <- blmm_exact_feature(
+        Y_d[, rejected_idx, drop = FALSE], formula, data
       )
+      n_rejected <- length(rejected_idx)
+      feature_estimate[, rejected_idx] <- matrix(
+        exact_rejected$estimate, nrow = p, ncol = n_rejected
+      )
+      feature_std.error[, rejected_idx] <- matrix(
+        exact_rejected$std.error, nrow = p, ncol = n_rejected
+      )
+      feature_df[, rejected_idx] <- matrix(
+        exact_rejected$df, nrow = p, ncol = n_rejected
+      )
+      feature_p.lower[, rejected_idx] <- matrix(
+        exact_rejected$p.lower, nrow = p, ncol = n_rejected
+      )
+      feature_p.upper[, rejected_idx] <- matrix(
+        exact_rejected$p.upper, nrow = p, ncol = n_rejected
+      )
+      feature_random[, rejected_idx] <- matrix(
+        exact_rejected$random.eff,
+        nrow = feature_random_rows,
+        ncol = n_rejected
+      )
+    }
+
+    fallback_message <- ""
+    if (length(rejected_idx) > 0L) {
+      example_idx <- rejected_idx[seq_len(min(3L, length(rejected_idx)))]
+      fallback_message <- paste(
+        sprintf("draw %d: %s", example_idx, rejection_messages[example_idx]),
+        collapse = "; "
+      )
+      if (length(rejected_idx) > length(example_idx)) {
+        fallback_message <- paste0(fallback_message, " ...")
+      }
     }
 
     list(
@@ -668,14 +800,18 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
         p.upper = array(feature_p.upper, c(p, 1L, S)),
         random.eff = array(feature_random, c(feature_random_rows, 1L, S))
       ),
-      fallback = FALSE,
-      fallback_message = ""
+      fallback = length(rejected_idx) > 0L,
+      fallback_message = fallback_message,
+      fallback_draws = length(rejected_idx),
+      full_fallback = FALSE
     )
   }, error = function(e) {
     list(
       fit = blmm_exact_feature(Y_d, formula, data),
       fallback = TRUE,
-      fallback_message = conditionMessage(e)
+      fallback_message = conditionMessage(e),
+      fallback_draws = S,
+      full_fallback = TRUE
     )
   })
 
@@ -698,9 +834,10 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' is only in the variance-component step — fixed effects and standard errors
 #' are exact conditional on the updated covariance parameters.
 #'
-#' Features for which the approximate path fails are silently re-fit with the
-#' exact \code{lme4} engine and a consolidated warning is issued naming the
-#' affected features and their error messages.
+#' Draw-specific updates that fail a profiled-objective check are re-fit with
+#' exact \code{lme4}. Failure of the shared anchor optimisation, or an unusable
+#' anchor Hessian, causes exact fallback for every draw in the feature. A single
+#' consolidated warning reports either kind of rescue.
 #'
 #' @param logW numeric array (N x D x S)
 #' @param formula lme4 mixed-effects formula
@@ -791,11 +928,19 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
     feature_results <- lapply(feature_indices, feature_worker)
   }
 
-  # Any feature that threw an error was already re-fit by blmm_exact_feature()
-  # inside the tryCatch in blmm_fit_feature(). Emit one consolidated warning
-  # with up to 3 example error messages so the caller knows what failed.
+  # Failed local updates and whole-feature failures have already been re-fit by
+  # blmm_exact_feature(). Emit one consolidated warning with up to 3 example
+  # messages so the caller knows what used the exact path.
   fallback_idx <- which(vapply(feature_results, `[[`, logical(1), "fallback"))
   if (length(fallback_idx) > 0L) {
+    full_idx <- which(vapply(
+      feature_results, `[[`, logical(1), "full_fallback"
+    ))
+    partial_idx <- setdiff(fallback_idx, full_idx)
+    partial_draws <- sum(vapply(
+      feature_results[partial_idx], `[[`, integer(1), "fallback_draws"
+    ))
+
     n_examples <- min(3L, length(fallback_idx))
     example_msgs <- vapply(
       feature_results[fallback_idx[seq_len(n_examples)]],
@@ -808,11 +953,37 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
       collapse = "; "
     )
     suffix <- if (length(fallback_idx) > n_examples) " ..." else ""
-    warning(
+    warning_text <- if (length(partial_idx) == 0L) {
       sprintf(
-        "blmm: %d feature(s) fell back to exact lme4 because the approximate path failed. Examples: %s%s",
-        length(fallback_idx), example_text, suffix
-      ),
+        paste0(
+          "blmm: %d feature(s) fell back to exact lme4 because the ",
+          "approximate path failed."
+        ),
+        length(full_idx)
+      )
+    } else if (length(full_idx) == 0L) {
+      sprintf(
+        paste0(
+          "blmm: %d draw(s) across %d feature(s) fell back to exact lme4 ",
+          "because their local covariance updates failed validation."
+        ),
+        partial_draws,
+        length(partial_idx)
+      )
+    } else {
+      sprintf(
+        paste0(
+          "blmm: %d feature(s) fell back to exact lme4 for all draws, and ",
+          "%d draw(s) across %d additional feature(s) used exact lme4 ",
+          "because their local covariance updates failed validation."
+        ),
+        length(full_idx),
+        partial_draws,
+        length(partial_idx)
+      )
+    }
+    warning(
+      paste0(warning_text, " Examples: ", example_text, suffix),
       call. = FALSE
     )
   }

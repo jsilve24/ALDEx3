@@ -38,6 +38,9 @@
 ##'    one batched profiled mixed-model anchor fit per feature, draw-specific
 ##'    local covariance updates, and exact conditional fixed-effect solves.
 ##'    The approximation is only in the variance-component optimisation step.
+##'    If the shared anchor optimisation fails or its Hessian is unusable, the
+##'    whole feature falls back to exact \code{lme4}. Draw-specific updates that
+##'    worsen the profiled objective fall back only for the affected draws.
 ##'    See the mixed-effects vignette for details, validation guidance, and the
 ##'    runtime comparison with exact \code{lme4}.
 ##' @param nsample number of monte carlo replicates

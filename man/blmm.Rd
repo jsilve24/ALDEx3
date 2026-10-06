@@ -35,7 +35,8 @@ conditional GLS fixed-effect solves are then run per draw. The approximation
 is only in the variance-component step — fixed effects and standard errors
 are exact conditional on the updated covariance parameters.
 
-Features for which the approximate path fails are silently re-fit with the
-exact \code{lme4} engine and a consolidated warning is issued naming the
-affected features and their error messages.
+Draw-specific updates that fail a profiled-objective check are re-fit with
+exact \code{lme4}. Failure of the shared anchor optimisation, or an unusable
+anchor Hessian, causes exact fallback for every draw in the feature. A single
+consolidated warning reports either kind of rescue.
 }

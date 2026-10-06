@@ -68,6 +68,30 @@ test_that("blmm: expected input errors", {
   )
 })
 
+test_that("blmm: raw anchor Hessians are validated without regularisation", {
+  H_raw <- matrix(c(2, 0.9, 1.1, 2), nrow = 2)
+  H_expected <- matrix(c(2, 1, 1, 2), nrow = 2)
+
+  expect_equal(ALDEx3:::blmm_validate_H(H_raw), H_expected)
+  expect_null(attr(ALDEx3:::blmm_validate_H(H_raw), "ridge_delta"))
+  expect_equal(
+    ALDEx3:::blmm_validate_H(matrix(1e-12, nrow = 1)),
+    matrix(1e-12, nrow = 1)
+  )
+  expect_error(
+    ALDEx3:::blmm_validate_H(matrix(c(1, NA, NA, 1), nrow = 2)),
+    "non-finite"
+  )
+  expect_error(
+    ALDEx3:::blmm_validate_H(diag(c(1, -1e-8))),
+    "not positive definite"
+  )
+  expect_error(
+    ALDEx3:::blmm_validate_H(diag(c(1, 1e-7))),
+    "ill-conditioned"
+  )
+})
+
 test_that("blmm A: single-draw agreement with exact lme4", {
   set.seed(42)
   nsample <- 1
@@ -144,6 +168,15 @@ test_that("blmm A3: lean common-piece kernel matches the batched report", {
   expect_equal(pieces$RZX, report$RZX, tolerance = 1e-10)
   expect_equal(pieces$LX, report$LX, tolerance = 1e-10)
   expect_equal(pieces$LambdaZt, report$LambdaZt, tolerance = 1e-10)
+
+  fe <- ALDEx3:::blmm_fixed_effects_draw(pieces, parsed$X, Y_d[, 1])
+  objective_from_pieces <- ALDEx3:::blmm_profiled_objective_from_pieces(
+    pieces, fe$sigma2, nrow(parsed$X), ncol(parsed$X)
+  )
+  objective_from_report <- ALDEx3:::blmm_profiled_objectives(
+    report, nrow(parsed$X), ncol(parsed$X)
+  )[1]
+  expect_equal(objective_from_pieces, objective_from_report, tolerance = 1e-8)
 })
 
 test_that("blmm B: identical-draw consistency", {
@@ -273,6 +306,70 @@ test_that("blmm E: parallel fallback aggregates warnings and remains exact", {
                tolerance = 1e-10)
   expect_equal(res_parallel$random.eff[, 1:2, ], res_exact$random.eff[, 1:2, ],
                tolerance = 1e-10)
+})
+
+test_that("blmm E2: an indefinite anchor Hessian causes exact feature fallback", {
+  set.seed(8642)
+  nsample <- 3
+  formula <- ~treatment + (1|subject_ids)
+  sim <- ALDEx3:::aldex.mem.sim(D = 1, days = 4, subjects = 6,
+                       depth = 100000, sd_resid = 0.08)
+  logScale <- blmm_true_scale(sim, nsample)
+  logW <- blmm_sample_logW(sim$Y, formula, sim$meta, nsample, logScale)
+  exact <- ALDEx3:::sr.mem(logW, formula, sim$meta, n.cores = 1L,
+                           method = "lme4", mem.args = list())
+
+  make_adfun <- ALDEx3:::blmm_make_adfun
+  local_mocked_bindings(
+    blmm_make_adfun = function(...) {
+      obj <- make_adfun(...)
+      obj$he <- function(...) matrix(-1, nrow = 1L, ncol = 1L)
+      obj
+    },
+    .package = "ALDEx3"
+  )
+
+  expect_warning(
+    fit <- ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 1L),
+    "1 feature\\(s\\) fell back to exact lme4"
+  )
+  expect_equal(fit$estimate, exact$estimate, tolerance = 1e-10)
+  expect_equal(fit$std.error, exact$std.error, tolerance = 1e-10)
+  expect_equal(fit$random.eff, exact$random.eff, tolerance = 1e-10)
+})
+
+test_that("blmm E3: a materially worse Newton update falls back by draw", {
+  set.seed(7531)
+  nsample <- 4
+  formula <- ~treatment + (1|subject_ids)
+  sim <- ALDEx3:::aldex.mem.sim(D = 1, days = 5, subjects = 8,
+                       depth = 100000, sd_resid = 0.08)
+  logScale <- blmm_true_scale(sim, nsample)
+  logW <- blmm_sample_logW(sim$Y, formula, sim$meta, nsample, logScale)
+
+  baseline <- ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 1L)
+  exact <- ALDEx3:::sr.mem(logW, formula, sim$meta, n.cores = 1L,
+                           method = "lme4", mem.args = list())
+  phi_updates <- ALDEx3:::blmm_phi_updates
+  local_mocked_bindings(
+    blmm_phi_updates = function(phi_bar, H_d, scores) {
+      updates <- phi_updates(phi_bar, H_d, scores)
+      updates[, 1] <- phi_bar + 10
+      updates
+    },
+    .package = "ALDEx3"
+  )
+
+  expect_warning(
+    fit <- ALDEx3:::blmm(logW, formula, sim$meta, n.cores = 1L),
+    "1 draw\\(s\\) across 1 feature\\(s\\) fell back to exact lme4"
+  )
+  expect_equal(fit$estimate[, , 1], exact$estimate[, , 1], tolerance = 1e-10)
+  expect_equal(fit$std.error[, , 1], exact$std.error[, , 1], tolerance = 1e-10)
+  expect_equal(fit$random.eff[, , 1], exact$random.eff[, , 1], tolerance = 1e-10)
+  expect_equal(fit$estimate[, , -1], baseline$estimate[, , -1], tolerance = 1e-10)
+  expect_equal(fit$std.error[, , -1], baseline$std.error[, , -1], tolerance = 1e-10)
+  expect_equal(fit$random.eff[, , -1], baseline$random.eff[, , -1], tolerance = 1e-10)
 })
 
 test_that("blmm D/E/F: correlated random-slope output remains compatible", {
