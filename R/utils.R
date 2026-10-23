@@ -8,13 +8,11 @@
 ##' @author Justin Silverman
 ##' @import purrr
 combine.streams <- function(l) {
-   l <- purrr::list_transpose(l)
-   n <- length(l)
-   for (i in 1:n) {
-     l[[i]] <- abind::abind(l[[i]], along=3)
-   }
-   return(l)
- }
+   fields <- names(l[[1]])
+   stats::setNames(lapply(fields, function(field) {
+     abind::abind(lapply(l, function(chunk) chunk[[field]]), along=3)
+   }), fields)
+}
 
 
 

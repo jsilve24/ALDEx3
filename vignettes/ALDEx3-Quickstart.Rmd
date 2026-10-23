@@ -103,9 +103,9 @@ ALDEx3 implements the published [SR-MEM method](https://link.springer.com/articl
 (Scale Reliant Mixed Effects Models) through the exact `lme4` and `nlme`
 engines and the approximate `blmm` engine. The quickstart no longer walks
 through those models inline. See the dedicated mixed-effects vignette
-`vignettes/ALDEx3-mixed-effects.Rmd` for the model setup, the `blmm`
-mathematical formulation, and a practical comparison between exact `lme4` and
-approximate `blmm` results on the `oral_mouthwash_data` dataset.
+`vignettes/ALDEx3-mixed-effects.Rmd` for a runnable age-by-genotype contrast
+example, the shared-anchor Satterthwaite default, and the evidence and
+limitations behind the BLMM inference change in 1.5.0.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 

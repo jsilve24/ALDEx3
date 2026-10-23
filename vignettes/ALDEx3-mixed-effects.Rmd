@@ -1,560 +1,308 @@
 ---
-title: "ALDEx3 Mixed-Effects Engines"
-output: rmarkdown::html_vignette
+title: "Mixed models and linear contrasts in ALDEx3"
+output:
+  rmarkdown::html_vignette:
+    mathjax: null
+    pandoc_args: ["--mathml"]
 vignette: >
-  %\VignetteIndexEntry{ALDEx3 Mixed-Effects Engines}
+  %\VignetteIndexEntry{Mixed models and linear contrasts in ALDEx3}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
-)
-```
-
-## Motivation
-
-ALDEx3 fits a regression model to every Monte Carlo draw of the latent
-log-abundance for every feature. For mixed-effects models, repeating a full
-exact variance-component optimisation for each draw can dominate runtime.
-
-The exact ALDEx3 mixed-effects engines remain available through
-`method = "lme4"` and `method = "nlme"`. The `method = "blmm"` engine is an
-ALDEx3-specific approximation designed to reduce repeated optimisation cost
-while preserving the same fixed-effects model. When `n.cores > 1`, BLMM and
-the exact mixed-effects engines parallelize across features, not across the
-Monte Carlo draws within a feature.
-
-## What BLMM Approximates
-
-For one feature and one Monte Carlo draw, the target remains the usual Gaussian
-linear mixed model fitted by profiled restricted maximum likelihood (REML).
-BLMM does **not** approximate the fixed-effects solve once covariance parameters
-are chosen.
-
-The approximation is only this:
-
-1. Fit one feature-specific batched anchor covariance model across all draws.
-2. Build draw-specific local score updates around that anchor.
-3. Update the covariance parameters per draw with a local Newton step.
-4. Check that each proposed update does not materially worsen its draw's
-   profiled REML objective; refit rejected draws with exact `lme4`.
-5. Solve the fixed effects exactly for each accepted draw conditional on the updated
-   covariance parameters.
-
-If the shared anchor optimisation fails or its Hessian is unusable, ALDEx3
-falls back to exact `lme4` for the entire feature. If only particular
-draw-specific updates fail, ALDEx3 refits those draws exactly and retains the
-accepted BLMM draws. In either case, it emits one consolidated warning.
-
-## Conceptual Formulation
-
-Conceptually, each draw has its own REML objective for the same design matrices
-and grouping structure but a different response vector. BLMM introduces:
-
-1. One anchor fit per feature.
-2. One shared local curvature matrix at the anchor.
-3. Draw-specific local score corrections around the anchor.
-4. Exact conditional generalized least-squares (GLS) fixed-effect solves for
-   each draw.
-
-This is the cleanest way to describe the method statistically.
-
-## Implemented Profiled Formulation
-
-To keep the notation manageable, fix one feature \(d\). For Monte Carlo draw
-\(s\), let \(y_{ds} \in \mathbb{R}^{N}\) denote the vector of latent
-log-abundances across the \(N\) samples. Since the feature is fixed throughout
-this section, I write \(y_s\) instead of \(y_{ds}\).
-
-For that fixed feature and draw, BLMM targets the same Gaussian linear mixed
-model as `lme4`:
-\[
-y_s = X\beta_s + Z u_s + \varepsilon_s,
-\qquad
-u_s \sim N(0, \sigma_s^2 \Sigma_{\theta_s}),
-\qquad
-\varepsilon_s \sim N(0, \sigma_s^2 I_N).
-\]
-
-Here \(X \in \mathbb{R}^{N \times p}\) is the fixed-effects design matrix,
-\(\beta_s \in \mathbb{R}^{p}\) is the draw-specific fixed-effects vector,
-\(Z \in \mathbb{R}^{N \times q}\) is the random-effects design matrix, and
-\(u_s \in \mathbb{R}^{q}\) is the draw-specific random-effects vector. Thus
-\(p\) is the number of fixed-effect coefficients and \(q\) is the number of
-random-effect coefficients. The residual standard deviation is \(\sigma_s>0\),
-\(I_N\) denotes the \(N \times N\) identity matrix, and the superscript \(T\)
-denotes matrix transpose.
-
-The parameter vector \(\theta_s\) determines the random-effects covariance
-relative to the residual variance. As in `lme4`, BLMM represents this relative
-covariance by a lower-triangular factor
-\(\Lambda_{\theta_s} \in \mathbb{R}^{q \times q}\):
-\[
-\Sigma_{\theta_s}
-=
-\Lambda_{\theta_s}\Lambda_{\theta_s}^T,
-\qquad
-\operatorname{Var}(u_s)
-=
-\sigma_s^2\Lambda_{\theta_s}\Lambda_{\theta_s}^T.
-\]
-For a random-intercept term with \(m\) grouping levels,
-\(\Lambda_{\theta_s}=\theta_s I_m\), where \(I_m\) is the \(m \times m\)
-identity matrix. In that special case, \(\theta_s\) is the ratio of the
-random-intercept standard deviation to the residual standard deviation.
-
-BLMM optimises an unconstrained parameter vector \(\phi_s\) rather than
-\(\theta_s\) directly. For each covariance-factor component constrained to be
-nonnegative, BLMM uses
-\[
-\phi_{sj}=\log(\theta_{sj}),
-\qquad
-\theta_{sj}=\exp(\phi_{sj}).
-\]
-Components without a lower bound, such as off-diagonal covariance-factor
-entries, are not log-transformed. Accordingly, the scalar relation
-\(\theta_s=\exp(\phi_s)\) applies directly to a random-intercept-only model but
-not necessarily to every component of a correlated random-effects model.
-
-BLMM is implemented in the profiled `lme4` formulation rather than through a
-dense \(N \times N\) covariance matrix. This does not change the statistical
-target. It is simply the algebraic form that makes repeated mixed-model fitting
-much more efficient.
-
-After profiling out the fixed effects and residual scale, the criterion depends
-only on the covariance parameters. In this formulation, the key matrices are
-\[
-A_{\theta_s} = I_q + \Lambda_{\theta_s} Z^T Z \Lambda_{\theta_s}^T,
-\]
-\[
-R_{ZX,\theta_s} = L_{\theta_s}^{-1}\Lambda_{\theta_s} Z^T X,
-\qquad
-M_{\theta_s} = X^T X - R_{ZX,\theta_s}^T R_{ZX,\theta_s},
-\]
-where \(I_q\) is the \(q \times q\) identity matrix and
-\(L_{\theta_s}\) is the lower Cholesky factor defined by
-\[
-A_{\theta_s}=L_{\theta_s}L_{\theta_s}^T.
-\]
-Thus \(\Lambda_{\theta_s}\) describes the random-effects covariance, whereas
-\(L_{\theta_s}\) is a computational factor derived from that covariance and
-the random-effects design matrix.
-
-The response-dependent part of the draw-specific criterion is the profiled
-weighted residual sum of squares
-\[
-\mathrm{PWRSS}_s(\theta_s)
-=
-\|y_s\|^2
-- \|R_{ZY,\theta_s}\|^2
-- \|C_{\beta,\theta_s}\|^2,
-\]
-with
-\[
-R_{ZY,\theta_s} = L_{\theta_s}^{-1}\Lambda_{\theta_s} Z^T y_s,
-\qquad
-C_{\beta,\theta_s} =
-L_{X,\theta_s}^{-1}
-\left(
-X^T y_s - R_{ZX,\theta_s}^T R_{ZY,\theta_s}
-\right),
-\]
-where \(L_{X,\theta_s}\) is the lower Cholesky factor defined by
-\(M_{\theta_s}=L_{X,\theta_s}L_{X,\theta_s}^T\). Here \(\|\cdot\|\) denotes
-the Euclidean norm, and \(|\cdot|\) below denotes a matrix determinant.
-
-Let \(\ell_s\) denote the profiled REML objective that BLMM minimises. Up to an
-additive constant that does not depend on the covariance parameters, it is
-\[
-\ell_s(\theta_s)
-=
-\frac{1}{2}
-\left\{
-\log |A_{\theta_s}|
-+
-\log |M_{\theta_s}|
-+
-(N-p)\log\left(
-\frac{\mathrm{PWRSS}_s(\theta_s)}{N-p}
-\right)
-\right\}.
-\]
-
-Now collect the \(S\) Monte Carlo draws for feature \(d\) into the response
-block
-\[
-Y_d = [y_{d1}, \dots, y_{dS}] \in \mathbb{R}^{N \times S}.
-\]
-
-The computational advantage of BLMM is that one anchor evaluation reuses the
-same structural calculations across all \(S\) columns of \(Y_d\). In each
-evaluation it performs
-
-1. one factorisation of the profiled random-effects system,
-2. one log-determinant calculation,
-3. one solve against the fixed-effects design matrix,
-4. one multi-right-hand-side solve against \(Y_d\),
-5. one average over the draw-specific profiled residual log terms.
-
-BLMM therefore does **not** run \(S\) separate REML optimisations inside the
-anchor optimiser.
-
-More precisely, the anchor fit targets the average of the per-draw profiled
-REML criteria:
-\[
-\bar{\ell}(\phi)
-=
-\frac{1}{S}\sum_{s=1}^S \ell_s(\phi),
-\]
-which is, up to constants,
-\[
-\bar{\ell}(\phi)
-\propto
-\frac{1}{2}
-\left\{
-\log |A_{\phi}|
-+
-\log |M_{\phi}|
-+
-\frac{N-p}{S}\sum_{s=1}^S
-\log\left(
-\frac{\mathrm{PWRSS}_s(\phi)}{N-p}
-\right)
-\right\}.
-\]
-Here expressions such as \(A_\phi\) and \(M_\phi\) mean that \(\phi\) is first
-mapped to \(\theta\), after which the corresponding covariance factor
-\(\Lambda_\theta\) and profiled matrices are constructed. The anchor is the
-minimiser
-\[
-\bar{\phi}=\operatorname*{arg\,min}_{\phi}\bar{\ell}(\phi).
-\]
-
-This point is important: the batched anchor uses the **average of the per-draw
-profiled REML criteria**, not a surrogate such as
-\(\log(\mathrm{mean}\,\mathrm{PWRSS}_s)\). The anchor, the draw-specific score
-correction, and the curvature matrix are all defined with respect to this same
-averaged profiled objective.
-
-BLMM then takes a local second-order approximation around the anchor
-\(\bar{\phi}\). Let
-\[
-H=\nabla^2\bar{\ell}(\bar{\phi})
-\]
-denote the observed Hessian of the averaged objective at that anchor. For draw
-\(s\), BLMM computes the score correction
-\[
-g_s
-=
-\nabla\bar{\ell}(\bar{\phi})-\nabla\ell_s(\bar{\phi}),
-\]
-the difference between the average and draw-specific profiled gradients. It
-then applies the local Newton update
-\[
-\phi_s \approx \bar{\phi} + H^{-1} g_s.
-\]
-
-This yields one proposed covariance parameter vector per draw without rerunning
-a full REML optimisation from scratch. Because the shared Hessian may be a poor
-local approximation for a particular draw, BLMM accepts the proposal only when
-\[
-\ell_s(\phi_s)
-\leq
-\ell_s(\bar{\phi}) + \tau_s,
-\]
-where \(\tau_s\) is a scale-aware numerical tolerance. A non-finite proposal or
-an objective increase larger than \(\tau_s\) triggers exact `lme4` fallback for
-that draw. This check rejects demonstrably harmful local updates without
-requiring a damped Newton or trust-region algorithm.
-
-Conditional on \(\phi_s\), BLMM then solves the fixed effects exactly by
-generalized least squares:
-\[
-\hat{\beta}_s
-=
-\left(X^T V_s^{-1}X\right)^{-1}X^T V_s^{-1} y_s,
-\]
-where the marginal covariance implied by the updated parameters is
-\[
-V_s
-=
-\sigma_s^2
-\left(
-Z\Sigma_{\theta_s}Z^T+I_N
-\right)
-=
-\sigma_s^2
-\left(
-Z\Lambda_{\theta_s}\Lambda_{\theta_s}^T Z^T+I_N
-\right).
-\]
-
-The approximation is therefore confined to the repeated covariance-optimisation
-step. The per-draw fixed-effects solve remains exact conditional on the updated
-covariance model.
-
-## Assumptions and Scope
-
-BLMM targets the same Gaussian linear mixed model as the exact `lme4` engine for
-each feature and Monte Carlo draw. It reuses `lme4::lFormula()` for formula
-parsing and random-effects design construction, so the same model syntax can be
-used for random intercepts, random slopes, and correlated random effects.
-
-The method is designed specifically for the ALDEx3 setting, where the same
-mixed-effects design is fit repeatedly across many Monte Carlo draws for each
-feature. Its computational advantage comes from exploiting the fact that the
-fixed-effects design, random-effects design, grouping structure, and covariance
-parameterisation are shared across those draws, while only the response vector
-changes.
-
-BLMM is an approximate engine. The approximation is confined to the repeated
-covariance-optimisation step: it replaces a full exact variance-component fit
-for every draw with one feature-specific anchor fit and draw-specific local
-updates around that anchor. Conditional on the updated covariance parameters,
-the per-draw fixed-effects solve remains exact.
-
-Accordingly, BLMM should be viewed as a fast ALDEx3-specific alternative to
-repeated exact `lme4` optimisation, not as a replacement for the exact engine in
-all settings. The exact `lme4` engine remains the reference implementation, and
-BLMM should be validated against exact `lme4` fits on the target problem class
-before large-scale use.
-
-## Validation Strategy
-
-The BLMM test suite focuses on algorithmic correctness first.
-
-1. Single-draw consistency checks compare `blmm` to exact `lme4`.
-2. Identical-draw checks verify that identical Monte Carlo draws produce
-   identical BLMM outputs.
-3. Simulated-data comparisons check posterior means and posterior uncertainty
-   against the exact engine.
-4. Random-slope and correlated-random-effect tests verify that covariance terms
-   are retained in the returned random-effects output.
-5. Failure-mode tests verify that BLMM warns and falls back to exact `lme4`
-   when shared-anchor optimisation or Hessian validation fails, and for
-   rejected draw-specific updates, instead of silently returning an unreliable
-   approximation.
-
-The practical target is that approximation error in posterior means should stay
-materially smaller than posterior uncertainty used for inference, and that
-posterior uncertainty itself should remain close enough to avoid changing
-routine interpretation.
-
-## Worked Example
-
-The `oral_mouthwash_data` dataset provides a repeated-measures design with one
-random intercept per participant. The exact and approximate engines use the
-same mixed-effects formula:
-
-```{r eval = TRUE}
-set.seed(42)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(ALDEx3)
-data("oral_mouthwash_data", package = "ALDEx3")
-
-Y <- oral_mouthwash_data$counts
-keep_names <- row.names(Y[((rowSums(Y == 0)) / ncol(Y)) <= 0.75, ])
-other <- colSums(Y[((rowSums(Y == 0)) / ncol(Y)) > 0.75, ])
-Y <- rbind(Y[keep_names, ], other = other)
-
-meta <- oral_mouthwash_data$metadata
-
-fit_blmm <- aldex(
-  Y,
-  ~ treat * timec + (1 | participant_id),
-  data = meta,
-  method = "blmm",
-  n.cores = 1,
-  nsample = 250,
-  scale = clr.sm,
-  gamma = 0
-)
-
-head(summary(fit_blmm))
 ```
 
-In this example, `clr.sm` centers the scale model on the scales implied by the
-centered log-ratio (CLR) transformation, and `gamma = 0` adds no scale
-uncertainty around that center. These choices reproduce a fixed CLR scale
-assumption; they are not required by the BLMM engine.
+## What changed in 1.5.0
 
-Switching between exact and approximate fitting only changes the engine:
-replace `method = "blmm"` with `method = "lme4"` for exact variance-component
-optimisation.
+BLMM now uses shared-anchor Satterthwaite inference by default. Each coefficient
+or requested contrast gets its own degrees of freedom, allowing approximately
+for uncertainty in estimated variance components. A treatment assigned once per
+mouse, for example, has fewer independent units than the observation count
+suggests. P-values can change even when estimates and standard errors barely do.
 
-## Example Comparison: `lme4` Versus `blmm`
+Choose the fitting engine with `method` and the inference convention with `test`:
 
-On a small subset of the `oral_mouthwash_data` features, `blmm` tracks the
-exact `lme4` results closely for most coefficients while running the
-covariance-optimisation step approximately. The code below fits the same model
-with both engines and compares the posterior mean coefficients and their
-posterior standard errors.
+| `method` | Default when `test` is omitted | Other supported `test` values |
+|:--|:--|:--|
+| `"lm"` | `"t.HC3"` | `"t"`, `"t.HC0"` |
+| `"blmm"` | `"t.satterthwaite"` | `"t.residual"` |
+| `"lme4"` | `"t"` (native `lmerTest` Satterthwaite) | None |
+| `"nlme"` | `"t"` (native `nlme` inference) | None |
 
-```{r eval = TRUE}
-set.seed(42)
-data("oral_mouthwash_data", package = "ALDEx3")
+Names are case-sensitive. The two BLMM selectors cannot be used with another
+engine. `lme4` still fits each draw fully and uses Satterthwaite inference
+internally. Fully optimized fitting does not make finite-sample inference exact.
 
-Y0 <- oral_mouthwash_data$counts
-keep_names <- row.names(Y0[((rowSums(Y0 == 0)) / ncol(Y0)) <= 0.75, ])
-other <- colSums(Y0[((rowSums(Y0 == 0)) / ncol(Y0)) > 0.75, ])
-Y <- rbind(Y0[keep_names, ], other = other)
+The new `contrasts` argument specifies linear hypotheses during fitting. It
+does **not** change R's factor-coding contrasts or the regression design.
 
-# Keep a small subset to make the comparison easy to inspect in the vignette.
-Y <- Y[c(seq_len(min(8, nrow(Y) - 1)), nrow(Y)), ]
-meta <- oral_mouthwash_data$metadata
+## A small runnable example
 
-K <- 1
+Suppose each mouse is observed at ages P14 and P56, and genotype is WT or KO.
+We want KO minus WT at each age, and the change in that difference between ages.
+These synthetic counts and supplied scale draws make the example self-contained.
+Known total scale is an illustrative assumption, not a recommendation for
+studies without scale measurements.
 
-fit_args <- list(
-  data = meta,
-  n.cores = 1,
-  nsample = 16,
-  scale = clr.sm,
-  gamma = 0
+```{r inputs}
+set.seed(1500)
+metadata <- data.frame(
+  mouse = factor(rep(seq_len(12), each = 2)),
+  age = factor(rep(c("P14", "P56"), 12), levels = c("P14", "P56")),
+  genotype = factor(rep(rep(c("WT", "KO"), each = 6), each = 2),
+                    levels = c("WT", "KO"))
 )
-
-fit_model <- function(method) {
-  do.call(
-    aldex,
-    c(
-      list(Y, ~ treat * timec + (1 | participant_id)),
-      fit_args,
-      list(method = method)
-    )
-  )
-}
-
-set.seed(42)
-fit_lme4 <- fit_model("lme4")
-
-set.seed(42)
-fit_blmm <- fit_model("blmm")
-
-time_lme4 <- replicate(K, {
-  set.seed(42)
-  system.time({
-    invisible(fit_model("lme4"))
-  })[["elapsed"]]
-})
-
-time_blmm <- replicate(K, {
-  set.seed(42)
-  system.time({
-    invisible(fit_model("blmm"))
-  })[["elapsed"]]
-})
-
-s_lme4 <- summary(fit_lme4)
-s_blmm <- summary(fit_blmm)
-
-cmp <- merge(
-  s_lme4,
-  s_blmm,
-  by = c("parameter", "entity"),
-  suffixes = c(".lme4", ".blmm")
-)
-
-cmp$abs_est_diff <- abs(cmp$estimate.lme4 - cmp$estimate.blmm)
-cmp$abs_se_diff <- abs(cmp$std.error.lme4 - cmp$std.error.blmm)
-
-cmp_tbl <- cmp[order(cmp$abs_est_diff, decreasing = TRUE), ][1:8, c(
-  "parameter", "entity",
-  "estimate.lme4", "estimate.blmm", "abs_est_diff",
-  "std.error.lme4", "std.error.blmm", "abs_se_diff"
-)]
-
-cat('<div style="overflow-x:auto; width:100%;">\n')
-knitr::kable(
-  cmp_tbl,
-  format = "html",
-  digits = 4,
-  caption = "Largest absolute differences between exact lme4 and blmm on the shared-draw subset."
-)
-cat('\n</div>\n')
-
-runtime_tbl <- data.frame(
-  engine = c("lme4", "blmm"),
-  mean_elapsed_sec = c(mean(time_lme4), mean(time_blmm)),
-  median_elapsed_sec = c(median(time_lme4), median(time_blmm)),
-  speedup_vs_lme4 = c(1, mean(time_lme4) / mean(time_blmm))
-)
-
-cat('\n\n')
-cat('<div style="overflow-x:auto; width:100%;">\n')
-knitr::kable(
-  runtime_tbl,
-  format = "html",
-  digits = 3,
-  caption = paste0(
-    "Elapsed runtime on the shared-draw vignette subset averaged over K = ",
-    K,
-    " timing run(s). Times will vary by hardware."
-  )
-)
-cat('\n</div>\n')
+X <- model.matrix(~ age * genotype, metadata)
+beta <- rbind(c(4, 0.3, 0.5, 0.4), c(5, -0.2, 0, 0),
+              c(4.5, 0.1, -0.3, 0.2), c(5.5, 0, 0, 0))
+mouse_effect <- matrix(rnorm(4 * 12, sd = 0.5), 4, 12)
+log_abundance <- beta %*% t(X) +
+  mouse_effect[, as.integer(metadata$mouse)] +
+  matrix(rnorm(4 * nrow(metadata), sd = 0.2), 4)
+abundance <- 2^log_abundance
+Y <- vapply(seq_len(ncol(abundance)), function(i) {
+  as.vector(rmultinom(1, size = 20000, prob = abundance[, i]))
+}, numeric(4))
+rownames(Y) <- paste0("feature_", seq_len(nrow(Y)))
+colnames(Y) <- paste0("sample_", seq_len(ncol(Y)))
+S <- 32L
+supplied_scale_model <- matrix(log2(colSums(abundance)), ncol(Y), S)
 ```
 
-For an engine comparison to be meaningful, both fits must use the same Monte
-Carlo draws. The duplicated `set.seed(42)` above enforces that. Without that
-reset, the comparison would conflate engine differences with differences in the
-posterior draw block itself.
+Build the matrix from the actual coefficient names. Every column is required,
+including zeros for the intercept and nuisance terms. Each named row tests
+whether its weighted sum of coefficients is zero. Rows need not sum to zero
+or be linearly independent.
 
-With identical draws on this vignette subset, the maximum absolute
-posterior-mean coefficient difference was
-`r round(max(cmp$abs_est_diff), 3)`, and the median absolute difference was
-`r round(median(cmp$abs_est_diff), 3)`. The maximum absolute posterior
-standard-error difference was `r round(max(cmp$abs_se_diff), 3)`, and the
-median standard-error difference was `r round(median(cmp$abs_se_diff), 3)`.
-Across `r K` timing replicate`r if (K == 1) "" else "s"`, `blmm` was
-approximately `r round(mean(time_lme4) / mean(time_blmm), 2)` times as fast as
-`lme4` on this subset. These comparisons illustrate the practical target for
-BLMM: on identical posterior draws, it should stay close to exact `lme4` while
-avoiding repeated exact variance-component optimisation.
+```{r contrasts}
+C <- matrix(0, 3, ncol(X), dimnames = list(
+  c("KO-WT at P14", "KO-WT at P56", "change in KO-WT"), colnames(X)
+))
+C["KO-WT at P14", "genotypeKO"] <- 1
+C["KO-WT at P56", c("genotypeKO", "ageP56:genotypeKO")] <- 1
+C["change in KO-WT", "ageP56:genotypeKO"] <- 1
+C
 
-## Runtime Scaling
+fit <- aldex(
+  Y, ~ age * genotype + (1 | mouse),
+  data = metadata, method = "blmm", contrasts = C,
+  scale = supplied_scale_model, nsample = S, n.cores = 1
+)
+```
 
-Runtime is driven by three quantities:
+Omitting `test` selects `"t.satterthwaite"`. To reproduce the previous convention,
+use `test = "t.residual"`. With that option, accepted approximate draws use
+residual df, while rescued draws retain their historical `lmerTest`
+Satterthwaite inference.
 
-- `N`, the number of samples,
-- `D`, the number of features, and
-- `S`, the number of Monte Carlo draws.
+```{r residual-example, eval=FALSE}
+fit_residual <- aldex(
+  Y, ~ age * genotype + (1 | mouse),
+  data = metadata, method = "blmm", test = "t.residual", contrasts = C,
+  scale = supplied_scale_model, nsample = S, n.cores = 1
+)
+```
 
-Both engines pay the shared cost of generating and transforming the Monte Carlo
-draws, which scales roughly with `D * N * S`. The difference is in the mixed
-model solve.
+## Reading the results
 
-The `n.cores` argument distributes features across workers, so it changes the
-feature loop but not the per-feature draw loop. That is why the runtime gains
-from parallelism and the runtime gains from BLMM are complementary.
+The default summary still shows coefficients. Request contrasts explicitly:
 
-`lme4` performs a full variance-component optimisation for every feature and
-every draw. That means its expensive nonlinear step scales roughly like
-`D * S * cost(full_REML_opt(N, random_effect_structure))`. As `N` grows or the
-random-effects structure gets more complex, each exact optimisation becomes
-more expensive.
+```{r results}
+head(summary(fit))
+summary(fit, component = "contrasts")
+fit$test
+```
 
-`blmm` replaces those repeated exact optimisations with one batched anchor fit
-per feature plus per-draw local updates and exact conditional fixed-effect
-solves. Its costly nonlinear work is therefore closer to
-`D * cost(anchor_REML_opt(N, random_effect_structure)) + D * S * cost(local_update(N))`.
-The savings are largest when the repeated exact optimisation is the dominant
-cost.
+Positive estimates mean KO exceeds WT for the first two contrasts. For the
+third, a positive estimate means the KO–WT difference is larger at P56.
+Estimates are on the fitted log2-abundance scale. The summary reports the mean
+estimate and mean within-fit SE across draws; the latter is not an SE calculated
+from variation between Monte Carlo draws.
 
-In practice, BLMM is most valuable when:
+`fit$contrasts$matrix` records the hypotheses in coefficient order. Its
+`estimate`, `std.error`, and `df` components are contrast × feature × draw
+arrays; `p.val` and `p.val.adj` are contrast × feature matrices. Singleton axes
+are retained. `fit$X` and coefficient results retain their original meaning.
+`fit$method` and `fit$test` record the resolved choices.
 
-1. `S` is moderate to large, so repeated exact REML fits become expensive.
-2. `D` is large, so the same model structure is reused across many features.
-3. The random-effects structure is nontrivial, so each exact `lme4` fit is
-   expensive.
-4. The approximation can be anchored once and reused cleanly across draws.
+The same `return.pars` fields control coefficient and contrast results. For
+example, `return.pars = c("p.val", "p.val.adj")` omits stored estimates, SEs, and
+df from both; the summary then cannot report them. Contrast matrices remain
+available whenever contrasts were requested. By default all three draw-level
+quantities are stored. Composition and scale draws are omitted during streaming.
 
-BLMM is less compelling when `S = 1`, when the random-effects structure is very
-simple, or when the dataset is so small that exact `lme4` optimisation is already
-cheap. In those settings, the extra approximation machinery may not buy much.
+`aldex.effect()`, `cohensd()`, and `aldex.plot()` continue to select original
+model coefficients. They do not interpret arbitrary contrast rows as binary
+predictors. Use the contrast summary or stored matrices for those combinations.
 
-On the vignette subset above, the elapsed times in the table give a concrete
-example of the expected pattern: `blmm` should be faster because it avoids
-repeating the full covariance optimisation for every draw, while still solving
-the fixed effects exactly conditional on the updated covariance parameters.
+## Scale uncertainty and multiple testing
+
+Contrasts use the same fitted draws as the coefficients. They do not change the
+design passed to the scale model, add scale priors, or draw scales separately
+for each comparison. Supply the scale distribution appropriate to the study;
+asking a different linear hypothesis does not require a new scale model.
+
+ALDEx3 adjusts **across features separately for each coefficient or contrast**.
+For two-sided inference it doubles and caps each directional probability at
+one, then adjusts each direction within each draw using `p.adjust.method`
+(BH by default). It averages over draws and selects the smaller directional
+aggregate. Adjustment is not applied just once to averaged p-values.
+`onesided = "lower"` or `"upper"` selects that undoubled directional result.
+
+Adding a contrast does not enlarge another contrast's adjustment family.
+The combined discovery lists from several coefficients or contrasts therefore
+have **no joint FDR guarantee**. Joint adjustment across families is future work.
+
+## Why the default changed
+
+The target comparison is agreement with fully fitted `lmerTest` on identical
+response draws, especially after ALDEx aggregation. In an eight-group example
+with five observations per group and one draw, residual inference used 38 df;
+anchor and the reference used approximately six. Estimates and SEs nearly
+matched, and the draw was accepted without rescue. This isolates the inference
+problem from covariance fitting.
+
+In a focused count-data comparison (three datasets, 48 features in total), the
+maximum adjusted-p error at 256 draws was 0.227 for residual inference versus
+0.00145 for anchor. Anchor matched the reference discovery sets at 0.05 with no
+rescued draws. This was a focused agreement study, not broad FDR validation.
+
+The completed oral application used 59 taxa, 12 coefficients, and 2,000 draws:
+
+| Difference from fully fitted reference | Residual | Anchor |
+|:--|--:|--:|
+| Median absolute adjusted-p error | 0.002673 | 0.001082 |
+| 95th percentile | 0.007501 | 0.002425 |
+| Maximum | 0.016516 | 0.004531 |
+| Discovery gains / losses at 0.05 | 0 / 0 | 0 / 0 |
+
+Only seven of 118,000 feature-draws required rescue. This is agreement on the
+approximate path, rather than universal use of the reference.
+
+There were regressions too. In the one completed six-participant dataset from
+the publication's simulation generator, anchor improved median and 95th-percentile
+adjusted-p errors and reduced disease-discovery disagreements from six to two.
+The maximum error worsened from 0.216 to 0.368. The largest regression was far
+from 0.05, but two discrepancies near the threshold remained. One dataset cannot
+establish general FDR calibration. The full publication benchmark was not
+completed; there is no completed IBD aggregate validation.
+
+The maintainer adopted anchor on this evidence. Earlier experimental-status
+recommendations remain preserved as historical records. The release evidence
+report, `dev/release-1.5.0/README.md`, links the verified numbers, full tables,
+and reproduction details in the
+[source repository](https://github.com/jsilve24/ALDEx3). Development studies are
+not included in the installed package.
+
+## Limitations and choosing an engine
+
+BLMM approximates both covariance optimization and inference. Exact conditional
+GLS estimates and SEs do not imply exact finite-sample p-values. More Monte Carlo
+draws can stabilize final outputs without eliminating approximation error.
+Large variation between draws, near-boundary variance components, and few
+independent groups can challenge the approximation.
+
+A failed anchor optimization or unusable raw Hessian triggers fully fitted
+`lmerTest` rescue for the whole feature. Invalid covariance updates, updates
+that materially worsen a draw's objective, or invalid inference trigger rescue
+for the affected draws. Estimates, SEs, df, and both tails are replaced together.
+A consolidated warning reports the rescue. These checks catch numerical and
+fitting failures; they do not bound inference error. Small df or significant
+p-values alone do not cause rescue.
+
+BLMM was substantially faster in the completed oral and small-simulation runs,
+but a large-design pilot was slower than the reference and partial IBD runs had
+substantial fallback. These measurements used particular hardware and concurrent
+workloads. They do not establish universal speedups or precise Satterthwaite
+overhead. Dense computations can be costly for large random-effects designs.
+
+Use `method = "lme4"` when fully optimized per-draw fitting is affordable and
+approximation error matters to the scientific conclusion. Use `nlme` for its
+supported residual correlation structures; BLMM does not replace an AR(1)
+analysis by accepting the same random-effects formula. For `nlme` contrasts,
+nonzero weights must refer to coefficients with the same denominator df;
+unsupported combinations produce an error. Models must have a full-rank
+fixed-effects design. Each contrast is a scalar zero-null test; omnibus tests,
+nonzero nulls, and post-fit arbitrary contrasts are outside this interface.
+
+Streaming fits a separate BLMM anchor in each chunk, so changing the partition
+can change approximate results. Contrasts use the corresponding coefficient
+fits within each chunk and are aggregated over all draws. Parallel execution
+distributes work across features or fits, according to the engine.
+
+## Technical details
+
+Fix one feature. Let $s=1,\ldots,S$ index the Monte Carlo response vectors $y_s$,
+each with $N$ observations. Let $X$ be the $N\times p$ fixed-effects design and
+$d=N-p$ the residual dimension. The covariance-shape vector $\phi$ parameterizes
+random-effects covariance relative to residual variance. Write the relative
+marginal covariance as $R(\phi)$ and define
+
+\[
+M(\phi)=X^T R(\phi)^{-1}X,\qquad
+r_s(\phi)=\mathrm{PWRSS}_s(\phi).
+\]
+
+Here $T$ denotes transpose and PWRSS is the penalized weighted residual sum of
+squares after solving for fixed and random effects. Let $f_s(\phi)$ be the
+profiled REML negative log likelihood. The shared anchor and information are
+
+\[
+\bar\phi=\arg\min_\phi\frac1S\sum_s f_s(\phi),\qquad
+\bar H=\left.\nabla_\phi^2\left(\frac1S\sum_s f_s(\phi)\right)
+\right|_{\bar\phi}.
+\]
+
+The objective is a **mean**, not a sum: repeating identical draws does not add
+information. The Hessian is for negative log likelihood, not deviance.
+Writing $\bar f=S^{-1}\sum_s f_s$, the proposed local Newton update is
+
+\[
+\widetilde\phi_s=\bar\phi+\bar H^{-1}
+\{\nabla_\phi\bar f(\bar\phi)-\nabla_\phi f_s(\bar\phi)\}.
+\]
+
+After validation, the estimate $\widehat\beta_s$ is calculated by GLS at
+$\widetilde\phi_s$. For a contrast column vector $c$, the estimate and squared
+SE are
+
+\[
+\widehat\theta_{s,c}=c^T\widehat\beta_s,\qquad
+v_{s,c}(\widetilde\phi_s)=\frac{r_s(\widetilde\phi_s)}d\,
+c^T M(\widetilde\phi_s)^{-1}c.
+\]
+
+This uses the full covariance, including off-diagonal entries. For a coefficient,
+$c$ is its unit vector; each user-supplied contrast row supplies another $c^T$.
+Adding tests changes neither $p$ nor the residual-variance divisor $d$.
+
+The shared-anchor df approximation is
+
+\[
+\boxed{\displaystyle
+\nu_{s,c}=\frac{2}{2/d+h_{s,c}^T\bar H^{-1}h_{s,c}}},\qquad
+h_{s,c}=u_s+b_c,
+\]
+\[
+u_s=\left.\nabla_\phi\log r_s(\phi)\right|_{\bar\phi},\qquad
+b_c=\left.\nabla_\phi\log\{c^T M(\phi)^{-1}c\}\right|_{\bar\phi}.
+\]
+
+Sensitivities and information are evaluated at the anchor; estimates and SEs
+use the updated draw-specific parameters. The $2/d$ term preserves residual-scale
+uncertainty after profiling. Without covariance-shape uncertainty, df reduce to $d$.
+
+The implementation reuses positive and negative anchor perturbations for the
+uncentered residual derivatives and contrast-variance derivatives. Fixed-effect
+Cholesky factors give contrast variances; triangular solves with one factorization
+of $\bar H$ give the quadratic forms. No new optimization is needed per contrast.
+The t statistic uses direct lower and upper t-distribution tails with $\nu_{s,c}$ df.
+
+This adds an anchor approximation to observed-information Satterthwaite inference;
+it is not identical to per-draw `lmerTest`. The technical derivation in
+`dev/blmm-inference/derivation.md` in the source repository connects it to full
+information in covariance shape and residual scale. Tests
+check that relationship, duplicated draws, fixed-effect shifts, contrasts, and rescue.

@@ -3,7 +3,7 @@
 ## Internal implementation. Not exported. One batched profiled REML anchor fit
 ## per feature, draw-specific local covariance updates around that anchor, and
 ## exact GLS fixed-effect solves conditional on the updated covariance
-## parameters. The approximation is only in the variance-component step.
+## parameters. Conditional GLS does not imply exact finite-sample inference.
 
 `%||%` <- function(x, y) if (!is.null(x)) x else y
 
@@ -341,16 +341,17 @@ blmm_fit_anchor <- function(obj, phi_init) {
 #' @details
 #' The anchor \code{phi_bar} minimises the \emph{average} profiled objective
 #' over all S draws. For draw s, the draw-specific objective f_s(phi) differs
-#' from the average only through its PWRSS_s term. The gradient of f_s at
-#' phi_bar is the "score" for draw s: the direction and magnitude by which that
-#' draw wants to move away from the shared anchor.
+#' from the average only through its PWRSS_s term. The negative gradient of
+#' f_s at phi_bar equals the correction used below (up to
+#' the anchor optimisation tolerance): the direction in which that draw wants
+#' to move away from the shared anchor.
 #'
 #' Scores are computed via centred finite differences of log(PWRSS_s). The
 #' ldL2/ldRX2 log-determinant terms are identical for all draws at any fixed
 #' phi, so their derivative cancels out of the per-draw correction:
 #' \deqn{score_s[j] = \frac{n-p}{2}
-#'   \left(\frac{\partial \log PWRSS_s}{\partial \phi_j}
-#'         - \overline{\frac{\partial \log PWRSS}{\partial \phi_j}}\right)}
+#'   \left(\overline{\frac{\partial \log PWRSS}{\partial \phi_j}}
+#'         - \frac{\partial \log PWRSS_s}{\partial \phi_j}\right)}
 #'
 #' @param obj TMB autodiff object, with \code{obj$fn} already evaluated at
 #'   \code{phi_bar} so that \code{obj$report()} reflects the anchor state
@@ -359,11 +360,14 @@ blmm_fit_anchor <- function(obj, phi_init) {
 #'   the anchor, from \code{obj$report()$PWRSS_s}
 #' @param n number of observations
 #' @param p number of fixed-effect columns
+#' @param contrasts Matrix with contrast vectors in columns; defaults to identity.
+#' @param inference Retain uncentered residual and contrast-variance derivatives.
 #' @param eps relative step size for centred finite differences
 #' @return matrix of dimension \code{(length(phi_bar), S)}: column s is the
-#'   score vector for draw s
+#'   score vector for draw s; with inference, a list of scores, u, and b.
 #' @noRd
-blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
+blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4,
+                              contrasts = NULL, inference = FALSE) {
   if (any(!is.finite(PWRSS_s)) || any(PWRSS_s <= 0)) {
     stop("blmm: invalid profiled residual sum of squares at the anchor")
   }
@@ -372,6 +376,11 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
   np <- n - p
   q_phi <- length(phi_bar)
   scores <- matrix(0, nrow = q_phi, ncol = S)
+  if (inference) {
+    u <- scores
+    if (is.null(contrasts)) contrasts <- diag(p)
+    b <- matrix(0, q_phi, ncol(contrasts))
+  }
 
   for (j in seq_len(q_phi)) {
     step <- eps * max(1, abs(phi_bar[j]))
@@ -396,9 +405,32 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
     # are stable here because the variance-component dimension is small.
     dlogPWRSS_s <- (log(PWRSS_p) - log(PWRSS_m)) / (2 * step)
     scores[j, ] <- np / 2 * (mean(dlogPWRSS_s) - dlogPWRSS_s)
+    if (inference) {
+      u[j, ] <- dlogPWRSS_s
+      # LX is lower triangular: c' M^-1 c = ||LX^-1 c||^2.
+      vp <- colSums(forwardsolve(rp$LX, contrasts)^2)
+      vm <- colSums(forwardsolve(rm$LX, contrasts)^2)
+      if (any(!is.finite(c(vp, vm))) || any(c(vp, vm) <= 0))
+        stop("blmm: invalid anchor contrast variance")
+      b[j, ] <- (log(vp) - log(vm)) / (2 * step)
+    }
   }
 
+  if (inference) return(list(scores = scores, u = u, b = b))
   scores
+}
+
+# Shared-anchor Satterthwaite df; see dev/blmm-inference/derivation.md.
+blmm_anchor_df <- function(u, b, cholH, d) {
+  h <- b + as.vector(u)
+  if (!is.finite(d) || d <= 0 || any(!is.finite(h)))
+    stop("blmm: invalid anchor inference sensitivity")
+  whitened <- forwardsolve(t(cholH), h)
+  quadratic <- colSums(whitened^2)
+  df <- 2 / (2 / d + quadratic)
+  if (any(!is.finite(quadratic)) || any(!is.finite(df)) || any(df <= 0))
+    stop("blmm: invalid anchor inference degrees of freedom")
+  df
 }
 
 # ---------------------------------------------------------------------------
@@ -419,11 +451,12 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4) {
 #' @param H_d positive-definite matrix: validated Hessian at the anchor
 #' @param scores matrix (length(phi_bar) x S): per-draw score vectors from
 #'   \code{blmm_scores_batch()}
+#' @param cholH Reusable upper Cholesky factor of H_d.
 #' @return matrix of the same dimension as \code{scores}: column s is the
 #'   draw-specific updated phi
 #' @noRd
-blmm_phi_updates <- function(phi_bar, H_d, scores) {
-  cholH <- tryCatch(chol(H_d), error = function(e) e)
+blmm_phi_updates <- function(phi_bar, H_d, scores, cholH = chol(H_d)) {
+  cholH <- tryCatch(cholH, error = function(e) e)
   if (inherits(cholH, "error")) {
     stop("blmm: curvature matrix is not numerically positive definite")
   }
@@ -591,20 +624,24 @@ blmm_common_pieces <- function(phi, X, basis, lower) {
 #' @param Y_d numeric matrix (n x S): log-composition draws for this feature
 #' @param formula lme4 mixed-effects formula
 #' @param data data.frame for formula evaluation
+#' @param contrasts optional validated contrast matrix with one row per
+#'   contrast and columns matching the fixed-effect design.
 #' @return list with estimate, std.error, df, p.lower, p.upper, random.eff
-#'   arrays — each retaining a singleton feature dimension (D = 1)
+#'   arrays — each retaining a singleton feature dimension (D = 1), plus
+#'   contrast arrays when contrasts are supplied.
 #' @noRd
-blmm_exact_feature <- function(Y_d, formula, data) {
+blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
   exact <- sr.mem(
     logW = array(Y_d, dim = c(nrow(Y_d), 1L, ncol(Y_d))),
     formula = formula,
     data = data,
     n.cores = 1L,
     method = "lme4",
-    mem.args = list()
+    mem.args = list(),
+    contrasts = contrasts
   )
 
-  list(
+  out <- list(
     estimate = exact$estimate[, 1, , drop = FALSE],
     std.error = exact$std.error[, 1, , drop = FALSE],
     df = exact$df[, 1, , drop = FALSE],
@@ -612,6 +649,14 @@ blmm_exact_feature <- function(Y_d, formula, data) {
     p.upper = exact$p.upper[, 1, , drop = FALSE],
     random.eff = exact$random.eff[, 1, , drop = FALSE]
   )
+  if (!is.null(contrasts)) {
+    out$contrast.estimate <- exact$contrast.estimate[, 1, , drop = FALSE]
+    out$contrast.std.error <- exact$contrast.std.error[, 1, , drop = FALSE]
+    out$contrast.df <- exact$contrast.df[, 1, , drop = FALSE]
+    out$contrast.p.lower <- exact$contrast.p.lower[, 1, , drop = FALSE]
+    out$contrast.p.upper <- exact$contrast.p.upper[, 1, , drop = FALSE]
+  }
+  out
 }
 
 #' Approximate BLMM fit for one feature across all S MC draws.
@@ -643,24 +688,36 @@ blmm_exact_feature <- function(Y_d, formula, data) {
 #' @param data data.frame
 #' @param forced_fallback integer vector of feature indices to force onto the
 #'   exact lme4 path; a testing hook, not used in normal operation
+#' @param inference internal selector for shared-anchor or residual degrees of
+#'   freedom.
+#' @param contrasts optional validated contrast matrix with one row per
+#'   contrast and columns matching \code{X}.
 #' @return list with \code{fit} (arrays), fallback status and counts, and a
 #'   diagnostic \code{fallback_message}
 #' @noRd
 blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
-                             reTrms, formula, data, forced_fallback = integer(0)) {
+                             reTrms, formula, data, forced_fallback = integer(0),
+                             inference = c("anchor", "residual"),
+                             contrasts = NULL) {
+  inference <- match.arg(inference)
   N <- nrow(X)
   p <- ncol(X)
   S <- dim(logW)[3]
+  contrasts <- .aldex_validate_contrasts(contrasts, X)
+  if (!is.null(contrasts) && qr(X)$rank < p) {
+    stop("blmm: contrasts require a full-rank fixed-effect design")
+  }
   Y_d <- logW[, d, , drop = FALSE]
   dim(Y_d) <- c(N, S)
 
   feature_random_rows <- length(names(blmm_random_effect_vector(reTrms$theta, 1, reTrms)))
   if (length(forced_fallback) > 0L && d %in% forced_fallback) {
     return(list(
-      fit = blmm_exact_feature(Y_d, formula, data),
+      fit = blmm_exact_feature(Y_d, formula, data, contrasts = contrasts),
       fallback = TRUE,
       fallback_message = "forced approximate failure for testing",
       fallback_draws = S,
+      rejected_draws = seq_len(S),
       full_fallback = TRUE
     ))
   }
@@ -678,9 +735,19 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     if (any(!is.finite(anchor_objectives))) {
       stop("blmm: non-finite profiled REML objective at the anchor")
     }
-    g_mat <- blmm_scores_batch(obj_full, anchor$phi_bar,
-                               anchor_report$PWRSS_s, N, p)
-    phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat)
+    inference_vectors <- if (is.null(contrasts)) {
+      diag(p)
+    } else {
+      cbind(diag(p), t(contrasts))
+    }
+    g_mat <- blmm_scores_batch(
+      obj_full, anchor$phi_bar, anchor_report$PWRSS_s, N, p,
+      contrasts = inference_vectors, inference = inference == "anchor"
+    )
+    cholH <- chol(anchor$H_d)
+    sensitivity <- if (inference == "anchor") g_mat else NULL
+    if (inference == "anchor") g_mat <- g_mat$scores
+    phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat, cholH)
 
     feature_estimate <- matrix(NA_real_, nrow = p, ncol = S)
     feature_std.error <- matrix(NA_real_, nrow = p, ncol = S)
@@ -688,13 +755,21 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     feature_p.lower <- matrix(NA_real_, nrow = p, ncol = S)
     feature_p.upper <- matrix(NA_real_, nrow = p, ncol = S)
     feature_random <- matrix(NA_real_, nrow = feature_random_rows, ncol = S)
+    if (!is.null(contrasts)) {
+      K <- nrow(contrasts)
+      feature_contrast.estimate <- matrix(NA_real_, nrow = K, ncol = S)
+      feature_contrast.std.error <- matrix(NA_real_, nrow = K, ncol = S)
+      feature_contrast.df <- matrix(NA_real_, nrow = K, ncol = S)
+      feature_contrast.p.lower <- matrix(NA_real_, nrow = K, ncol = S)
+      feature_contrast.p.upper <- matrix(NA_real_, nrow = K, ncol = S)
+    }
     rejected <- rep(FALSE, S)
     rejection_messages <- rep("", S)
 
     # Step 3: exact conditional GLS solve per draw. Accept the local covariance
     # update only if it does not materially worsen that draw's profiled REML
-    # objective. p-values use a t-distribution with residual df (n - p), not
-    # Satterthwaite.
+    # objective. Anchor inference is validated inside this same draw-specific
+    # rescue boundary; residual df remains available for reproducible scripts.
     for (s in seq_len(S)) {
       draw_result <- tryCatch({
         pieces <- blmm_common_pieces(phi_tilde[, s], X, basis, lower)
@@ -718,18 +793,56 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
           )
         }
 
+        if (inference == "anchor") {
+          coefficient_df <- blmm_anchor_df(
+            sensitivity$u[, s], sensitivity$b[, seq_len(p), drop = FALSE],
+            cholH, N - p
+          )
+          fe$df <- coefficient_df
+        }
+
+        contrast_fit <- NULL
+        if (!is.null(contrasts)) {
+          # LX is lower triangular with LX %*% t(LX) = M. The full
+          # covariance is therefore sigma2 * M^-1, including off-diagonals.
+          contrast_variance <- fe$sigma2 * colSums(
+            forwardsolve(pieces$LX, t(contrasts))^2
+          )
+          if (any(!is.finite(contrast_variance)) || any(contrast_variance <= 0)) {
+            stop("proposed covariance update produced invalid contrast variance")
+          }
+          contrast_df <- rep(N - p, nrow(contrasts))
+          if (inference == "anchor") {
+            contrast_df <- blmm_anchor_df(
+              sensitivity$u[, s], sensitivity$b[, p + seq_len(nrow(contrasts)), drop = FALSE],
+              cholH, N - p
+            )
+          }
+          contrast_fit <- list(
+            estimate = as.vector(contrasts %*% fe$beta),
+            std.error = sqrt(contrast_variance),
+            df = contrast_df
+          )
+          if (any(!is.finite(contrast_fit$estimate)) ||
+              any(!is.finite(contrast_fit$std.error)) ||
+              any(!is.finite(contrast_fit$df)) ||
+              any(contrast_fit$std.error <= 0) || any(contrast_fit$df <= 0)) {
+            stop("proposed covariance update produced invalid contrast inference")
+          }
+        }
+
         theta_draw <- phi_to_theta_blmm(phi_tilde[, s], lower)
         random_draw <- blmm_random_effect_vector(
           theta = theta_draw,
           sigma2 = fe$sigma2,
           reTrms = reTrms
         )
-        if (any(!is.finite(fe$beta)) || any(!is.finite(fe$se)) ||
+        if (any(!is.finite(fe$beta)) || any(!is.finite(fe$se)) || any(fe$se <= 0) ||
             any(!is.finite(random_draw))) {
           stop("proposed covariance update produced non-finite results")
         }
 
-        list(fe = fe, random = random_draw)
+        list(fe = fe, contrast = contrast_fit, random = random_draw)
       }, error = function(e) e)
 
       if (inherits(draw_result, "error")) {
@@ -745,8 +858,17 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 
       t_stat <- fe$beta / fe$se
       feature_p.lower[, s] <- pt(t_stat, df = fe$df, lower.tail = TRUE)
-      feature_p.upper[, s] <- 1 - feature_p.lower[, s]
+      feature_p.upper[, s] <- pt(t_stat, df = fe$df, lower.tail = FALSE)
       feature_random[, s] <- draw_result$random
+      if (!is.null(contrasts)) {
+        contrast_fit <- draw_result$contrast
+        feature_contrast.estimate[, s] <- contrast_fit$estimate
+        feature_contrast.std.error[, s] <- contrast_fit$std.error
+        feature_contrast.df[, s] <- contrast_fit$df
+        contrast_t <- contrast_fit$estimate / contrast_fit$std.error
+        feature_contrast.p.lower[, s] <- pt(contrast_t, df = contrast_fit$df, lower.tail = TRUE)
+        feature_contrast.p.upper[, s] <- pt(contrast_t, df = contrast_fit$df, lower.tail = FALSE)
+      }
     }
 
     # Refit rejected draws together so exact-rescue overhead is paid once per
@@ -754,7 +876,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     rejected_idx <- which(rejected)
     if (length(rejected_idx) > 0L) {
       exact_rejected <- blmm_exact_feature(
-        Y_d[, rejected_idx, drop = FALSE], formula, data
+        Y_d[, rejected_idx, drop = FALSE], formula, data, contrasts = contrasts
       )
       n_rejected <- length(rejected_idx)
       feature_estimate[, rejected_idx] <- matrix(
@@ -777,6 +899,23 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
         nrow = feature_random_rows,
         ncol = n_rejected
       )
+      if (!is.null(contrasts)) {
+        feature_contrast.estimate[, rejected_idx] <- matrix(
+          exact_rejected$contrast.estimate, nrow = nrow(contrasts), ncol = n_rejected
+        )
+        feature_contrast.std.error[, rejected_idx] <- matrix(
+          exact_rejected$contrast.std.error, nrow = nrow(contrasts), ncol = n_rejected
+        )
+        feature_contrast.df[, rejected_idx] <- matrix(
+          exact_rejected$contrast.df, nrow = nrow(contrasts), ncol = n_rejected
+        )
+        feature_contrast.p.lower[, rejected_idx] <- matrix(
+          exact_rejected$contrast.p.lower, nrow = nrow(contrasts), ncol = n_rejected
+        )
+        feature_contrast.p.upper[, rejected_idx] <- matrix(
+          exact_rejected$contrast.p.upper, nrow = nrow(contrasts), ncol = n_rejected
+        )
+      }
     }
 
     fallback_message <- ""
@@ -792,25 +931,39 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     }
 
     list(
-      fit = list(
+      fit = c(list(
         estimate = array(feature_estimate, c(p, 1L, S)),
         std.error = array(feature_std.error, c(p, 1L, S)),
         df = array(feature_df, c(p, 1L, S)),
         p.lower = array(feature_p.lower, c(p, 1L, S)),
         p.upper = array(feature_p.upper, c(p, 1L, S)),
         random.eff = array(feature_random, c(feature_random_rows, 1L, S))
-      ),
+      ), if (!is.null(contrasts)) list(
+        contrast.estimate = array(feature_contrast.estimate, c(nrow(contrasts), 1L, S),
+          dimnames = list(rownames(contrasts), NULL, NULL)),
+        contrast.std.error = array(feature_contrast.std.error, c(nrow(contrasts), 1L, S),
+          dimnames = list(rownames(contrasts), NULL, NULL)),
+        contrast.df = array(feature_contrast.df, c(nrow(contrasts), 1L, S),
+          dimnames = list(rownames(contrasts), NULL, NULL)),
+        contrast.p.lower = array(feature_contrast.p.lower, c(nrow(contrasts), 1L, S),
+          dimnames = list(rownames(contrasts), NULL, NULL)),
+        contrast.p.upper = array(feature_contrast.p.upper, c(nrow(contrasts), 1L, S),
+          dimnames = list(rownames(contrasts), NULL, NULL))
+      )),
       fallback = length(rejected_idx) > 0L,
       fallback_message = fallback_message,
       fallback_draws = length(rejected_idx),
+      rejected_draws = rejected_idx,
+      anchor_distance = colSums((cholH %*% (phi_tilde - anchor$phi_bar))^2),
       full_fallback = FALSE
     )
   }, error = function(e) {
     list(
-      fit = blmm_exact_feature(Y_d, formula, data),
+      fit = blmm_exact_feature(Y_d, formula, data, contrasts = contrasts),
       fallback = TRUE,
       fallback_message = conditionMessage(e),
       fallback_draws = S,
+      rejected_draws = seq_len(S),
       full_fallback = TRUE
     )
   })
@@ -830,28 +983,52 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' Uses an \code{lme4}-style profiled Gaussian LMM formulation. One batched
 #' anchor REML problem is fit per feature across all S MC draws; draw-specific
 #' local covariance updates are obtained via a single Newton step; exact
-#' conditional GLS fixed-effect solves are then run per draw. The approximation
-#' is only in the variance-component step — fixed effects and standard errors
-#' are exact conditional on the updated covariance parameters.
+#' conditional GLS fixed-effect solves are then run per draw. Fixed effects and
+#' standard errors are exact conditional on the updated covariance parameters;
+#' this does not imply exact finite-sample inference. Shared-anchor
+#' Satterthwaite inference is the default; residual degrees of freedom remain
+#' available internally for reproducible scripts. The anchor degrees of freedom
+#' are
+#' \deqn{2 / \{2/d + (u_s+b_c)^T H^{-1}(u_s+b_c)\}.}
+#' Here \code{d = N - p}, with N observations and fitted fixed-effect dimension
+#' p; H is the Hessian of the mean negative profiled REML log likelihood at the
+#' shared anchor. At that anchor, u_s is the gradient of log PWRSS for draw s,
+#' and b_c is the gradient of log(c' M^-1 c), where c is a fixed-effect
+#' coefficient vector or user-supplied contrast,
+#' M = X' R^-1 X, X is the fixed-effect design, and R is the marginal covariance
+#' relative to residual variance. Gradients use the covariance-shape parameters.
+#' This additional approximation is not identical to per-draw \code{lmerTest}
+#' inference. P-values can differ even when estimates and SEs agree.
 #'
 #' Draw-specific updates that fail a profiled-objective check are re-fit with
 #' exact \code{lme4}. Failure of the shared anchor optimisation, or an unusable
 #' anchor Hessian, causes exact fallback for every draw in the feature. A single
 #' consolidated warning reports either kind of rescue.
+#' Invalid anchor inference sensitivities, contrast variances, or contrast
+#' estimates also cause per-draw exact \code{lmerTest} rescue. Native
+#' \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
 #'
 #' @param logW numeric array (N x D x S)
 #' @param formula lme4 mixed-effects formula
 #' @param data data.frame for formula evaluation
+#' @param inference Internal inference selector; the default is shared-anchor
+#'   Satterthwaite inference. Public \code{aldex(test = "t.residual")} maps
+#'   explicitly to residual degrees of freedom.
+#' @param contrasts optional validated contrast matrix with one row per
+#'   contrast and columns matching the fixed-effect design.
 #' @param n.cores number of worker processes for feature-level parallelism.
 #'   If \code{n.cores > 1}, features are distributed across workers; the
 #'   per-feature draw loop remains serial.
 #' @return named list of arrays (P x D x S): estimate, std.error, df,
-#'   p.lower, p.upper, and (Pr x D x S) random.eff — same layout as
+#'   p.lower, p.upper, and (Pr x D x S) random.eff; when contrasts are
+#'   supplied, flat K x D x S contrast arrays use the same layout as
 #'   \code{sr.mem}.
 #' @importFrom lme4 lFormula lmerControl
 #' @importFrom TMB MakeADFun
 #' @useDynLib ALDEx3, .registration = TRUE
-blmm <- function(logW, formula, data, n.cores = 1L) {
+blmm <- function(logW, formula, data, n.cores = 1L,
+                 inference = c("anchor", "residual"), contrasts = NULL) {
+  inference <- match.arg(inference)
   N <- dim(logW)[1]
   D <- dim(logW)[2]
   S <- dim(logW)[3]
@@ -886,6 +1063,18 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
   p.lower <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   p.upper <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   random.eff <- array(NA_real_, c(Pr, D, S), dimnames = list(rnames, NULL, NULL))
+  contrasts <- .aldex_validate_contrasts(contrasts, X)
+  if (!is.null(contrasts) && qr(X)$rank < p) {
+    stop("blmm: contrasts require a full-rank fixed-effect design")
+  }
+  if (!is.null(contrasts)) {
+    K <- nrow(contrasts)
+    contrast.estimate <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
+    contrast.std.error <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
+    contrast.df <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
+    contrast.p.lower <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
+    contrast.p.upper <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
+  }
 
   # Closure over the shared parsed objects so parallel dispatch only passes
   # the feature index d. On Windows (PSOCK cluster) this avoids serialising
@@ -902,7 +1091,9 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
       reTrms = reTrms,
       formula = formula,
       data = data,
-      forced_fallback = forced_fallback
+      forced_fallback = forced_fallback,
+      inference = inference,
+      contrasts = contrasts
     )
   }
 
@@ -965,7 +1156,7 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
       sprintf(
         paste0(
           "blmm: %d draw(s) across %d feature(s) fell back to exact lme4 ",
-          "because their local covariance updates failed validation."
+          "because their local covariance updates or inference failed validation."
         ),
         partial_draws,
         length(partial_idx)
@@ -975,7 +1166,7 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
         paste0(
           "blmm: %d feature(s) fell back to exact lme4 for all draws, and ",
           "%d draw(s) across %d additional feature(s) used exact lme4 ",
-          "because their local covariance updates failed validation."
+          "because their local covariance updates or inference failed validation."
         ),
         length(full_idx),
         partial_draws,
@@ -998,14 +1189,27 @@ blmm <- function(logW, formula, data, n.cores = 1L) {
     p.lower[, d, ] <- feature_fit$p.lower[, 1, ]
     p.upper[, d, ] <- feature_fit$p.upper[, 1, ]
     random.eff[, d, ] <- feature_fit$random.eff[, 1, ]
+    if (!is.null(contrasts)) {
+      contrast.estimate[, d, ] <- feature_fit$contrast.estimate[, 1, ]
+      contrast.std.error[, d, ] <- feature_fit$contrast.std.error[, 1, ]
+      contrast.df[, d, ] <- feature_fit$contrast.df[, 1, ]
+      contrast.p.lower[, d, ] <- feature_fit$contrast.p.lower[, 1, ]
+      contrast.p.upper[, d, ] <- feature_fit$contrast.p.upper[, 1, ]
+    }
   }
 
-  list(
+  c(list(
     estimate = estimate,
     std.error = std.error,
     df = df_arr,
     p.lower = p.lower,
     p.upper = p.upper,
     random.eff = random.eff
-  )
+  ), if (!is.null(contrasts)) list(
+    contrast.estimate = contrast.estimate,
+    contrast.std.error = contrast.std.error,
+    contrast.df = contrast.df,
+    contrast.p.lower = contrast.p.lower,
+    contrast.p.upper = contrast.p.upper
+  ))
 }

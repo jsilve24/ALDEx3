@@ -4,7 +4,12 @@
 \alias{summary.aldex}
 \title{Summary Method for ALDEx3 Objects}
 \usage{
-\method{summary}{aldex}(object, ignore.intercept = TRUE, ...)
+\method{summary}{aldex}(
+  object,
+  ignore.intercept = TRUE,
+  component = c("coefficients", "contrasts"),
+  ...
+)
 }
 \arguments{
 \item{object}{An object of class \code{aldex}}
@@ -12,18 +17,20 @@
 \item{ignore.intercept}{(default=TRUE), ignore intercept when creating
 summary table}
 
+\item{component}{\code{"coefficients"} (the default) or \code{"contrasts"}.}
+
 \item{...}{Additional arguments (currently ignored).}
 }
 \value{
 A \code{data.frame} with columns \code{parameter}, \code{entity},
-\code{p.val.adjusted}, \code{estimate}, and \code{std.error}.
+\code{p.val.adj}, \code{estimate}, and \code{std.error}.
 }
 \description{
 Summarize an ALDEx3 result object
 }
 \details{
-Provides a summary of the adjusted p-values, estimates, and standard errors
-from an ALDEx3 result object.
+Provides a summary of coefficient or requested-contrast adjusted p-values,
+estimates, and standard errors from an ALDEx3 result object.
 
 This method extracts adjusted p-values from \code{object$p.val.adj}, along with
 posterior estimates and standard errors averaged across Monte Carlo samples.

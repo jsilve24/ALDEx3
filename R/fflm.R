@@ -18,18 +18,26 @@
 ##'   slowest). To learn more about these, loko at Long and Ervin (2000) Using
 ##'   Heteroscedasticity Consistent Standard Errors in the Linear Regression
 ##'   Model, The American Statistician. 
-##' @return A list of (P x D x S)-arrays with the OLS point estimates, the
-##'   standard errors, and the two-sided p-values for each coefficient (P), of
-##'   each model fit to each taxa (D) and each posterior sample (S)
+##' @param contrasts optional numeric matrix with named coefficient columns and
+##'   one contrast per row.
+##' @return A list of (P x D x S)-arrays with the OLS point estimates, standard
+##'   errors, degrees of freedom, and tail probabilities. If requested,
+##'   contrast arrays have dimensions K x D x S.
 ##' @author Justin Silverman
-fflm <- function(Y, X, test="t.HC3") {
+fflm <- function(Y, X, test="t.HC3", contrasts=NULL) {
    N <- dim(Y)[1]
    D <- dim(Y)[2]
    S <- dim(Y)[3]
    P <- dim(X)[2]
    stopifnot(dim(X)[1] == N)
-  tmp <- 
-   stopifnot (P <= N)
+   if (!is.character(test) || length(test) != 1L || is.na(test) ||
+       !(test %in% c("t", "t.HC0", "t.HC3"))) {
+     stop("test must be one of 't', 't.HC0', or 't.HC3'")
+   }
+   if (P > N || qr(X)$rank < P) {
+     stop("rank-deficient designs are not supported by fflm")
+   }
+   contrasts <- .aldex_validate_contrasts(contrasts, X)
 
    ## from 3D array to 2D as a hack to make this much faster
    ## Will make Y, N x PS 
@@ -40,10 +48,11 @@ fflm <- function(Y, X, test="t.HC3") {
    b <- t(X) %*% Y
    Theta <- solve(A, b)
    sqerr <- (Y - X %*% Theta)^2
+   inverseXtX <- chol2inv(chol(A))
 
    if (test=="t") {
      sigmaSq <- colSums(sqerr)/(N-P)
-     dvcov <- diag( chol2inv(chol(t(X) %*% X)))
+     dvcov <- diag(inverseXtX)
      stderr <- sqrt(dvcov %*% t(sigmaSq))
    } else if (test=="t.HC0") {
      ## use white's robust standard errors instead of the more common standard
@@ -57,7 +66,7 @@ fflm <- function(Y, X, test="t.HC3") {
 
      ## optimizes / vectorized
      # Precompute XtXinvXt squared
-     XtXinvXt2 <- (chol2inv(chol(t(X) %*% X)) %*% t(X))^2  # elementwise square
+     XtXinvXt2 <- (inverseXtX %*% t(X))^2  # elementwise square
      # Matrix multiplication instead of looping
      stderr <- sqrt(XtXinvXt2 %*% sqerr)
    } else if (test=="t.HC3") {
@@ -72,7 +81,7 @@ fflm <- function(Y, X, test="t.HC3") {
      ## }
 
      # vectorized version
-     XtXinvXt <- chol2inv(chol(t(X) %*% X)) %*% t(X)
+     XtXinvXt <- inverseXtX %*% t(X)
      leverage.correction <- (1 - diag(X %*% XtXinvXt))^2
      XtXinvXt_sq <- XtXinvXt^2  # elementwise square, reused
 
@@ -86,9 +95,41 @@ fflm <- function(Y, X, test="t.HC3") {
    t <- Theta / stderr
    dof <- N-P
    p.upper <- pt(t, dof, lower.tail=FALSE)
-   p.lower <- 1-p.upper
-   return(list(estimate = array(Theta, c(P, D, S)),
+   p.lower <- pt(t, dof, lower.tail=TRUE)
+   out <- list(estimate = array(Theta, c(P, D, S)),
                std.error = array(stderr, c(P, D, S)),
+               df = array(dof, c(P, D, S)),
                p.lower = array(p.lower, c(P, D, S)),
-               p.upper = array(p.upper, c(P, D, S))))
+               p.upper = array(p.upper, c(P, D, S)))
+
+   if (!is.null(contrasts)) {
+     K <- nrow(contrasts)
+     contrast.estimate <- contrasts %*% Theta
+     if (test == "t") {
+       contrast.variance <- rowSums((contrasts %*% inverseXtX) * contrasts)
+       contrast.stderr <- sqrt(contrast.variance %*% t(sigmaSq))
+     } else {
+       ## This projects the full sandwich covariance to C beta.  Combining
+       ## marginal coefficient SEs would discard the covariance terms.
+       projection <- contrasts %*% inverseXtX %*% t(X)
+       if (test == "t.HC3") {
+         contrast.stderr <- sqrt(projection^2 %*%
+                                   sweep(sqerr, 1, leverage.correction, `/`))
+       } else {
+         contrast.stderr <- sqrt(projection^2 %*% sqerr)
+       }
+     }
+     contrast.t <- contrast.estimate / contrast.stderr
+     out$contrast.estimate <- array(contrast.estimate, c(K, D, S),
+                                    dimnames = list(rownames(contrasts), NULL, NULL))
+     out$contrast.std.error <- array(contrast.stderr, c(K, D, S),
+                                     dimnames = list(rownames(contrasts), NULL, NULL))
+     out$contrast.df <- array(dof, c(K, D, S),
+                              dimnames = list(rownames(contrasts), NULL, NULL))
+     out$contrast.p.lower <- array(pt(contrast.t, dof, lower.tail=TRUE), c(K, D, S),
+                                   dimnames = list(rownames(contrasts), NULL, NULL))
+     out$contrast.p.upper <- array(pt(contrast.t, dof, lower.tail=FALSE), c(K, D, S),
+                                   dimnames = list(rownames(contrasts), NULL, NULL))
+   }
+   out
 }

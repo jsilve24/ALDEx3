@@ -335,6 +335,8 @@ test_that("blmm E2: an indefinite anchor Hessian causes exact feature fallback",
   )
   expect_equal(fit$estimate, exact$estimate, tolerance = 1e-10)
   expect_equal(fit$std.error, exact$std.error, tolerance = 1e-10)
+  for (field in c("df", "p.lower", "p.upper"))
+    expect_equal(fit[[field]], exact[[field]], tolerance = 1e-10)
   expect_equal(fit$random.eff, exact$random.eff, tolerance = 1e-10)
 })
 
@@ -352,8 +354,8 @@ test_that("blmm E3: a materially worse Newton update falls back by draw", {
                            method = "lme4", mem.args = list())
   phi_updates <- ALDEx3:::blmm_phi_updates
   local_mocked_bindings(
-    blmm_phi_updates = function(phi_bar, H_d, scores) {
-      updates <- phi_updates(phi_bar, H_d, scores)
+    blmm_phi_updates = function(phi_bar, H_d, scores, ...) {
+      updates <- phi_updates(phi_bar, H_d, scores, ...)
       updates[, 1] <- phi_bar + 10
       updates
     },
@@ -366,6 +368,10 @@ test_that("blmm E3: a materially worse Newton update falls back by draw", {
   )
   expect_equal(fit$estimate[, , 1], exact$estimate[, , 1], tolerance = 1e-10)
   expect_equal(fit$std.error[, , 1], exact$std.error[, , 1], tolerance = 1e-10)
+  for (field in c("df", "p.lower", "p.upper")) {
+    expect_equal(fit[[field]][,,1], exact[[field]][,,1], tolerance = 1e-10)
+    expect_equal(fit[[field]][,,-1], baseline[[field]][,,-1], tolerance = 1e-10)
+  }
   expect_equal(fit$random.eff[, , 1], exact$random.eff[, , 1], tolerance = 1e-10)
   expect_equal(fit$estimate[, , -1], baseline$estimate[, , -1], tolerance = 1e-10)
   expect_equal(fit$std.error[, , -1], baseline$std.error[, , -1], tolerance = 1e-10)

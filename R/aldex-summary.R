@@ -112,6 +112,12 @@ aldex.effect <- function(object, contrast) {
       }
       return(candidates)
     }
+    if (!is.null(object$contrasts$matrix) &&
+        !is.null(rownames(object$contrasts$matrix)) &&
+        nm %in% rownames(object$contrasts$matrix)) {
+      stop("effect-size helpers support coefficient effects only; '", nm,
+           "' is a requested contrast")
+    }
     return(NULL)
   }
 
@@ -221,8 +227,8 @@ aitchison.mean <- function( n, log=FALSE ) {
 
 ##' Summarize an ALDEx3 result object
 ##'
-##' Provides a summary of the adjusted p-values, estimates, and standard errors
-##' from an ALDEx3 result object.
+##' Provides a summary of coefficient or requested-contrast adjusted p-values,
+##' estimates, and standard errors from an ALDEx3 result object.
 ##'
 ##' This method extracts adjusted p-values from `object$p.val.adj`, along with
 ##' posterior estimates and standard errors averaged across Monte Carlo samples.
@@ -233,18 +239,23 @@ aitchison.mean <- function( n, log=FALSE ) {
 ##' @param object An object of class \code{aldex}
 ##' @param ignore.intercept (default=TRUE), ignore intercept when creating
 ##'   summary table
+##' @param component `"coefficients"` (the default) or `"contrasts"`.
 ##' @param ... Additional arguments (currently ignored).
 ##' @return A \code{data.frame} with columns \code{parameter}, \code{entity},
-##'   \code{p.val.adjusted}, \code{estimate}, and \code{std.error}.
+##'   \code{p.val.adj}, \code{estimate}, and \code{std.error}.
 ##' @export
 ##' @author Justin Silverman
-summary.aldex <- function(object, ignore.intercept=TRUE, ...) {
-  req(object, c("p.val.adj", "estimate", "std.error"))
-  res <- array_to_df(object$p.val.adj)
+summary.aldex <- function(object, ignore.intercept=TRUE,
+                          component=c("coefficients", "contrasts"), ...) {
+  component <- match.arg(component)
+  values <- if (component == "coefficients") object else object$contrasts
+  if (is.null(values)) stop("object does not contain requested contrasts")
+  req(values, c("p.val.adj", "estimate", "std.error"))
+  res <- array_to_df(values$p.val.adj)
   colnames(res) <- c("parameter", "entity", "p.val.adj")
-  res$estimate <- array_to_df(rowMeans(object$estimate, dims=2))$value
-  res$std.error <- array_to_df(rowMeans(object$std.error, dims=2))$value
-  if (ignore.intercept) {
+  res$estimate <- array_to_df(rowMeans(values$estimate, dims=2))$value
+  res$std.error <- array_to_df(rowMeans(values$std.error, dims=2))$value
+  if (ignore.intercept && component == "coefficients") {
     res <- res[res$parameter != "(Intercept)",]
   }
   rownames(res) <- NULL

@@ -76,9 +76,13 @@ head(aldex.gut.summary)
 
 ## Mixed-Effects Models: BLMM, `lme4`, and `nlme`
 
-ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models) through three engines. The new `method = "blmm"` engine is an ALDEx3-specific approximation that avoids repeated exact variance-component optimization across Monte Carlo draws. It parallelizes across features with `n.cores` and falls back to exact `lme4` fits when the approximation cannot be evaluated cleanly. The exact `lme4` and `nlme` engines remain available for reference analyses.
+ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models) through three engines. `method = "blmm"` shares a covariance anchor across Monte Carlo draws and uses local covariance updates to reduce repeated optimization. In 1.5.0, BLMM defaults to shared-anchor Satterthwaite inference (`test = "t.satterthwaite"`). This accounts approximately for uncertainty in estimated covariance components, so p-values may change even when estimates and standard errors remain similar. `test = "t.residual"` retains the previous convention. Both selectors are exclusive to BLMM.
 
-See the **[ALDEx3 Mixed-Effects Engines vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for model setup, the BLMM formulation, validation guidance, and a runtime and accuracy comparison with exact `lme4` fits.
+BLMM approximates both covariance fitting and inference. Failed anchor calculations trigger whole-feature rescue with `lmerTest`; invalid draw-specific updates or inference trigger rescue for those draws. A consolidated warning describes the rescue. Fully optimized `lme4` and `nlme` engines remain available. BLMM can be faster, but dense large-design computations and frequent rescue can make it slower.
+
+Use `contrasts = C` during fitting to test named linear combinations of fixed effects. Supply one row per hypothesis and a named column for every fixed-effect coefficient, including explicit zeros. Results are in `fit$contrasts`, with `summary(fit, component = "contrasts")` for a table. Each contrast has its own adjustment across features; combined discovery lists do not have a joint FDR guarantee. The supplied scale model and original design remain unchanged.
+
+See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations behind the new default. Full evidence and release validation are linked from [the 1.5.0 development report](dev/release-1.5.0/README.md).
 
 ``` r
 library(ALDEx3)

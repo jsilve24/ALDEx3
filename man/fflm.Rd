@@ -4,7 +4,7 @@
 \alias{fflm}
 \title{Freaking Fask Linear Models}
 \usage{
-fflm(Y, X, test = "t.HC3")
+fflm(Y, X, test = "t.HC3", contrasts = NULL)
 }
 \arguments{
 \item{Y}{a numeric array (N x D X S) where D is the number of taxa/genes, N
@@ -20,11 +20,14 @@ better for small sample sizes or when there are data with high leverage;
 slowest). To learn more about these, loko at Long and Ervin (2000) Using
 Heteroscedasticity Consistent Standard Errors in the Linear Regression
 Model, The American Statistician.}
+
+\item{contrasts}{optional numeric matrix with named coefficient columns and
+one contrast per row.}
 }
 \value{
-A list of (P x D x S)-arrays with the OLS point estimates, the
-standard errors, and the two-sided p-values for each coefficient (P), of
-each model fit to each taxa (D) and each posterior sample (S)
+A list of (P x D x S)-arrays with the OLS point estimates, standard
+errors, degrees of freedom, and tail probabilities. If requested,
+contrast arrays have dimensions K x D x S.
 }
 \description{
 Tailored for ALDEx3 where covariates are shared between massive numbers of

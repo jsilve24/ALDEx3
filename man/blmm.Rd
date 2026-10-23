@@ -4,7 +4,14 @@
 \alias{blmm}
 \title{Fast approximate mixed-effects engine for ALDEx3.}
 \usage{
-blmm(logW, formula, data, n.cores = 1L)
+blmm(
+  logW,
+  formula,
+  data,
+  n.cores = 1L,
+  inference = c("anchor", "residual"),
+  contrasts = NULL
+)
 }
 \arguments{
 \item{logW}{numeric array (N x D x S)}
@@ -16,10 +23,18 @@ blmm(logW, formula, data, n.cores = 1L)
 \item{n.cores}{number of worker processes for feature-level parallelism.
 If \code{n.cores > 1}, features are distributed across workers; the
 per-feature draw loop remains serial.}
+
+\item{inference}{Internal inference selector; the default is shared-anchor
+Satterthwaite inference. Public \code{aldex(test = "t.residual")} maps
+explicitly to residual degrees of freedom.}
+
+\item{contrasts}{optional validated contrast matrix with one row per
+contrast and columns matching the fixed-effect design.}
 }
 \value{
 named list of arrays (P x D x S): estimate, std.error, df,
-p.lower, p.upper, and (Pr x D x S) random.eff — same layout as
+p.lower, p.upper, and (Pr x D x S) random.eff; when contrasts are
+supplied, flat K x D x S contrast arrays use the same layout as
 \code{sr.mem}.
 }
 \description{
@@ -31,12 +46,28 @@ Internal engine called by \code{\link{aldex}} when \code{method = "blmm"}.
 Uses an \code{lme4}-style profiled Gaussian LMM formulation. One batched
 anchor REML problem is fit per feature across all S MC draws; draw-specific
 local covariance updates are obtained via a single Newton step; exact
-conditional GLS fixed-effect solves are then run per draw. The approximation
-is only in the variance-component step — fixed effects and standard errors
-are exact conditional on the updated covariance parameters.
+conditional GLS fixed-effect solves are then run per draw. Fixed effects and
+standard errors are exact conditional on the updated covariance parameters;
+this does not imply exact finite-sample inference. Shared-anchor
+Satterthwaite inference is the default; residual degrees of freedom remain
+available internally for reproducible scripts. The anchor degrees of freedom
+are
+\deqn{2 / \{2/d + (u_s+b_c)^T H^{-1}(u_s+b_c)\}.}
+Here \code{d = N - p}, with N observations and fitted fixed-effect dimension
+p; H is the Hessian of the mean negative profiled REML log likelihood at the
+shared anchor. At that anchor, u_s is the gradient of log PWRSS for draw s,
+and b_c is the gradient of log(c' M^-1 c), where c is a fixed-effect
+coefficient vector or user-supplied contrast,
+M = X' R^-1 X, X is the fixed-effect design, and R is the marginal covariance
+relative to residual variance. Gradients use the covariance-shape parameters.
+This additional approximation is not identical to per-draw \code{lmerTest}
+inference. P-values can differ even when estimates and SEs agree.
 
 Draw-specific updates that fail a profiled-objective check are re-fit with
 exact \code{lme4}. Failure of the shared anchor optimisation, or an unusable
 anchor Hessian, causes exact fallback for every draw in the feature. A single
 consolidated warning reports either kind of rescue.
+Invalid anchor inference sensitivities, contrast variances, or contrast
+estimates also cause per-draw exact \code{lmerTest} rescue. Native
+\code{sr.mem()} fits use their own lmerTest or nlme inference directly.
 }

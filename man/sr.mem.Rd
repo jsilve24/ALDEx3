@@ -4,7 +4,7 @@
 \alias{sr.mem}
 \title{Implementation of SR-MEM: scale-reliant mixed effects models.}
 \usage{
-sr.mem(logW, formula, data, n.cores, method, mem.args)
+sr.mem(logW, formula, data, n.cores, method, mem.args, contrasts = NULL)
 }
 \arguments{
 \item{logW}{a numeric array (N x D X S) where D is the number of taxa,
@@ -20,13 +20,16 @@ parallelization is used}
 \item{method}{The mem method to use: either nlme or lme4}
 
 \item{mem.args}{Additional arguments including random or correlation}
+
+\item{contrasts}{optional validated contrast matrix with one row per
+contrast and columns matching the fixed-effect design.}
 }
 \value{
 A list of (P x D x S)-arrays with the fixed effect point estimates,
 the standard errors, degrees of freedom and the lower and upper p-values
 for each coefficient (P), of each model fit to each taxa (D) and each
 posterior sample (S) and a (Pr x D x S)-array with (Pr) random
-effects.
+effects, plus flat K x D x S contrast arrays when contrasts are supplied.
 }
 \description{
 Implementation of SR-MEM: scale-reliant mixed effects models.

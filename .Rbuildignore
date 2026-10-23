@@ -9,3 +9,6 @@ vignettes/ALDEx3-Quickstart.Rmd.orig
 maintainer-instructions.txt
 .github/*
 .codex
+
+^dev$
+^SPARSE-IMPLEMENTATION-PLAN\.md$

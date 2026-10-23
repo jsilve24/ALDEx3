@@ -13,11 +13,12 @@ aldex(
   scale = NULL,
   streamsize = 8000,
   n.cores = detectCores() - 1,
-  return.pars = c("X", "estimate", "std.error", "p.val", "p.val.adj", "logComp",
+  return.pars = c("X", "estimate", "std.error", "df", "p.val", "p.val.adj", "logComp",
     "logScale"),
   p.adjust.method = "BH",
-  test = "t.HC3",
+  test = NULL,
   onesided = FALSE,
+  contrasts = NULL,
   ...
 )
 }
@@ -39,9 +40,10 @@ effects models with nlme, REQUIRES "random" argument representing random
 effects be passed into \code{aldex} function, can also pass "correlation" as
 argument (see nlme documentation for how to use "correlation" argument);
 or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
-one batched profiled mixed-model anchor fit per feature, draw-specific
-local covariance updates, and exact conditional fixed-effect solves.
-The approximation is only in the variance-component optimisation step.
+one batched profiled mixed-model anchor fit per feature and draw-specific
+local covariance updates. Fixed effects and standard errors are
+conditional on those updates; finite-sample inference depends on the
+selected residual or shared-anchor approximation.
 If the shared anchor optimisation fails or its Hessian is unusable, the
 whole feature falls back to exact \code{lme4}. Draw-specific updates that
 worsen the profiled objective fall back only for the affected draws.
@@ -63,8 +65,8 @@ streaming will be performed. Note, to conserve memory, samples from the
 Dirichlet and scale models will not be returned if streaming is used.
 Streaming can be turned off by setting streamsize=Inf.}
 
-\item{n.cores}{(default detectCores()-1) If method is 'lme4' or 'blmm',
-use this many cores for feature-level parallelism across taxa/features.
+\item{n.cores}{(default detectCores()-1) Number of workers for mixed models.
+The fully fitted engines distribute feature-draw fits across workers.
 For \code{method = "blmm"}, parallelism is across features, not across
 Monte Carlo draws within a feature.}
 
@@ -74,38 +76,52 @@ below.}
 \item{p.adjust.method}{(default BH) The method for multiple hypothesis test
 correction. See \code{p.adjust} for all available methods.}
 
-\item{test}{(default t.HC3), "t", t test is performed for each covariate
-(fast); "t.HC0" Heteroskedasticsity-Robust Standard Errors used (HC0;
-White's; slower); "t.HC3" (default) Heteroskedasticsity-Robust Standard
-Errors used (HC3; unlike HC0, this includes a leverage adjustment and is
-better for small sample sizes or when there are data with high leverage;
-slowest). To learn more about these, loko at Long and Ervin (2000) Using
-Heteroscedasticity Consistent Standard Errors in the Linear Regression
-Model, The American Statistician.}
+\item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
+\code{"lm"}, \code{"t.satterthwaite"} for \code{"blmm"}, and native \code{"t"} inference
+for \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or
+\code{"t.HC3"}; for \code{blmm}, choose \code{"t.satterthwaite"} or \code{"t.residual"};
+for \code{lme4} and \code{nlme}, only \code{"t"} is supported.}
 
 \item{onesided}{(default: FALSE) if sided return p-values for two-sided
 test. Otherwise if "lower" or "upper" return one-sided test corresponding
 to test that estimate is negative or positive respectively.}
+
+\item{contrasts}{optional numeric K x P matrix with one fixed-effect
+contrast per row. Its uniquely named columns must be the complete
+coefficient set and are reordered to the fitted design. Contrast rows
+have unique nonempty names, are finite and nonzero, and need not sum to
+zero or be independent. Contrasts require a full-rank fixed-effect design
+with positive residual degrees of freedom. They do not change composition
+or scale sampling or adjustment families. Coefficient results are
+unchanged when adding valid contrasts does not alter rescue decisions.}
 
 \item{...}{Additional scale-model arguments, such as \code{gamma},
 \code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
 include \code{random} or \code{correlation}.}
 }
 \value{
-a list with elements controled by parameter resturn.pars. Options
-include: - X: P x N covariate matrix - estimate: (P x D x nsample) array
-of linear model estimates - std.error: (P x D x nsample) array of standard
-error for the estimates - p.val: (P x D) matrix, unadjusted p-value for
-two-sided t-test - p.val.adj: (P x D) matrix, p-value for two-sided t-test
-adjusted according to \code{p.adj.method} - logScale: (N x S) matrix, samples
-of the log scale from the scale model - logComp: (D x N x S) array,
-samples of the log composition from the multinomial-Dirichlet - streaming:
-boolean, detnote if streaming was used. - random.effects (Pr x N x S): if
-using mixed effects models, return all Pr random-effects covariance terms
-and the residual variance. For \code{method = "blmm"}, correlated
-random-effect covariance terms are returned when present, matching the
-\code{lme4} naming convention as closely as possible. Note, logScale and
-logComp are not returned if streaming is active.
+An \code{aldex} list. \code{X} (P x N), \code{streaming},
+\code{method}, and the resolved \code{test} are always recorded. Here P is
+the coefficient count, D the feature count, N the observation count, and
+S the Monte Carlo draw count. \code{return.pars} controls:
+\describe{
+\item{estimate, std.error, df}{P x D x S arrays of fitted coefficients,
+within-fit standard errors, and degrees of freedom.}
+\item{p.val, p.val.adj}{P x D matrices of final raw and adjusted
+probabilities, respecting \code{onesided} and \code{p.adjust.method}.}
+\item{logComp, logScale}{D x N x S log2-composition draws and N x S
+log2-scale draws. These are not retained during streaming.}
+\item{random.effects}{Pr x D x S arrays of Pr random-effect variance
+and covariance terms, including residual variance, for mixed models.}
+}
+When contrasts are requested, \code{contrasts$matrix} always records their
+reordered matrix. \code{contrasts$estimate}, \code{contrasts$std.error},
+and \code{contrasts$df} have dimensions K x D x S; \code{contrasts$p.val}
+and \code{contrasts$p.val.adj} have dimensions K x D. K is the number of
+contrast rows. The same \code{return.pars} fields control coefficient and
+contrast results together. Names and singleton dimensions are retained.
+Use \code{summary(fit, component = "contrasts")} for stored contrast
+summaries; the default summary continues to show coefficients.
 }
 \description{
 ALDEx3 Linear Models
@@ -130,8 +146,44 @@ match the information available for the study. The "Writing a custom
 scale model" example below describes the required function interface
 and \code{N x nsample} output.
 }
+
+For \code{method = "lm"}, \code{"t"} uses ordinary residual
+variance, \code{"t.HC0"} uses the White sandwich covariance, and
+\code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
+\code{"t.satterthwaite"} uses the shared-anchor approximation and
+\code{"t.residual"} uses residual degrees of freedom. Failed approximate
+BLMM draws use fully fitted \code{lmerTest} rescue. With
+\code{"t.residual"}, rescued draws retain their historical Satterthwaite
+inference even though accepted draws use residual df. The \code{lme4}
+engine uses per-draw lmerTest Satterthwaite inference internally;
+\code{nlme} uses its native denominator df. Their public selector is
+\code{"t"}; neither accepts the two BLMM selectors. Names are case-sensitive.
+
+Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full
+fitted coefficient covariance, including off-diagonal entries. This
+argument specifies linear hypotheses, not R's factor-coding contrasts.
+For \code{nlme}, a contrast may involve only coefficients with the same
+native denominator df; unsupported combinations produce an error.
+
+Each coefficient and contrast forms a separate adjustment family across
+features. For two-sided tests, directional probabilities are doubled and
+capped at one, then adjusted within each draw and direction. ALDEx3
+averages over draws and selects the smaller directional aggregate.
+Combining discovery lists across coefficients or contrasts carries no
+joint FDR guarantee. The supplied scale model and original design are
+unchanged. Streaming may change BLMM results because each chunk has its
+own shared anchor; contrasts use the same fits within each chunk.
 }
 \examples{
+set.seed(15)
+Y <- matrix(rpois(3 * 12, 50), 3, 12)
+metadata <- data.frame(group = rep(c(0, 1), each = 6))
+X <- model.matrix(~ group, metadata)
+C <- matrix(c(0, 1), 1, dimnames = list("group difference", colnames(X)))
+fit <- aldex(Y, ~ group, metadata, nsample = 8, scale = clr.sm,
+             gamma = 0.2, contrasts = C)
+summary(fit, component = "contrasts")
+
 \donttest{
 Y <- matrix(1:110, 10, 11)
 condition <- c(rep(0, 5), rep(1, 6))
