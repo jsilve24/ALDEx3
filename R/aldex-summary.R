@@ -227,27 +227,45 @@ aitchison.mean <- function( n, log=FALSE ) {
 
 ##' Summarize an ALDEx3 result object
 ##'
-##' Provides a summary of coefficient or requested-contrast adjusted p-values,
+##' Provides a summary of coefficient and requested-contrast adjusted p-values,
 ##' estimates, and standard errors from an ALDEx3 result object.
 ##'
 ##' This method extracts adjusted p-values from `object$p.val.adj`, along with
 ##' posterior estimates and standard errors averaged across Monte Carlo samples.
 ##' The result is returned as a long-format data.frame suitable for downstream
 ##' analysis or visualization.
+##' By default, requested contrasts are included alongside coefficients. This
+##' only combines stored summaries: coefficients and contrasts retain their
+##' separate multiple-testing adjustment families.
 ##' 
 ##' @title Summary Method for ALDEx3 Objects
 ##' @param object An object of class \code{aldex}
 ##' @param ignore.intercept (default=TRUE), ignore intercept when creating
-##'   summary table
-##' @param component `"coefficients"` (the default) or `"contrasts"`.
+##'   summary table. Requested contrasts are never filtered by this argument.
+##' @param component `"all"` (the default) includes coefficients and any
+##'   requested contrasts. Use `"coefficients"` or `"contrasts"` to select
+##'   only that component.
 ##' @param ... Additional arguments (currently ignored).
 ##' @return A \code{data.frame} with columns \code{parameter}, \code{entity},
-##'   \code{p.val.adj}, \code{estimate}, and \code{std.error}.
+##'   \code{p.val.adj}, \code{estimate}, and \code{std.error}. When
+##'   \code{component = "all"} includes requested contrasts, an additional
+##'   \code{type} column identifies \code{"coefficient"} or \code{"contrast"}
+##'   rows. Without requested contrasts, the coefficient-only schema is preserved.
 ##' @export
 ##' @author Justin Silverman
 summary.aldex <- function(object, ignore.intercept=TRUE,
-                          component=c("coefficients", "contrasts"), ...) {
+                          component=c("all", "coefficients", "contrasts"), ...) {
   component <- match.arg(component)
+  if (component == "all") {
+    coefficients <- summary.aldex(object, ignore.intercept,
+                                  component = "coefficients")
+    if (is.null(object$contrasts)) return(coefficients)
+    contrasts <- summary.aldex(object, ignore.intercept,
+                               component = "contrasts")
+    coefficients$type <- rep("coefficient", nrow(coefficients))
+    contrasts$type <- rep("contrast", nrow(contrasts))
+    return(rbind(coefficients, contrasts))
+  }
   values <- if (component == "coefficients") object else object$contrasts
   if (is.null(values)) stop("object does not contain requested contrasts")
   req(values, c("p.val.adj", "estimate", "std.error"))

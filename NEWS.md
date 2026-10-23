@@ -1,5 +1,13 @@
 # ALDEx3 1.5.0
 
+## Summary presentation
+
+- `summary(fit)` now includes coefficients and any requested contrasts, with a
+  `type` column when combining them. Explicit `component = "coefficients"` and
+  `component = "contrasts"` filters remain available. Fits without requested
+  contrasts retain the previous column schema. Intercept filtering applies only
+  to coefficients; stored results and multiple-testing adjustments are unchanged.
+
 ## Inference and linear hypotheses
 
 - `method = "blmm"` now defaults to `test = "t.satterthwaite"`, the

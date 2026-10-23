@@ -7,7 +7,7 @@
 \method{summary}{aldex}(
   object,
   ignore.intercept = TRUE,
-  component = c("coefficients", "contrasts"),
+  component = c("all", "coefficients", "contrasts"),
   ...
 )
 }
@@ -15,27 +15,35 @@
 \item{object}{An object of class \code{aldex}}
 
 \item{ignore.intercept}{(default=TRUE), ignore intercept when creating
-summary table}
+summary table. Requested contrasts are never filtered by this argument.}
 
-\item{component}{\code{"coefficients"} (the default) or \code{"contrasts"}.}
+\item{component}{\code{"all"} (the default) includes coefficients and any
+requested contrasts. Use \code{"coefficients"} or \code{"contrasts"} to select
+only that component.}
 
 \item{...}{Additional arguments (currently ignored).}
 }
 \value{
 A \code{data.frame} with columns \code{parameter}, \code{entity},
-\code{p.val.adj}, \code{estimate}, and \code{std.error}.
+\code{p.val.adj}, \code{estimate}, and \code{std.error}. When
+\code{component = "all"} includes requested contrasts, an additional
+\code{type} column identifies \code{"coefficient"} or \code{"contrast"}
+rows. Without requested contrasts, the coefficient-only schema is preserved.
 }
 \description{
 Summarize an ALDEx3 result object
 }
 \details{
-Provides a summary of coefficient or requested-contrast adjusted p-values,
+Provides a summary of coefficient and requested-contrast adjusted p-values,
 estimates, and standard errors from an ALDEx3 result object.
 
 This method extracts adjusted p-values from \code{object$p.val.adj}, along with
 posterior estimates and standard errors averaged across Monte Carlo samples.
 The result is returned as a long-format data.frame suitable for downstream
 analysis or visualization.
+By default, requested contrasts are included alongside coefficients. This
+only combines stored summaries: coefficients and contrasts retain their
+separate multiple-testing adjustment families.
 }
 \author{
 Justin Silverman

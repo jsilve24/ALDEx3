@@ -108,10 +108,13 @@ fit_residual <- aldex(
 
 ## Reading the results
 
-The default summary still shows coefficients. Request contrasts explicitly:
+The default summary includes coefficients and the requested comparisons. The
+`type` column identifies coefficient and contrast rows. Select either component
+explicitly when needed:
 
 ```{r results}
-head(summary(fit))
+summary(fit)
+summary(fit, component = "coefficients")
 summary(fit, component = "contrasts")
 fit$test
 ```
