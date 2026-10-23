@@ -70,6 +70,14 @@ aldex.pvals <- function(p.lower, p.upper, p.adjust.method, onesided=FALSE) {
     p.adjust(item, method=p.adjust.method)
   })
 
+  # apply() drops the feature axis when p.adjust() returns a single value.
+  # Restore D x P x S so the subsequent means always average over draws.
+  if (dim(p.lower)[2L] == 1L) {
+    axes <- c(2L, 1L, 3L)
+    p.lower.adj <- array(p.lower.adj, dim(p.lower)[axes], dimnames(p.lower)[axes])
+    p.upper.adj <- array(p.upper.adj, dim(p.upper)[axes], dimnames(p.upper)[axes])
+  }
+
   p.lower.mean <- apply(p.lower.local, c(2,1), mean)
   p.upper.mean <- apply(p.upper.local, c(2,1), mean)
   rm(p.lower.local, p.upper.local)
