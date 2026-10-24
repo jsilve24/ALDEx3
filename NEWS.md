@@ -2,39 +2,44 @@
 
 ## Mixed-model computation
 
-- BLMM caches design and response cross-products and avoids the dense
-  covariance-parameter-by-random-effect-by-observation basis tensor. Sparse
-  and dense factorization backends share the profiled REML objective and
-  conditional GLS calculations, including correlated slopes and crossed effects.
-  Inference defaults and the statistical rescue thresholds are unchanged.
-- Sparse numerical solves reuse the structural factorization pattern and
-  account for permutations. Production anchor reports omit large random-effect
-  matrices. Matrix is now an explicit runtime dependency (>= 1.6-0).
-- Backend selection uses a calibrated estimate of factorization and solve work,
-  including factor fill-in and draw count, before allocating dense factors.
-  Internal `ALDEx3.blmm.backend` (`"auto"`, `"dense"`, or `"sparse"`) and
-  `ALDEx3.blmm.memory` (estimated working bytes) options support reproducible
-  validation. An optional `ALDEx3.blmm.diagnostics` callback receives the
-  selection and its rationale once per BLMM invocation/streaming chunk.
-  Memory estimates include worker and AD costs; they are not a hard RSS limit.
+- BLMM now caches the design and response cross-products used repeatedly during
+  fitting, avoiding a large dense tensor containing covariance-parameter,
+  random-effect, and observation basis terms. Sparse and dense factorizations
+  use the same profiled REML objective and conditional GLS calculations,
+  including correlated slopes and crossed effects. Inference defaults and the
+  criteria for refitting failed approximations with `lmerTest` are unchanged.
+- Sparse solves reuse the symbolic structure of the factorization and account
+  for its permutations. Production anchor reports omit large random-effect
+  matrices. `Matrix` is now an explicit runtime dependency (>= 1.6-0).
+- Before allocating dense factors, BLMM estimates factorization and solve work
+  from model size, random-effect factor fill-in (extra nonzeros created during
+  factorization), and draw count. Internal `ALDEx3.blmm.backend` (`"auto"`,
+  `"dense"`, or `"sparse"`) and `ALDEx3.blmm.memory` (estimated working bytes)
+  options support reproducible validation. An optional
+  `ALDEx3.blmm.diagnostics` callback receives the selected backend and its
+  rationale once per BLMM invocation or streaming chunk. Memory estimates
+  include worker and automatic-differentiation (AD) costs; they are not a hard
+  process-memory limit.
 - On the saved IBDMDB pilot (three taxa, eight draws each, 1,297 observations),
   automatic BLMM took a median 0.100 s versus 1.203 s for fresh `lmerTest`
   fitting, about 12 times faster. Three repetitions used varied engine order;
-  each BLMM run rescued the same one of 24 feature-draws. The IBD reference
-  emitted convergence/Hessian warnings for Bacteroides; this timing comparison
-  does not establish reference-fit reliability.
+  each BLMM run refitted the same single draw for one taxon with `lmerTest`
+  (one of the 24 fits).
+  The IBD reference emitted convergence/Hessian warnings for Bacteroides; this
+  timing comparison does not establish that those reference fits are reliable.
 - On the saved large simulation pilot (one taxon, 300 draws, 6,000 observations,
   300 random-intercept groups), median automatic BLMM time was 0.680 s versus
   17.790 s for one fresh `lmerTest` run, about 26 times faster. Forced dense and
   sparse BLMM medians were 1.949 s and 0.601 s. Both benefit from cached matrix
   products; sparse factorization provides additional savings on this design.
 - These Linux measurements use identical saved draws, one worker, and one BLAS
-  thread; fitting includes rescue and excludes input loading, design parsing,
-  and compilation. BLMM medians use three repetitions. They are pilot results,
-  not universal speed guarantees or a completed IBDMDB reanalysis. High factor
-  fill-in and frequent exact rescue can reduce the benefit. Numerical and
-  derivative regressions support equivalence to the existing method; this
-  computational change makes no new finite-sample calibration claim.
+  thread; fitting includes time spent refitting rejected draws with `lmerTest` and excludes input
+  loading, design parsing, and compilation. BLMM medians use three repetitions.
+  They are pilot results, not universal speed guarantees or a completed IBDMDB
+  reanalysis. High factor fill-in and frequent full `lmerTest` refits can reduce
+  the benefit. Tests of numerical results and derivatives support equivalence to
+  the existing method. They do not establish how well its approximate p-values
+  are calibrated across different study designs.
 - Correct the `streamsize` documentation to describe the existing heuristic of
   ten times the raw array size (the default corresponds to about 800 MB of response
   draws). Streaming behavior is unchanged; its threshold is not a hard memory
@@ -56,7 +61,7 @@
   shared-anchor Satterthwaite approximation. Coefficient-specific degrees of
   freedom can change p-values even when estimates and standard errors barely
   change. `test = "t.residual"` retains the previous BLMM convention, including
-  Satterthwaite inference for draws rescued with `lmerTest`.
+  Satterthwaite inference for draws refitted with `lmerTest`.
 - `test = NULL` resolves by engine: `"t.HC3"` for ordinary linear models,
   `"t.satterthwaite"` for BLMM, and native `"t"` inference for `lme4` and
   `nlme`. Explicit incompatible choices now fail before sampling. The two
@@ -91,11 +96,13 @@
   study. Production defaults remain unchanged: accepted BLMM draws still use
   residual df. Shared-anchor inference is not promoted pending resolution of
   accepted-draw errors and stronger calibration evidence. Clarify this distinction
-  from the `lmerTest` Satterthwaite inference used by the `lme4` engine and rescue.
+  from the `lmerTest` Satterthwaite inference used by the `lme4` engine and its
+  fallback refits.
 - Made BLMM reject invalid or ill-conditioned raw anchor Hessians instead of
   ridge-regularising and inverting them. Draw-specific Newton updates are now
-  checked against their profiled REML objective, and rejected draws fall back
-  selectively to exact `lme4` rather than returning pathological uncertainty.
+  checked against their profiled REML objective, and rejected draws are
+  selectively refitted with full `lmerTest` fits rather than returning
+  pathological uncertainty.
 
 # ALDEx3 1.3.1
 

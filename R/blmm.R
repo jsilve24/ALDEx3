@@ -949,12 +949,13 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' This additional approximation is not identical to per-draw \code{lmerTest}
 #' inference. P-values can differ even when estimates and SEs agree.
 #'
-#' Draw-specific updates that fail a profiled-objective check are re-fit with
-#' exact \code{lme4}. Failure of the shared anchor optimisation, or an unusable
-#' anchor Hessian, causes exact fallback for every draw in the feature. A single
-#' consolidated warning reports either kind of rescue.
+#' Draw-specific updates that fail a profiled-objective check are refitted with
+#' \code{lmerTest}, which uses \code{lme4} for model fitting. If the shared
+#' anchor optimisation fails or its Hessian cannot be used, every draw for the
+#' feature is fitted separately with \code{lmerTest}. A warning reports how
+#' many features or individual draws needed refitting and gives example reasons.
 #' Invalid anchor inference sensitivities, contrast variances, or contrast
-#' estimates also cause per-draw exact \code{lmerTest} rescue. Native
+#' estimates also cause the affected draws to be refitted. Native
 #' \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
 #'
 #' @param logW numeric array (N x D x S)

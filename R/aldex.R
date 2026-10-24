@@ -34,17 +34,18 @@
 ##'   effects models with nlme, REQUIRES "random" argument representing random
 ##'   effects be passed into `aldex` function, can also pass "correlation" as
 ##'   argument (see nlme documentation for how to use "correlation" argument);
-##'   or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
-##'   one batched profiled mixed-model anchor fit per feature and draw-specific
-##'   local covariance updates. Fixed effects and standard errors are
-##'   conditional on those updates; finite-sample inference depends on the
-##'   selected residual or shared-anchor approximation. If the shared anchor
-##'   optimisation fails or its Hessian is unusable, the whole feature falls
-##'   back to exact \code{lme4}. Draw-specific updates that worsen the profiled
-##'   objective fall back only for the affected draws. BLMM caches matrix
-##'   products and automatically selects sparse or dense computation for the
-##'   random-effects system.See the mixed-effects vignette for details,
-##'   validation guidance, and the runtime comparison with exact \code{lme4}.
+##'   or "blmm": an ALDEx3-specific approximate mixed-effects engine. For each
+##'   feature, BLMM estimates covariance parameters jointly across Monte Carlo
+##'   draws, then makes a local adjustment for each draw. This shared fit is
+##'   called the anchor. Fixed effects and standard errors are calculated
+##'   using each draw's adjusted covariance parameters; p-values use the
+##'   approximation selected by \code{test}. If the shared fit fails or its
+##'   curvature cannot be used, BLMM fits every draw for that feature separately
+##'   with \code{lmerTest} (which uses \code{lme4} for fitting). If only a
+##'   draw's local update or inference fails validation, only that draw is
+##'   refitted. A warning reports these refits. BLMM reuses matrix calculations
+##'   and automatically chooses sparse or dense computation; no extra argument
+##'   is needed. See the mixed-effects vignette for details and timing examples.
 ##' @param nsample number of monte carlo replicates
 ##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
 ##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
@@ -79,10 +80,11 @@
 ##'   variance, \code{"t.HC0"} uses the White sandwich covariance, and
 ##'   \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
 ##'   \code{"t.satterthwaite"} uses the shared-anchor approximation and
-##'   \code{"t.residual"} uses residual degrees of freedom. Failed approximate
-##'   BLMM draws use fully fitted \code{lmerTest} rescue. With
-##'   \code{"t.residual"}, rescued draws retain their historical Satterthwaite
-##'   inference even though accepted draws use residual df. The \code{lme4}
+##'   \code{"t.residual"} uses residual degrees of freedom. Draws that fail
+##'   BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
+##'   inference. This also applies when \code{test = "t.residual"}: draws that
+##'   pass the checks use residual df, but refitted draws use Satterthwaite df.
+##'   The \code{lme4}
 ##'   engine uses per-draw lmerTest Satterthwaite inference internally;
 ##'   \code{nlme} uses its native denominator df. Their public selector is
 ##'   \code{"t"}; neither accepts the two BLMM selectors. Names are
@@ -109,7 +111,7 @@
 ##'   zero or be independent. Contrasts require a full-rank fixed-effect design
 ##'   with positive residual degrees of freedom. They do not change composition
 ##'   or scale sampling or adjustment families. Coefficient results are
-##'   unchanged when adding valid contrasts does not alter rescue decisions.
+##'   unchanged unless checks on an added contrast cause a draw to be refitted.
 ##' @param onesided (default: FALSE) if sided return p-values for two-sided
 ##'   test. Otherwise if "lower" or "upper" return one-sided test corresponding
 ##'   to test that estimate is negative or positive respectively.

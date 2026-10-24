@@ -17,12 +17,20 @@ library(ALDEx3)
 
 ## What changed in 1.6.0
 
-BLMM now caches matrix products and automatically chooses sparse or dense
-computation for the random-effects system. Existing `aldex()` calls benefit
-without an additional argument. This changes computation while preserving the
-selected inference convention, scale sampling, multiple-testing adjustment,
-and exact-rescue checks. The performance section below gives measured examples
-and their limits.
+BLMM now reuses matrix calculations and automatically chooses sparse or dense
+computation for the random effects. Existing `aldex()` calls use these
+improvements without an extra argument. The inference method, scale sampling,
+multiple-testing adjustment, and checks on approximate fits are unchanged.
+The performance section below gives timing examples and explains their limits.
+
+BLMM saves time by sharing part of the fit across Monte Carlo draws. For each
+feature, it estimates covariance parameters jointly across draws, then makes a
+local adjustment for each draw. We call the shared fit the **anchor**. If that
+fit fails, BLMM fits every draw for the feature separately with `lmerTest`,
+which uses `lme4` for model fitting. If only an individual draw's adjustment or
+inference fails the checks, only that draw is refitted. ALDEx3 reports these
+refits in a warning. Refitting takes extra time, so the speedup depends partly
+on how often it is needed.
 
 ## Inference defaults introduced in 1.5.0
 
@@ -104,7 +112,7 @@ fit <- aldex(
 
 Omitting `test` selects `"t.satterthwaite"`. To reproduce the previous convention,
 use `test = "t.residual"`. With that option, accepted approximate draws use
-residual df, while rescued draws retain their historical `lmerTest`
+residual degrees of freedom (df), while draws refitted with `lmerTest` use its
 Satterthwaite inference.
 
 ```{r residual-example, eval=FALSE}
@@ -173,14 +181,15 @@ have **no joint FDR guarantee**. Joint adjustment across families is future work
 The target comparison is agreement with fully fitted `lmerTest` on identical
 response draws, especially after ALDEx aggregation. In an eight-group example
 with five observations per group and one draw, residual inference used 38 df;
-anchor and the reference used approximately six. Estimates and SEs nearly
-matched, and the draw was accepted without rescue. This isolates the inference
-problem from covariance fitting.
+the shared-anchor method and the reference used approximately six. Estimates
+and SEs nearly matched, and the draw passed BLMM's checks without refitting.
+This isolates the inference problem from covariance fitting.
 
 In a focused count-data comparison (three datasets, 48 features in total), the
 maximum adjusted-p error at 256 draws was 0.227 for residual inference versus
-0.00145 for anchor. Anchor matched the reference discovery sets at 0.05 with no
-rescued draws. This was a focused agreement study, not broad FDR validation.
+0.00145 for the shared-anchor method. That method identified the same discoveries
+as the reference at 0.05, without refitting any draws. This was a focused
+agreement study, not broad FDR validation.
 
 The completed oral application used 59 taxa, 12 coefficients, and 2,000 draws:
 
@@ -191,19 +200,19 @@ The completed oral application used 59 taxa, 12 coefficients, and 2,000 draws:
 | Maximum | 0.016516 | 0.004531 |
 | Discovery gains / losses at 0.05 | 0 / 0 | 0 / 0 |
 
-Only seven of 118,000 feature-draws required rescue. This is agreement on the
-approximate path, rather than universal use of the reference.
+Only seven of the 118,000 combinations of feature and draw required refitting
+with `lmerTest`. Almost all fits therefore used BLMM's approximation.
 
 There were regressions too. In the one completed six-participant dataset from
-the publication's simulation generator, anchor improved median and 95th-percentile
-adjusted-p errors and reduced disease-discovery disagreements from six to two.
+the publication's simulation generator, the shared-anchor method improved
+median and 95th-percentile adjusted-p errors and reduced disease-discovery disagreements from six to two.
 The maximum error worsened from 0.216 to 0.368. The largest regression was far
 from 0.05, but two discrepancies near the threshold remained. One dataset cannot
 establish general FDR calibration. The full publication benchmark was not
 completed; there is no completed IBD aggregate validation.
 
-The maintainer adopted anchor on this evidence. Earlier experimental-status
-recommendations remain preserved as historical records. The release evidence
+The maintainer adopted the shared-anchor method on this evidence. Earlier
+experimental-status recommendations remain preserved as historical records. The release evidence
 report, `dev/release-1.5.0/README.md`, links the verified numbers, full tables,
 and reproduction details in the
 [source repository](https://github.com/jsilve24/ALDEx3). Development studies are
@@ -217,13 +226,18 @@ draws can stabilize final outputs without eliminating approximation error.
 Large variation between draws, near-boundary variance components, and few
 independent groups can challenge the approximation.
 
-A failed anchor optimization or unusable raw Hessian triggers fully fitted
-`lmerTest` rescue for the whole feature. Invalid covariance updates, updates
-that materially worsen a draw's objective, or invalid inference trigger rescue
-for the affected draws. Estimates, SEs, df, and both tails are replaced together.
-A consolidated warning reports the rescue. These checks catch numerical and
-fitting failures; they do not bound inference error. Small df or significant
-p-values alone do not cause rescue.
+BLMM checks both the shared fit and each draw's local adjustment. If the shared
+fit fails to converge or its curvature matrix (Hessian) cannot be used, every
+draw for that feature is fitted separately with `lmerTest`. If a local covariance
+adjustment is invalid, makes the fit worse beyond numerical tolerance, or gives
+invalid inference quantities, only the affected draw is refitted. Its estimates,
+SEs, df, and both directional probabilities are replaced together. A warning
+reports how many features or individual draws needed refitting, with examples
+of the reasons. The warning calls this a fallback to `lme4`.
+
+These checks detect numerical and fitting failures; they do not guarantee a
+particular level of accuracy for the approximate p-values. Small df or
+significant p-values alone do not cause a draw to be refitted.
 
 Use `method = "lme4"` when fully optimized per-draw fitting is affordable and
 approximation error matters to the scientific conclusion. Use `nlme` for its
@@ -246,11 +260,14 @@ scaling without changing chunk sizes.
 
 ## Computation and performance in 1.6.0
 
-BLMM caches design and response cross-products and automatically chooses sparse
-or dense factorization using model dimensions, draw count, and factor fill-in.
-Both paths evaluate the same profiled objective and conditional fixed-effect
-solves. No backend choice is required from the user. The choice is made per
-BLMM invocation, including each streaming chunk, and reused across its features.
+BLMM calculates matrix products that can be reused across fits. It automatically
+chooses sparse or dense computation based on the model size, number of draws,
+and the number of nonzero entries expected during matrix factorization. A sparse
+input matrix can produce a much denser factor; this is called **fill-in**.
+Both approaches evaluate the same fitting objective and solve for the same
+conditional fixed effects. You do not need to choose between them. BLMM makes
+the choice once per call, or once per chunk when streaming, and uses it for all
+features in that call or chunk.
 
 The following measurements reuse the actual saved inputs from the publication
 investigation. Automatic BLMM selected sparse computation in both pilots.
@@ -262,8 +279,9 @@ investigation. Automatic BLMM selected sparse computation in both pilots.
 
 These are fitting times on Linux with an Intel Core Ultra 7 165U, R 4.6.1,
 one worker, and one BLAS thread. Input loading, design parsing, and compilation
-are excluded; rescue is included. BLMM times and the IBDMDB reference time are
-medians of three repetitions with varied engine order. The large-simulation
+are excluded; time spent refitting rejected draws is included. BLMM times and
+the IBDMDB reference time are medians of three repetitions with varied engine
+order. The large-simulation
 reference was fitted once. On that large design, forced dense and sparse BLMM
 medians were 1.949 s and 0.601 s: cached products improve both paths, with a
 further gain from sparse factorization.
@@ -271,16 +289,18 @@ The IBD reference emitted convergence and Hessian warnings for Bacteroides;
 the timing comparison does not establish the reliability of those reference
 fits. Their warnings are retained in the benchmark records.
 
-The IBDMDB pilot retained the same one rescued draw out of 24 feature-draws;
-the large-simulation pilot required no rescue. Dense, sparse, and archived
+Across the three taxa and eight draws in the IBDMDB pilot, all BLMM versions
+refitted the same single draw for one taxon with `lmerTest` (one of 24 fits).
+The large-simulation pilot required no refitting. Dense, sparse, and archived
 original results agree closely, and regression tests compare objective values,
 gradients, Hessians, and final outputs. This supports computational equivalence
 to the existing method, not a new claim of statistical calibration.
 
 These pilots do not establish the runtime of a full IBDMDB reanalysis or
 universal speedups. The earlier 1,000-draw IBDMDB run completed only 14 of 44
-taxa and required whole-feature rescue for seven of them. Sparse computation
-preserves those safeguards. Crossed effects can also produce much denser
+taxa; all draws for seven of those taxa had to be fitted with `lmerTest`.
+The new computation leaves the criteria for refitting unchanged, so frequent
+refits can still limit the speedup. Crossed effects can also produce much denser
 factors, reducing the advantage of a sparse input design. Small problems may
 favor dense computation. Increasing `n.cores` adds worker memory; neither
 `streamsize` nor the backend's working-memory estimate is a hard process-memory
@@ -363,4 +383,5 @@ This adds an anchor approximation to observed-information Satterthwaite inferenc
 it is not identical to per-draw `lmerTest`. The technical derivation in
 `dev/blmm-inference/derivation.md` in the source repository connects it to full
 information in covariance shape and residual scale. Tests
-check that relationship, duplicated draws, fixed-effect shifts, contrasts, and rescue.
+check that relationship, duplicated draws, fixed-effect shifts, contrasts, and
+refitting of draws that fail BLMM's checks.
