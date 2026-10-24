@@ -235,8 +235,9 @@ aitchison.mean <- function( n, log=FALSE ) {
 ##' The result is returned as a long-format data.frame suitable for downstream
 ##' analysis or visualization.
 ##' By default, requested contrasts are included alongside coefficients. This
-##' only combines stored summaries: coefficients and contrasts retain their
-##' separate multiple-testing adjustment families.
+##' only combines stored summaries; it does not change adjustment families.
+##' By default each coefficient and contrast has a separate family. Use
+##' \code{\link{aldex.p.adjust}} first to group selected rows without refitting.
 ##' 
 ##' @title Summary Method for ALDEx3 Objects
 ##' @param object An object of class \code{aldex}

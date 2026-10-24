@@ -101,7 +101,9 @@
 ##'   capped at one, then adjusted within each draw and direction. ALDEx3
 ##'   averages over draws and selects the smaller directional aggregate.
 ##'   Combining discovery lists across coefficients or contrasts carries no
-##'   joint FDR guarantee. The supplied scale model and original design are
+##'   joint FDR guarantee. Use \code{\link{aldex.p.adjust}} on the fitted
+##'   object to group coefficients or stored contrasts into shared adjustment
+##'   families without refitting. The supplied scale model and original design are
 ##'   unchanged. Streaming may change BLMM results because each chunk has its
 ##'   own shared anchor; contrasts use the same fits within each chunk.
 ##' @param contrasts optional numeric K x P matrix with one fixed-effect
@@ -119,7 +121,8 @@
 ##'   \code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
 ##'   include \code{random} or \code{correlation}.
 ##' @return An \code{aldex} list. \code{X} (P x N), \code{streaming},
-##'   \code{method}, and the resolved \code{test} are always recorded. Here P is
+##'   \code{method}, the resolved \code{test}, \code{p.adjust.method}, and
+##'   \code{onesided} are always recorded. Here P is
 ##'   the coefficient count, D the feature count, N the observation count, and
 ##'   S the Monte Carlo draw count. \code{return.pars} controls:
 ##'   \describe{
@@ -139,7 +142,7 @@
 ##'   contrast rows. The same \code{return.pars} fields control coefficient and
 ##'   contrast results together. Names and singleton dimensions are retained.
 ##'   Use \code{summary(fit, component = "contrasts")} for stored contrast
-##'   summaries; the default summary continues to show coefficients.
+##'   summaries; the default summary includes coefficients and contrasts.
 ##' @examples
 ##' set.seed(15)
 ##' Y <- matrix(rpois(3 * 12, 50), 3, 12)
@@ -345,6 +348,8 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   res$X <- X
   res$method <- method
   res$test <- test
+  res$p.adjust.method <- p.adjust.method
+  res$onesided <- onesided
   if ("estimate" %in% return.pars) {
     res$estimate <- out$estimate
     rownames(res$estimate) <- parameter.names

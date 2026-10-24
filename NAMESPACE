@@ -3,6 +3,7 @@
 S3method(summary,aldex)
 export(aldex)
 export(aldex.effect)
+export(aldex.p.adjust)
 export(aldex.plot)
 export(clr.sm)
 export(coefficient.sm)

@@ -84,7 +84,19 @@ Since 1.5.0, BLMM uses shared-anchor Satterthwaite inference by default (`test =
 
 In 1.6.0, BLMM reuses matrix calculations and automatically chooses sparse or dense computation. Existing calls use these improvements without an extra argument, and the inference method is unchanged. Small tests using saved IBDMDB and large-simulation inputs ran about 12 and 26 times faster than fresh `lmerTest` fitting, respectively. The large reference was timed once, and the IBD reference had convergence warnings; the vignette describes the workloads and timing procedure. Speedups depend on the model and on how often draws need refitting. Sparse input matrices can also become much denser during factorization, limiting the benefit.
 
-Use `contrasts = C` during fitting to test named linear combinations of fixed effects. Supply one row per hypothesis and a named column for every fixed-effect coefficient, including explicit zeros. Results are stored in `fit$contrasts`. `summary(fit)` includes both coefficients and requested comparisons; use `summary(fit, component = "contrasts")` to show only the comparisons. Each contrast has its own adjustment across features; combined discovery lists do not have a joint FDR guarantee. The supplied scale model and original design remain unchanged.
+Use `contrasts = C` during fitting to test named linear combinations of fixed effects. Supply one row per hypothesis and a named column for every fixed-effect coefficient, including explicit zeros. Results are stored in `fit$contrasts`. `summary(fit)` includes both coefficients and requested comparisons; use `summary(fit, component = "contrasts")` to show only the comparisons. By default, each coefficient and contrast has its own adjustment across features. The supplied scale model and original design remain unchanged.
+
+Version 1.6.1 adds grouped adjustment on an existing fit, without refitting:
+
+```r
+# Pool all features of two fitted coefficients into one adjustment family.
+fit <- aldex.p.adjust(fit, groups = c("age", "genotype"))
+# Or group stored contrasts; a list specifies several separate families.
+fit <- aldex.p.adjust(fit, groups = list(c("comparison_1", "comparison_2")))
+summary(fit)
+```
+
+Replace these names with the exact coefficient or stored-contrast names in your fit. Groups may mix both components; use `"coefficient:age"` and `"contrast:age"` when names overlap. Unlisted rows keep separate families. The helper reconstructs directional p-values from the default per-draw estimates, SEs, and df, then adjusts each family within each draw and direction before averaging. It also works on streaming fits. For fits made before 1.6.1, explicitly pass `method` and `onesided` if they differed from BH and two-sided inference. Separate families do not provide a joint adjustment for a combined discovery list. See `?aldex.p.adjust` for details.
 
 See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations behind the new default. Full evidence and release validation are linked from [the 1.5.0 development report](dev/release-1.5.0/README.md).
 

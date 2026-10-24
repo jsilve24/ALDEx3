@@ -165,16 +165,41 @@ design passed to the scale model, add scale priors, or draw scales separately
 for each comparison. Supply the scale distribution appropriate to the study;
 asking a different linear hypothesis does not require a new scale model.
 
-ALDEx3 adjusts **across features separately for each coefficient or contrast**.
+By default, ALDEx3 adjusts **across features separately for each coefficient or contrast**.
 For two-sided inference it doubles and caps each directional probability at
 one, then adjusts each direction within each draw using `p.adjust.method`
 (BH by default). It averages over draws and selects the smaller directional
 aggregate. Adjustment is not applied just once to averaged p-values.
 `onesided = "lower"` or `"upper"` selects that undoubled directional result.
 
-Adding a contrast does not enlarge another contrast's adjustment family.
-The combined discovery lists from several coefficients or contrasts therefore
-have **no joint FDR guarantee**. Joint adjustment across families is future work.
+Adding a contrast does not automatically enlarge another contrast's adjustment
+family. Since 1.6.1, use `aldex.p.adjust()` to pool selected stored contrasts
+into one family without refitting:
+
+```{r grouped-adjustment}
+joint <- aldex.p.adjust(fit, groups = rownames(C))
+summary(joint, component = "contrasts")
+```
+
+This adjusts all feature-by-contrast hypotheses together within each draw and
+direction, before the same Monte Carlo aggregation. It reconstructs the tails
+from stored per-draw estimates, SEs, and df, which are returned by default even
+when streaming. It does not require composition or scale draws. Fits that omit
+these inference arrays through `return.pars` cannot be readjusted.
+
+A list of character vectors specifies multiple disjoint families. Unlisted
+rows, including the intercept, retain individual families. Groups may also
+combine coefficients and contrasts. If a name is shared, qualify it as
+`"coefficient:genotypeKO"` or `"contrast:genotypeKO"`. Only existing contrasts
+can be grouped. `groups = NULL` restores the original per-row families.
+The returned object records `p.adjust.groups`, `p.adjust.method`, and `onesided`.
+For older fits that do not record the last two settings, the helper defaults
+to BH and two-sided inference; pass nondefault settings explicitly.
+
+Choose families based on the scientific questions. Separate families do not
+provide joint adjustment for their combined discovery lists. The selected
+adjustment method's assumptions still apply; grouping is not a new FDR
+guarantee for the Monte Carlo aggregated results.
 
 ## Why the default changed
 

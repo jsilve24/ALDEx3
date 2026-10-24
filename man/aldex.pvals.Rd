@@ -6,34 +6,62 @@
 et al. (2024) in Beyond Normalization: Incorporating Scale Uncertainty
 in Microbiome and Gene Expression Analysis (internal only)}
 \usage{
-aldex.pvals(p.lower, p.upper, p.adjust.method, onesided = FALSE)
+aldex.pvals(p.lower, p.upper, p.adjust.method, onesided = FALSE, groups = NULL)
 }
 \arguments{
-\item{p.lower}{A P x D x S matrix for P covariates, D taxa/genes, and S
-monte carlo samples representing the lower tail p.values}
+\item{p.lower}{A P x D x S array of lower-tail probabilities, with P
+coefficient or contrast rows, D taxa/genes, and S Monte Carlo draws.}
 
-\item{p.upper}{A P x D x S matrix for P covariates, D taxa/genes, and S
-monte carlo samples representing the upper tail p.values}
+\item{p.upper}{A P x D x S array of upper-tail probabilities, with the
+same row, feature, and draw order as \code{p.lower}.}
 
 \item{p.adjust.method}{An adjutment method for p.adjust}
 
 \item{onesided}{(default: FALSE) if sided return p-values for two-sided
 test. Otherwise if "lower" or "upper" return one-sided test corresponding
 to test that estimate is negative or positive respectively.}
+
+\item{groups}{\code{NULL} (the default) adjusts each row separately across
+its D features. Otherwise, supply a list of integer vectors indexing the
+first dimension of the probability arrays. Every row index from 1 to P
+must appear exactly once across the list; missing or repeated indices
+are errors. For example, with three rows, \code{list(c(1L, 2L), 3L)}
+pools all \code{2 * D} hypotheses from rows 1 and 2 into one family and adjusts
+row 3's D hypotheses separately. Each family is adjusted within every
+draw and direction, before Monte Carlo aggregation. This internal
+argument accepts row indices, not names or \code{"contrast:"} prefixes.
+Unlike \code{aldex.p.adjust}, it does not add unlisted singleton rows.}
 }
 \value{
 A list with P x D matrices with the non-adjusted and adjusted
 p-values.
 }
 \description{
-Calculate p-values adjusting for changes in sign as described by Nixon
-et al. (2024) in Beyond Normalization: Incorporating Scale Uncertainty
-in Microbiome and Gene Expression Analysis (internal only)
+This internal function operates on arrays of directional probabilities.
+To adjust an already fitted object using coefficient or contrast names,
+use \code{\link{aldex.p.adjust}} instead.
+}
+\examples{
+# Three hypothesis rows, two features, and two Monte Carlo draws.
+lower <- array(c(0.01, 0.04, 0.20, 0.03, 0.30, 0.60,
+                 0.02, 0.08, 0.25, 0.05, 0.35, 0.70), c(3, 2, 2))
+upper <- 1 - lower
+# Rows 1 and 2 share a family of four hypotheses; row 3 has two.
+grouped <- ALDEx3:::aldex.pvals(lower, upper, "BH",
+                               groups = list(c(1L, 2L), 3L))
+grouped$p.adj.res
+# All six hypotheses in one family, or the default separate families.
+all_rows <- ALDEx3:::aldex.pvals(lower, upper, "BH", groups = list(1:3))
+separate <- ALDEx3:::aldex.pvals(lower, upper, "BH")
 }
 \references{
 Nixon G, Gloor GB, Silverman JD (2025).
 "Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
 Genome Biology. \doi{10.1186/s13059-025-03609-3}
+}
+\seealso{
+\code{\link{aldex.p.adjust}} for the public interface on fitted
+objects, which accepts names and automatically handles unlisted rows.
 }
 \author{
 Justin Silverman, Kyle McGovern

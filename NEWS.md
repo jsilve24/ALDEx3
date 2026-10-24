@@ -1,3 +1,22 @@
+# ALDEx3 1.6.1
+
+## Grouped multiple-testing adjustment
+
+- Add `aldex.p.adjust(fit, groups = c("age", "genotype"))` to adjust jointly
+  across all features of selected coefficients or stored contrasts, without
+  refitting. A list of character vectors specifies several disjoint families;
+  unlisted rows retain separate families. Coefficients and contrasts can share
+  a family; qualified names distinguish rows with the same name.
+- Reconstruct directional probabilities from stored per-draw estimates,
+  standard errors, and degrees of freedom, then adjust within each draw and
+  direction before Monte Carlo aggregation. Streaming fits are supported;
+  fits that omitted these arrays cannot be readjusted. Existing fitting and
+  default per-vector adjustments are unchanged.
+- Record `p.adjust.method` and `onesided` in new fits. For older fits lacking
+  these settings, the helper defaults to BH and two-sided inference; pass
+  nondefault settings explicitly. The returned object records its adjustment
+  families, and `summary()` uses the updated results.
+
 # ALDEx3 1.6.0
 
 ## Mixed-model computation

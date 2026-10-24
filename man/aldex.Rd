@@ -108,7 +108,8 @@ include \code{random} or \code{correlation}.}
 }
 \value{
 An \code{aldex} list. \code{X} (P x N), \code{streaming},
-\code{method}, and the resolved \code{test} are always recorded. Here P is
+\code{method}, the resolved \code{test}, \code{p.adjust.method}, and
+\code{onesided} are always recorded. Here P is
 the coefficient count, D the feature count, N the observation count, and
 S the Monte Carlo draw count. \code{return.pars} controls:
 \describe{
@@ -128,7 +129,7 @@ and \code{contrasts$p.val.adj} have dimensions K x D. K is the number of
 contrast rows. The same \code{return.pars} fields control coefficient and
 contrast results together. Names and singleton dimensions are retained.
 Use \code{summary(fit, component = "contrasts")} for stored contrast
-summaries; the default summary continues to show coefficients.
+summaries; the default summary includes coefficients and contrasts.
 }
 \description{
 ALDEx3 Linear Models
@@ -179,7 +180,9 @@ features. For two-sided tests, directional probabilities are doubled and
 capped at one, then adjusted within each draw and direction. ALDEx3
 averages over draws and selects the smaller directional aggregate.
 Combining discovery lists across coefficients or contrasts carries no
-joint FDR guarantee. The supplied scale model and original design are
+joint FDR guarantee. Use \code{\link{aldex.p.adjust}} on the fitted
+object to group coefficients or stored contrasts into shared adjustment
+families without refitting. The supplied scale model and original design are
 unchanged. Streaming may change BLMM results because each chunk has its
 own shared anchor; contrasts use the same fits within each chunk.
 }
