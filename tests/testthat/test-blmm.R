@@ -164,10 +164,9 @@ test_that("blmm A3: lean common-piece kernel matches the batched report", {
     anchor$phi_bar, parsed$X, parsed$basis, parsed$lower
   )
 
-  expect_equal(pieces$L, report$L, tolerance = 1e-10)
-  expect_equal(pieces$RZX, report$RZX, tolerance = 1e-10)
   expect_equal(pieces$LX, report$LX, tolerance = 1e-10)
-  expect_equal(pieces$LambdaZt, report$LambdaZt, tolerance = 1e-10)
+  expect_equal(pieces$ldL2, report$ldL2, tolerance = 1e-10)
+  expect_equal(2 * sum(log(diag(pieces$LX))), report$ldRX2, tolerance = 1e-10)
 
   fe <- ALDEx3:::blmm_fixed_effects_draw(pieces, parsed$X, Y_d[, 1])
   objective_from_pieces <- ALDEx3:::blmm_profiled_objective_from_pieces(

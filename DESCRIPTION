@@ -1,6 +1,6 @@
 Package: ALDEx3
 Title: Linear Models for Sequence Count Data 
-Version: 1.5.0
+Version: 1.6.0
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
@@ -29,6 +29,7 @@ Imports:
     nlme,
     abind,
     matrixStats,
+    Matrix (>= 1.6-0),
     methods,
     stats,
     TMB

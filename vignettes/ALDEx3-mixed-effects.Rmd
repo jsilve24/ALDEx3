@@ -15,7 +15,16 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(ALDEx3)
 ```
 
-## What changed in 1.5.0
+## What changed in 1.6.0
+
+BLMM now caches matrix products and automatically chooses sparse or dense
+computation for the random-effects system. Existing `aldex()` calls benefit
+without an additional argument. This changes computation while preserving the
+selected inference convention, scale sampling, multiple-testing adjustment,
+and exact-rescue checks. The performance section below gives measured examples
+and their limits.
+
+## Inference defaults introduced in 1.5.0
 
 BLMM now uses shared-anchor Satterthwaite inference by default. Each coefficient
 or requested contrast gets its own degrees of freedom, allowing approximately
@@ -216,12 +225,6 @@ A consolidated warning reports the rescue. These checks catch numerical and
 fitting failures; they do not bound inference error. Small df or significant
 p-values alone do not cause rescue.
 
-BLMM was substantially faster in the completed oral and small-simulation runs,
-but a large-design pilot was slower than the reference and partial IBD runs had
-substantial fallback. These measurements used particular hardware and concurrent
-workloads. They do not establish universal speedups or precise Satterthwaite
-overhead. Dense computations can be costly for large random-effects designs.
-
 Use `method = "lme4"` when fully optimized per-draw fitting is affordable and
 approximation error matters to the scientific conclusion. Use `nlme` for its
 supported residual correlation structures; BLMM does not replace an AR(1)
@@ -235,6 +238,58 @@ Streaming fits a separate BLMM anchor in each chunk, so changing the partition
 can change approximate results. Contrasts use the corresponding coefficient
 fits within each chunk and are aggregated over all draws. Parallel execution
 distributes work across features or fits, according to the engine.
+The existing `streamsize` heuristic uses ten times the raw response-array size
+in decimal MB. At the default of 8000, streaming starts above about 800 MB of
+response draws. This is a working-size heuristic, not a hard memory limit;
+`streamsize = Inf` disables streaming. Version 1.6.0 documents this existing
+scaling without changing chunk sizes.
+
+## Computation and performance in 1.6.0
+
+BLMM caches design and response cross-products and automatically chooses sparse
+or dense factorization using model dimensions, draw count, and factor fill-in.
+Both paths evaluate the same profiled objective and conditional fixed-effect
+solves. No backend choice is required from the user. The choice is made per
+BLMM invocation, including each streaming chunk, and reused across its features.
+
+The following measurements reuse the actual saved inputs from the publication
+investigation. Automatic BLMM selected sparse computation in both pilots.
+
+| Workload | Automatic BLMM | Fresh `lmerTest` reference | Observed speedup |
+|:--|--:|--:|--:|
+| IBDMDB: 3 taxa, 8 draws each, 1,297 observations | 0.100 s | 1.203 s | 12 times |
+| Large simulation: 1 taxon, 300 draws, 6,000 observations, 300 groups | 0.680 s | 17.790 s | 26 times |
+
+These are fitting times on Linux with an Intel Core Ultra 7 165U, R 4.6.1,
+one worker, and one BLAS thread. Input loading, design parsing, and compilation
+are excluded; rescue is included. BLMM times and the IBDMDB reference time are
+medians of three repetitions with varied engine order. The large-simulation
+reference was fitted once. On that large design, forced dense and sparse BLMM
+medians were 1.949 s and 0.601 s: cached products improve both paths, with a
+further gain from sparse factorization.
+The IBD reference emitted convergence and Hessian warnings for Bacteroides;
+the timing comparison does not establish the reliability of those reference
+fits. Their warnings are retained in the benchmark records.
+
+The IBDMDB pilot retained the same one rescued draw out of 24 feature-draws;
+the large-simulation pilot required no rescue. Dense, sparse, and archived
+original results agree closely, and regression tests compare objective values,
+gradients, Hessians, and final outputs. This supports computational equivalence
+to the existing method, not a new claim of statistical calibration.
+
+These pilots do not establish the runtime of a full IBDMDB reanalysis or
+universal speedups. The earlier 1,000-draw IBDMDB run completed only 14 of 44
+taxa and required whole-feature rescue for seven of them. Sparse computation
+preserves those safeguards. Crossed effects can also produce much denser
+factors, reducing the advantage of a sparse input design. Small problems may
+favor dense computation. Increasing `n.cores` adds worker memory; neither
+`streamsize` nor the backend's working-memory estimate is a hard process-memory
+limit. These measurements do not demonstrate reduced total process memory.
+
+The reproducible performance record is `dev/blmm-sparse/REPORT.md` in the source
+checkout. Development inputs and reports are not included in the installed
+package. Historical timings in the 1.5.0 investigation predate these changes
+and should not be used as controlled old-versus-new speed ratios.
 
 ## Technical details
 

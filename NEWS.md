@@ -1,3 +1,45 @@
+# ALDEx3 1.6.0
+
+## Mixed-model computation
+
+- BLMM caches design and response cross-products and avoids the dense
+  covariance-parameter-by-random-effect-by-observation basis tensor. Sparse
+  and dense factorization backends share the profiled REML objective and
+  conditional GLS calculations, including correlated slopes and crossed effects.
+  Inference defaults and the statistical rescue thresholds are unchanged.
+- Sparse numerical solves reuse the structural factorization pattern and
+  account for permutations. Production anchor reports omit large random-effect
+  matrices. Matrix is now an explicit runtime dependency (>= 1.6-0).
+- Backend selection uses a calibrated estimate of factorization and solve work,
+  including factor fill-in and draw count, before allocating dense factors.
+  Internal `ALDEx3.blmm.backend` (`"auto"`, `"dense"`, or `"sparse"`) and
+  `ALDEx3.blmm.memory` (estimated working bytes) options support reproducible
+  validation. An optional `ALDEx3.blmm.diagnostics` callback receives the
+  selection and its rationale once per BLMM invocation/streaming chunk.
+  Memory estimates include worker and AD costs; they are not a hard RSS limit.
+- On the saved IBDMDB pilot (three taxa, eight draws each, 1,297 observations),
+  automatic BLMM took a median 0.100 s versus 1.203 s for fresh `lmerTest`
+  fitting, about 12 times faster. Three repetitions used varied engine order;
+  each BLMM run rescued the same one of 24 feature-draws. The IBD reference
+  emitted convergence/Hessian warnings for Bacteroides; this timing comparison
+  does not establish reference-fit reliability.
+- On the saved large simulation pilot (one taxon, 300 draws, 6,000 observations,
+  300 random-intercept groups), median automatic BLMM time was 0.680 s versus
+  17.790 s for one fresh `lmerTest` run, about 26 times faster. Forced dense and
+  sparse BLMM medians were 1.949 s and 0.601 s. Both benefit from cached matrix
+  products; sparse factorization provides additional savings on this design.
+- These Linux measurements use identical saved draws, one worker, and one BLAS
+  thread; fitting includes rescue and excludes input loading, design parsing,
+  and compilation. BLMM medians use three repetitions. They are pilot results,
+  not universal speed guarantees or a completed IBDMDB reanalysis. High factor
+  fill-in and frequent exact rescue can reduce the benefit. Numerical and
+  derivative regressions support equivalence to the existing method; this
+  computational change makes no new finite-sample calibration claim.
+- Correct the `streamsize` documentation to describe the existing heuristic of
+  ten times the raw array size (the default corresponds to about 800 MB of response
+  draws). Streaming behavior is unchanged; its threshold is not a hard memory
+  limit, and changing BLMM chunk boundaries can change approximate results.
+
 # ALDEx3 1.5.0
 
 ## Summary presentation

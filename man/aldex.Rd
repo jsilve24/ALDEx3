@@ -23,8 +23,8 @@ aldex(
 )
 }
 \arguments{
-\item{Y}{an (D x N) matrix of sequence count, N is number of samples, D
-is number of taxa or genes}
+\item{Y}{an (D x N) matrix of sequence count, N is number of samples, D is
+number of taxa or genes}
 
 \item{X}{either a formula (in which case DATA must be non-null) or a model
 matrix of dimension P x N (P is number of linear model covariates). If a
@@ -43,32 +43,38 @@ or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
 one batched profiled mixed-model anchor fit per feature and draw-specific
 local covariance updates. Fixed effects and standard errors are
 conditional on those updates; finite-sample inference depends on the
-selected residual or shared-anchor approximation.
-If the shared anchor optimisation fails or its Hessian is unusable, the
-whole feature falls back to exact \code{lme4}. Draw-specific updates that
-worsen the profiled objective fall back only for the affected draws.
-See the mixed-effects vignette for details, validation guidance, and the
-runtime comparison with exact \code{lme4}.}
+selected residual or shared-anchor approximation. If the shared anchor
+optimisation fails or its Hessian is unusable, the whole feature falls
+back to exact \code{lme4}. Draw-specific updates that worsen the profiled
+objective fall back only for the affected draws. BLMM caches matrix
+products and automatically selects sparse or dense computation for the
+random-effects system.See the mixed-effects vignette for details,
+validation guidance, and the runtime comparison with exact \code{lme4}.}
 
 \item{nsample}{number of monte carlo replicates}
 
 \item{scale}{A scale-model function, such as \code{clr.sm}, \code{tss.sm},
-\code{sample.sm}, or \code{coefficient.sm}; alternatively, an
-\code{N x nsample} matrix of log2-scale draws. Additional arguments for a
-scale-model function are passed through \code{...}. See "Writing a custom
-scale model" in the Examples section for the required interface.}
+\code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
+nsample} matrix of log2-scale draws. Additional arguments for a
+scale-model function are passed through \code{...}. See
+"Writing a custom scale model" in the Examples section for the required
+interface.}
 
-\item{streamsize}{(default 8000) memory footprint (approximate) at which to
-use streaming. This should be thought of as the number of Mb for each
-streaming chunk. If D\emph{N}nsample*8/1000000 is less than streamsize then no
-streaming will be performed. Note, to conserve memory, samples from the
-Dirichlet and scale models will not be returned if streaming is used.
-Streaming can be turned off by setting streamsize=Inf.}
+\item{streamsize}{(default 8000) working-size threshold for streaming. The
+existing heuristic uses ten times the raw response-array size in decimal
+MB: streaming occurs when \code{D*N*nsample*8/100000 > streamsize}. Thus
+the default corresponds to about 800 MB of raw response draws, not an 8 GB
+array. Each chunk contains at most \code{floor(streamsize*100000/(D*N*8))}
+draws. This is a size heuristic, not a hard process-memory limit. To
+conserve memory, Dirichlet and scale samples are not returned when
+streaming is used. Set \code{streamsize=Inf} to disable streaming. BLMM
+fits a separate anchor per chunk, so changing this threshold can change
+its approximate results.}
 
 \item{n.cores}{(default detectCores()-1) Number of workers for mixed models.
-The fully fitted engines distribute feature-draw fits across workers.
-For \code{method = "blmm"}, parallelism is across features, not across
-Monte Carlo draws within a feature.}
+The fully fitted engines distribute feature-draw fits across workers. For
+\code{method = "blmm"}, parallelism is across features, not across Monte
+Carlo draws within a feature.}
 
 \item{return.pars}{what results should be returned, see return section
 below.}
@@ -77,10 +83,10 @@ below.}
 correction. See \code{p.adjust} for all available methods.}
 
 \item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
-\code{"lm"}, \code{"t.satterthwaite"} for \code{"blmm"}, and native \code{"t"} inference
-for \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or
-\code{"t.HC3"}; for \code{blmm}, choose \code{"t.satterthwaite"} or \code{"t.residual"};
-for \code{lme4} and \code{nlme}, only \code{"t"} is supported.}
+\code{"lm"}, \code{"t.satterthwaite"} for \code{"blmm"}, and native \code{"t"} inference for
+\code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or \code{"t.HC3"};
+for \code{blmm}, choose \code{"t.satterthwaite"} or \code{"t.residual"}; for \code{lme4} and
+\code{nlme}, only \code{"t"} is supported.}
 
 \item{onesided}{(default: FALSE) if sided return p-values for two-sided
 test. Otherwise if "lower" or "upper" return one-sided test corresponding
@@ -157,7 +163,8 @@ BLMM draws use fully fitted \code{lmerTest} rescue. With
 inference even though accepted draws use residual df. The \code{lme4}
 engine uses per-draw lmerTest Satterthwaite inference internally;
 \code{nlme} uses its native denominator df. Their public selector is
-\code{"t"}; neither accepts the two BLMM selectors. Names are case-sensitive.
+\code{"t"}; neither accepts the two BLMM selectors. Names are
+case-sensitive.
 
 Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full
 fitted coefficient covariance, including off-diagonal entries. This

@@ -21,8 +21,8 @@
 ##' }
 ##'
 ##' @title ALDEx3 Linear Models
-##' @param Y an (D x N) matrix of sequence count, N is number of samples, D
-##'   is number of taxa or genes
+##' @param Y an (D x N) matrix of sequence count, N is number of samples, D is
+##'   number of taxa or genes
 ##' @param X either a formula (in which case DATA must be non-null) or a model
 ##'   matrix of dimension P x N (P is number of linear model covariates). If a
 ##'   formula is passed it should not include the target Y, e.g., should simply
@@ -31,44 +31,50 @@
 ##' @param data a data frame for use with formula, must have N rows
 ##' @param method (default lm) The regression method; "lm": linear regression,
 ##'   "lme4": linear mixed effects regression with lme4; "nlme": linear mixed
-##'    effects models with nlme, REQUIRES "random" argument representing random
-##'    effects be passed into `aldex` function, can also pass "correlation" as
-##'    argument (see nlme documentation for how to use "correlation" argument);
-##'    or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
-##'    one batched profiled mixed-model anchor fit per feature and draw-specific
-##'    local covariance updates. Fixed effects and standard errors are
-##'    conditional on those updates; finite-sample inference depends on the
-##'    selected residual or shared-anchor approximation.
-##'    If the shared anchor optimisation fails or its Hessian is unusable, the
-##'    whole feature falls back to exact \code{lme4}. Draw-specific updates that
-##'    worsen the profiled objective fall back only for the affected draws.
-##'    See the mixed-effects vignette for details, validation guidance, and the
-##'    runtime comparison with exact \code{lme4}.
+##'   effects models with nlme, REQUIRES "random" argument representing random
+##'   effects be passed into `aldex` function, can also pass "correlation" as
+##'   argument (see nlme documentation for how to use "correlation" argument);
+##'   or "blmm": an ALDEx3-specific approximate mixed-effects engine that uses
+##'   one batched profiled mixed-model anchor fit per feature and draw-specific
+##'   local covariance updates. Fixed effects and standard errors are
+##'   conditional on those updates; finite-sample inference depends on the
+##'   selected residual or shared-anchor approximation. If the shared anchor
+##'   optimisation fails or its Hessian is unusable, the whole feature falls
+##'   back to exact \code{lme4}. Draw-specific updates that worsen the profiled
+##'   objective fall back only for the affected draws. BLMM caches matrix
+##'   products and automatically selects sparse or dense computation for the
+##'   random-effects system.See the mixed-effects vignette for details,
+##'   validation guidance, and the runtime comparison with exact \code{lme4}.
 ##' @param nsample number of monte carlo replicates
 ##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
-##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an
-##'   \code{N x nsample} matrix of log2-scale draws. Additional arguments for a
-##'   scale-model function are passed through \code{...}. See "Writing a custom
-##'   scale model" in the Examples section for the required interface.
-##' @param streamsize (default 8000) memory footprint (approximate) at which to
-##'   use streaming. This should be thought of as the number of Mb for each
-##'   streaming chunk. If D*N*nsample*8/1000000 is less than streamsize then no
-##'   streaming will be performed. Note, to conserve memory, samples from the
-##'   Dirichlet and scale models will not be returned if streaming is used.
-##'   Streaming can be turned off by setting streamsize=Inf.
+##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
+##'   nsample} matrix of log2-scale draws. Additional arguments for a
+##'   scale-model function are passed through \code{...}. See
+##'   "Writing a custom scale model" in the Examples section for the required
+##'   interface.
+##' @param streamsize (default 8000) working-size threshold for streaming. The
+##'   existing heuristic uses ten times the raw response-array size in decimal
+##'   MB: streaming occurs when \code{D*N*nsample*8/100000 > streamsize}. Thus
+##'   the default corresponds to about 800 MB of raw response draws, not an 8 GB
+##'   array. Each chunk contains at most \code{floor(streamsize*100000/(D*N*8))}
+##'   draws. This is a size heuristic, not a hard process-memory limit. To
+##'   conserve memory, Dirichlet and scale samples are not returned when
+##'   streaming is used. Set \code{streamsize=Inf} to disable streaming. BLMM
+##'   fits a separate anchor per chunk, so changing this threshold can change
+##'   its approximate results.
 ##' @param n.cores (default detectCores()-1) Number of workers for mixed models.
-##'   The fully fitted engines distribute feature-draw fits across workers.
-##'   For \code{method = "blmm"}, parallelism is across features, not across
-##'   Monte Carlo draws within a feature.
+##'   The fully fitted engines distribute feature-draw fits across workers. For
+##'   \code{method = "blmm"}, parallelism is across features, not across Monte
+##'   Carlo draws within a feature.
 ##' @param return.pars what results should be returned, see return section
 ##'   below.
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
 ##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
-##'   `"lm"`, `"t.satterthwaite"` for `"blmm"`, and native `"t"` inference
-##'   for `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or
-##'   `"t.HC3"`; for `blmm`, choose `"t.satterthwaite"` or `"t.residual"`;
-##'   for `lme4` and `nlme`, only `"t"` is supported.
+##'   `"lm"`, `"t.satterthwaite"` for `"blmm"`, and native `"t"` inference for
+##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
+##'   for `blmm`, choose `"t.satterthwaite"` or `"t.residual"`; for `lme4` and
+##'   `nlme`, only `"t"` is supported.
 ##' @details For \code{method = "lm"}, \code{"t"} uses ordinary residual
 ##'   variance, \code{"t.HC0"} uses the White sandwich covariance, and
 ##'   \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
@@ -79,7 +85,8 @@
 ##'   inference even though accepted draws use residual df. The \code{lme4}
 ##'   engine uses per-draw lmerTest Satterthwaite inference internally;
 ##'   \code{nlme} uses its native denominator df. Their public selector is
-##'   \code{"t"}; neither accepts the two BLMM selectors. Names are case-sensitive.
+##'   \code{"t"}; neither accepts the two BLMM selectors. Names are
+##'   case-sensitive.
 ##'
 ##'   Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full
 ##'   fitted coefficient covariance, including off-diagonal entries. This

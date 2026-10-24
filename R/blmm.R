@@ -49,40 +49,6 @@ theta_to_phi_blmm <- function(theta, lower) {
 }
 
 # ---------------------------------------------------------------------------
-# Basis tensor for LambdaZt
-# ---------------------------------------------------------------------------
-
-#' Precompute LambdaZt basis tensors for the TMB kernel.
-#'
-#' @details
-#' LambdaZt = Lambda(theta) \%*\% Zt is linear in theta because
-#' \code{Lambdat@x = theta[Lind]}. We precompute one basis slice per theta_j
-#' by evaluating Lambda(e_j) \%*\% Zt, where e_j is the j-th unit vector.
-#' Then at any theta: LambdaZt = sum_j theta_j * \code{basis[j,,]}.
-#' This factorisation lets the TMB kernel reconstruct LambdaZt cheaply without
-#' re-parsing the lme4 formula structures in C++.
-#'
-#' @param reTrms random-effects terms list from \code{lme4::lFormula()}
-#' @return array of dimension \code{(n_theta, q, n)}: \code{basis[j,,]} is the
-#'   contribution of theta_j to LambdaZt
-#' @noRd
-compute_basis_blmm <- function(reTrms) {
-  n_theta <- length(reTrms$theta)
-  q <- nrow(reTrms$Zt)
-  n <- ncol(reTrms$Zt)
-
-  basis <- array(0, dim = c(n_theta, q, n))
-  for (j in seq_len(n_theta)) {
-    theta_ej <- rep(0, n_theta)
-    theta_ej[j] <- 1
-    Lam <- reTrms$Lambdat
-    Lam@x <- theta_ej[reTrms$Lind]
-    basis[j, , ] <- as.matrix(Lam %*% reTrms$Zt)
-  }
-  basis
-}
-
-# ---------------------------------------------------------------------------
 # Random-effects covariance packaging
 # ---------------------------------------------------------------------------
 
@@ -160,9 +126,11 @@ blmm_random_effect_vector <- function(theta, sigma2, reTrms) {
 #'
 #' @param formula lme4 mixed-effects formula
 #' @param data data.frame used for formula evaluation
-#' @return list with X, reTrms, basis, phi_init, is_log, lower, random_template
+#' @return list with X, reTrms, cached design (basis), phi_init, is_log, lower, random_template
 #' @noRd
-blmm_parse_formula <- function(formula, data) {
+blmm_parse_formula <- function(formula, data,
+                               backend = getOption("ALDEx3.blmm.backend", "auto"),
+                               draws = 1L, workers = 1L, features = 1L) {
   data$.blmm_y <- 0
   parsed <- lme4::lFormula(
     stats::update(formula, .blmm_y ~ .),
@@ -179,7 +147,7 @@ blmm_parse_formula <- function(formula, data) {
   list(
     X = parsed$X,
     reTrms = reTrms,
-    basis = compute_basis_blmm(reTrms),
+    basis = blmm_design(reTrms, parsed$X, backend, draws, workers, features),
     phi_init = theta_to_phi_blmm(reTrms$theta, lower),
     is_log = as.integer(lower > -Inf),
     lower = lower,
@@ -195,19 +163,21 @@ blmm_parse_formula <- function(formula, data) {
 #'
 #' @param X fixed-effects design matrix (n x p)
 #' @param Y_d response matrix for one feature (n x S), draws stacked as columns
-#' @param basis precomputed basis tensor from \code{compute_basis_blmm()}
+#' @param basis cached design from \code{blmm_design()}
 #' @param is_log integer vector flagging which phi entries are log-transformed
 #' @param phi_init starting values for the optimisation
 #' @return TMB autodiff object with \code{$fn}, \code{$gr}, \code{$he},
 #'   and \code{$report()} methods
 #' @noRd
-blmm_make_adfun <- function(X, Y_d, basis, is_log, phi_init) {
+blmm_make_adfun <- function(X, Y_d, basis, is_log, phi_init,
+                            response = blmm_response_cache(basis, X, Y_d)) {
   TMB::MakeADFun(
     data = list(
-      X = X,
-      Y = Y_d,
-      basis = basis,
-      is_log = is_log
+      Lambdat = basis$Lambdat, Lind = as.integer(basis$Lind - 1L),
+      G = basis$G, ZX = basis$ZX, XX = basis$XX,
+      ZY = response$ZY, XY = response$XY, yy = response$yy,
+      n = nrow(X), is_log = is_log,
+      sparse_backend = as.integer(basis$backend == "sparse")
     ),
     parameters = list(phi = phi_init),
     DLL = "ALDEx3",
@@ -478,26 +448,25 @@ blmm_phi_updates <- function(phi_bar, H_d, scores, cholH = chol(H_d)) {
 #' the lme4 RX factor). Residual df is n - p; Satterthwaite approximation
 #' is not used.
 #'
-#' @param pieces list from \code{blmm_common_pieces()}: L, RZX, LX, LambdaZt
+#' @param pieces factor/solve interface from \code{blmm_common_pieces()}
 #' @param X fixed-effects design matrix (n x p)
 #' @param y numeric vector of length n: response for this draw
+#' @param response optional cached cross-products for this draw
 #' @return list with beta, se, df, sigma2
 #' @noRd
-blmm_fixed_effects_draw <- function(pieces, X, y) {
+blmm_fixed_effects_draw <- function(pieces, X, y, response = NULL) {
   n <- nrow(X)
   p <- ncol(X)
 
-  L <- pieces$L
-  RZX <- pieces$RZX
   LX <- pieces$LX
-  LambdaZt <- pieces$LambdaZt
-
-  cu <- forwardsolve(L, LambdaZt %*% y)
-  Cu_y <- crossprod(X, y) - crossprod(RZX, cu)
+  if (is.null(response)) response <- blmm_response_cache(pieces$design, X, y)
+  by <- as.matrix(pieces$T %*% response$ZY)
+  solved_y <- blmm_factor_solve(pieces$factor, by, pieces$backend)
+  Cu_y <- response$XY - crossprod(pieces$BX, solved_y)
   Cbeta <- forwardsolve(LX, Cu_y)
   beta <- backsolve(t(LX), Cbeta)
 
-  PWRSS <- as.numeric(sum(y^2) - sum(cu^2) - sum(Cbeta^2))
+  PWRSS <- as.numeric(response$yy - sum(by * solved_y) - sum(Cbeta^2))
   if (!is.finite(PWRSS) || PWRSS <= 0) {
     stop("blmm: conditional fixed-effect solve produced a non-positive profiled residual sum of squares")
   }
@@ -539,74 +508,49 @@ blmm_fixed_effects_draw <- function(pieces, X, y) {
 #'   \code{blmm_profiled_objectives()}
 #' @noRd
 blmm_profiled_objective_from_pieces <- function(pieces, sigma2, n, p) {
-  diag_L <- diag(pieces$L)
   diag_LX <- diag(pieces$LX)
   if (!is.finite(sigma2) || sigma2 <= 0 ||
-      any(!is.finite(diag_L)) || any(diag_L <= 0) ||
+      !is.finite(pieces$ldL2) ||
       any(!is.finite(diag_LX)) || any(diag_LX <= 0)) {
     stop("blmm: invalid quantities in the proposed profiled REML objective")
   }
 
-  sum(log(diag_L)) + sum(log(diag_LX)) + (n - p) / 2 * log(sigma2)
+  pieces$ldL2 / 2 + sum(log(diag_LX)) + (n - p) / 2 * log(sigma2)
 }
 
-#' Recompute Cholesky pieces for a per-draw GLS solve.
+#' Recompute the random-effect factor and dense fixed-effect Schur complement.
 #'
-#' @details
-#' Once per-draw covariance parameters \code{phi_tilde[, s]} are available, we need
-#' L, RZX, LX, and LambdaZt to run the exact conditional solve. These depend
-#' only on phi, X, and the basis tensors — not on Y — so we recompute them
-#' directly in R rather than re-evaluating the full batched TMB objective,
-#' which would perform unnecessary Y-block work for all S draws at once.
-#'
-#' @param phi numeric vector: draw-specific unconstrained covariance parameters
-#' @param X fixed-effects design matrix (n x p)
-#' @param basis precomputed basis tensor from \code{compute_basis_blmm()}
-#' @param lower numeric vector of lower bounds from \code{reTrms$lower}
-#' @return list with L (lower Cholesky of A = I + LambdaZt LambdaZt'),
-#'   RZX (L^{-1} LambdaZt X), LX (lower Cholesky of Schur complement M),
-#'   and LambdaZt
+#' @details The cached design is independent of covariance parameters and Y.
+#' Sparse factors use the structural symbolic factor with fresh numeric values.
+#' Permutations are handled by the factor solve, never by callers.
+#' @param phi draw-specific unconstrained covariance parameters
+#' @param X fixed-effects design
+#' @param basis cached design from \code{blmm_design()}
+#' @param lower bounds for the lme4 covariance parameters
+#' @return factor/solve interface, BX, LX, and log determinant ldL2
 #' @noRd
 blmm_common_pieces <- function(phi, X, basis, lower) {
   theta <- phi_to_theta_blmm(phi, lower)
-  if (any(!is.finite(theta))) {
+  if (any(!is.finite(theta)))
     stop("blmm: proposed covariance parameters are non-finite")
+  T <- basis$Lambdat
+  T@x <- theta[basis$Lind]
+  A <- Matrix::forceSymmetric(T %*% basis$G %*% Matrix::t(T) +
+                              Matrix::Diagonal(nrow(T)))
+  if (basis$backend == "sparse") {
+    factor <- Matrix::update(basis$symbolic, A)
+    ldL2 <- as.numeric(Matrix::determinant(factor, logarithm = TRUE, sqrt = FALSE)$modulus)
+  } else {
+    factor <- chol(as.matrix(A))
+    ldL2 <- 2 * sum(log(diag(factor)))
   }
-  q <- dim(basis)[2]
-  n <- nrow(X)
-  LambdaZt <- matrix(0, nrow = q, ncol = n)
-
-  for (j in seq_along(theta)) {
-    basis_j <- matrix(basis[j, , ], nrow = q, ncol = n)
-    LambdaZt <- LambdaZt + theta[j] * basis_j
-  }
-
-  A <- LambdaZt %*% t(LambdaZt)
-  diag(A) <- diag(A) + 1
-  L_raw <- tryCatch(chol(A), error = function(e) e)
-  if (inherits(L_raw, "error")) {
-    stop("blmm: local covariance factorisation failed")
-  }
-  L <- t(L_raw)
-
-  RZX <- forwardsolve(L, LambdaZt %*% X)
-  M <- crossprod(X) - crossprod(RZX)
-  LX_raw <- tryCatch(chol(M), error = function(e) e)
-  if (inherits(LX_raw, "error")) {
-    stop("blmm: local fixed-effect factorisation failed")
-  }
-
-  dimnames(L) <- NULL
-  dimnames(RZX) <- NULL
-  dimnames(LX_raw) <- NULL
-  dimnames(LambdaZt) <- NULL
-
-  list(
-    L = L,
-    RZX = RZX,
-    LX = t(LX_raw),
-    LambdaZt = LambdaZt
-  )
+  BX <- as.matrix(T %*% basis$ZX)
+  solved_X <- blmm_factor_solve(factor, BX, basis$backend)
+  M <- basis$XX - crossprod(BX, solved_X)
+  LX <- t(chol((M + t(M)) / 2))
+  dimnames(LX) <- NULL
+  list(factor = factor, backend = basis$backend, BX = BX, LX = LX,
+       T = T, design = basis, ldL2 = ldL2)
 }
 
 # ---------------------------------------------------------------------------
@@ -679,7 +623,7 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' @param d integer feature index (column of logW)
 #' @param logW numeric array (N x D x S)
 #' @param X fixed-effects design matrix
-#' @param basis precomputed basis tensor
+#' @param basis cached design
 #' @param is_log integer vector for phi/theta transformation
 #' @param phi_init starting values
 #' @param lower lower bounds for theta
@@ -698,7 +642,7 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
                              reTrms, formula, data, forced_fallback = integer(0),
                              inference = c("anchor", "residual"),
-                             contrasts = NULL) {
+                             contrasts = NULL, strict = blmm_strict()) {
   inference <- match.arg(inference)
   N <- nrow(X)
   p <- ncol(X)
@@ -724,7 +668,8 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 
   result <- tryCatch({
     # Step 1: anchor — optimise the average-over-draws objective.
-    obj_full <- blmm_make_adfun(X, Y_d, basis, is_log, phi_init)
+    response <- blmm_response_cache(basis, X, Y_d)
+    obj_full <- blmm_make_adfun(X, Y_d, basis, is_log, phi_init, response)
     anchor <- blmm_fit_anchor(obj_full, phi_init)
 
     # Step 2: score corrections — differentiate per-draw PWRSS w.r.t. phi at
@@ -773,7 +718,9 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     for (s in seq_len(S)) {
       draw_result <- tryCatch({
         pieces <- blmm_common_pieces(phi_tilde[, s], X, basis, lower)
-        fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s])
+        response_s <- list(ZY = response$ZY[, s, drop = FALSE],
+                           XY = response$XY[, s, drop = FALSE], yy = response$yy[s])
+        fe <- blmm_fixed_effects_draw(pieces, X, Y_d[, s], response_s)
         proposed_objective <- blmm_profiled_objective_from_pieces(
           pieces, fe$sigma2, N, p
         )
@@ -846,6 +793,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
       }, error = function(e) e)
 
       if (inherits(draw_result, "error")) {
+        if (strict) stop(draw_result)
         rejected[s] <- TRUE
         rejection_messages[s] <- conditionMessage(draw_result)
         next
@@ -958,6 +906,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
       full_fallback = FALSE
     )
   }, error = function(e) {
+    if (strict) stop(e)
     list(
       fit = blmm_exact_feature(Y_d, formula, data, contrasts = contrasts),
       fallback = TRUE,
@@ -1033,7 +982,12 @@ blmm <- function(logW, formula, data, n.cores = 1L,
   D <- dim(logW)[2]
   S <- dim(logW)[3]
 
-  parsed <- blmm_parse_formula(formula, data)
+  parsed <- blmm_parse_formula(formula, data, draws = S,
+                               workers = max(1L, min(as.integer(n.cores), D)),
+                               features = D)
+  diagnostic <- getOption("ALDEx3.blmm.diagnostics")
+  if (is.function(diagnostic)) diagnostic(parsed$basis$selection)
+  strict <- blmm_strict()
   X <- parsed$X
   basis <- parsed$basis
   is_log <- parsed$is_log
@@ -1093,7 +1047,8 @@ blmm <- function(logW, formula, data, n.cores = 1L,
       data = data,
       forced_fallback = forced_fallback,
       inference = inference,
-      contrasts = contrasts
+      contrasts = contrasts,
+      strict = strict
     )
   }
 
@@ -1118,6 +1073,18 @@ blmm <- function(logW, formula, data, n.cores = 1L,
   } else {
     feature_results <- lapply(feature_indices, feature_worker)
   }
+
+  # Fork workers return try-error values instead of throwing in the parent.
+  # Preserve the original failure before result aggregation can obscure it.
+  failed_workers <- which(vapply(feature_results, inherits, logical(1), "try-error"))
+  if (length(failed_workers)) {
+    failed <- feature_results[[failed_workers[1L]]]
+    condition <- attr(failed, "condition")
+    if (inherits(condition, "condition")) stop(condition)
+    stop(as.character(failed), call. = FALSE)
+  }
+  if (any(vapply(feature_results, is.null, logical(1))))
+    stop("blmm: a feature worker returned no result")
 
   # Failed local updates and whole-feature failures have already been re-fit by
   # blmm_exact_feature(). Emit one consolidated warning with up to 3 example
