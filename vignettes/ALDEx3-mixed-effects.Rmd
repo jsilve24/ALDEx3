@@ -236,12 +236,10 @@ from 0.05, but two discrepancies near the threshold remained. One dataset cannot
 establish general FDR calibration. The full publication benchmark was not
 completed; there is no completed IBD aggregate validation.
 
-The maintainer adopted the shared-anchor method on this evidence. Earlier
-experimental-status recommendations remain preserved as historical records. The release evidence
-report, `dev/release-1.5.0/README.md`, links the verified numbers, full tables,
-and reproduction details in the
-[source repository](https://github.com/jsilve24/ALDEx3). Development studies are
-not included in the installed package.
+The maintainer adopted the shared-anchor method on this evidence. These numbers
+summarize maintainer development studies; the underlying benchmark inputs and
+reports are not distributed with this release. The mathematical derivation
+and implementation tests are included in the source package.
 
 ## Limitations and choosing an engine
 
@@ -331,9 +329,8 @@ favor dense computation. Increasing `n.cores` adds worker memory; neither
 `streamsize` nor the backend's working-memory estimate is a hard process-memory
 limit. These measurements do not demonstrate reduced total process memory.
 
-The reproducible performance record is `dev/blmm-sparse/REPORT.md` in the source
-checkout. Development inputs and reports are not included in the installed
-package. Historical timings in the 1.5.0 investigation predate these changes
+Development benchmark inputs and reports are not distributed with this release.
+Historical timings in the 1.5.0 investigation predate these changes
 and should not be used as controlled old-versus-new speed ratios.
 
 ## Technical details
@@ -399,14 +396,75 @@ use the updated draw-specific parameters. The $2/d$ term preserves residual-scal
 uncertainty after profiling. Without covariance-shape uncertainty, df reduce to $d$.
 
 The implementation reuses positive and negative anchor perturbations for the
-uncentered residual derivatives and contrast-variance derivatives. Fixed-effect
-Cholesky factors give contrast variances; triangular solves with one factorization
-of $\bar H$ give the quadratic forms. No new optimization is needed per contrast.
+uncentered residual derivatives and contrast-variance derivatives. If $L_X$ is
+the lower Cholesky factor of $M$, then
+$c^T M^{-1}c=\lVert L_X^{-1}c\rVert^2$. With $U=\operatorname{chol}(\bar H)$
+upper triangular, the information quadratic is
+$h_{s,c}^T\bar H^{-1}h_{s,c}=\lVert U^{-T}h_{s,c}\rVert^2$.
+The same factorization serves the Newton update. No new optimization is needed
+per contrast, and no deviance factor of two or multiplication by $S$ is introduced.
 The t statistic uses direct lower and upper t-distribution tails with $\nu_{s,c}$ df.
 
+Nonfinite sensitivities or nonpositive/nonfinite df reject the affected draw.
+Invalid shared perturbation factors or an unusable raw Hessian reject the
+feature. These checks do not use ridge regularization, df clipping, or silent
+substitution of residual df.
+
 This adds an anchor approximation to observed-information Satterthwaite inference;
-it is not identical to per-draw `lmerTest`. The technical derivation in
-`dev/blmm-inference/derivation.md` in the source repository connects it to full
-information in covariance shape and residual scale. Tests
-check that relationship, duplicated draws, fixed-effect shifts, contrasts, and
-refitting of draws that fail BLMM's checks.
+it is not identical to per-draw `lmerTest`. The derivation below connects it to
+full information in covariance shape and residual scale.
+
+### Derivation from full observed information
+
+Consider one draw at a regular fitted point and suppress its index. Write
+$\eta=\log(\sigma^2)$, $a_c(\phi)=c^T M(\phi)^{-1}c$, and
+$A(\phi)=\log|R(\phi)|+\log|M(\phi)|$. Up to an additive constant, the
+negative REML log likelihood before profiling residual scale is
+
+\[
+F(\phi,\eta)=\frac12\{A(\phi)+d\eta+r(\phi)e^{-\eta}\}.
+\]
+
+Profiling gives $\widehat\eta(\phi)=\log\{r(\phi)/d\}$. Let
+$H=\nabla_\phi^2 f(\phi)$ be the Hessian of the profiled negative log likelihood,
+$u=\nabla_\phi\log r(\phi)$, and $b_c=\nabla_\phi\log a_c(\phi)$.
+At $\eta=\widehat\eta(\phi)$, the full Hessian has blocks
+
+\[
+J=\begin{pmatrix}
+H+\frac d2 uu^T & -\frac d2 u \\
+-\frac d2 u^T & \frac d2
+\end{pmatrix}.
+\]
+
+The unprofiled squared contrast SE is $v_c=e^\eta a_c(\phi)$, so its log-gradient
+in the full parameter vector $(\phi^T,\eta)^T$ is $g_c=(b_c^T,1)^T$.
+Block inversion gives
+
+\[
+g_c^T J^{-1}g_c=\frac2d+(b_c+u)^T H^{-1}(b_c+u).
+\]
+
+Using the inverse observed information as the parameter-covariance approximation,
+the delta method gives $\operatorname{Var}(v_c)\approx v_c^2 g_c^T J^{-1}g_c$.
+The Satterthwaite moment match therefore yields
+
+\[
+\nu_c=\frac{2v_c^2}{\operatorname{Var}(v_c)}
+\approx\frac{2}{2/d+(b_c+u)^T H^{-1}(b_c+u)}.
+\]
+
+At a regular stationary point, observed information transforms consistently
+under smooth parameter changes. This is an observed-information calculation;
+it does not replace the Hessian by expected information. BLMM adds a further
+approximation by using the shared $\bar H$ and anchor sensitivities for
+nonidentical draws, while calculating each estimate and SE at its updated
+covariance parameters. With positive-definite information, the additional
+quadratic term is nonnegative, so the df cannot exceed $d$.
+
+Tests compare this identity with the full observed information, including the
+contrast $c=(1,-0.7)^T$. They also check duplicated draws, fixed-effect shifts,
+regular single draws, serial/parallel ordering, aggregation, and exact refits.
+These checks validate the implemented identity and associated behavior; they
+do not establish calibration, finite-sample coverage, or false-discovery-rate
+control across mixed-model designs.

@@ -71,4 +71,9 @@ many features or individual draws needed refitting and gives example reasons.
 Invalid anchor inference sensitivities, contrast variances, or contrast
 estimates also cause the affected draws to be refitted. Native
 \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
+If lmerTest returns invalid numerical contrast inference, valid fitted
+quantities are retained with a warning and \code{NA} contrast p-values.
+Model-fitting errors still stop the analysis; a failed exact draw refit
+is not retried as a whole-feature fallback. The derivation appears at the
+end of \code{vignette("ALDEx3-mixed-effects", package = "ALDEx3")}.
 }

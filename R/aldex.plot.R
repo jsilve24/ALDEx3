@@ -39,7 +39,11 @@ aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
     parameter <- rownames(object$X)[contrast.idx]
     contrast.labels <- .aldex_contrast_labels(object, contrast, contrast.idx)
 
-    sum.output <- summary(object)
+    ## `aldex.plot` resolves a model coefficient above.  Summarizing all
+    ## components can duplicate rows when a stored contrast has the same
+    ## name, which misaligns significance vectors with feature-level plot
+    ## data.  Plot only the selected coefficient's summary.
+    sum.output <- summary(object, component = "coefficients")
     sum.output <- sum.output[sum.output$parameter == parameter,, drop=FALSE]
     if (nrow(sum.output) == 0) stop("summary output does not contain contrast: ", parameter)
 

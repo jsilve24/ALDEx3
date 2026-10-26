@@ -98,7 +98,7 @@ summary(fit)
 
 Replace these names with the exact coefficient or stored-contrast names in your fit. Groups may mix both components; use `"coefficient:age"` and `"contrast:age"` when names overlap. Unlisted rows keep separate families. The helper reconstructs directional p-values from the default per-draw estimates, SEs, and df, then adjusts each family within each draw and direction before averaging. It also works on streaming fits. For fits made before 1.6.1, explicitly pass `method` and `onesided` if they differed from BH and two-sided inference. Separate families do not provide a joint adjustment for a combined discovery list. See `?aldex.p.adjust` for details.
 
-See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations behind the new default. Full evidence and release validation are linked from [the 1.5.0 development report](dev/release-1.5.0/README.md).
+See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations behind the new default.
 
 ``` r
 library(ALDEx3)

@@ -1,6 +1,6 @@
 Package: ALDEx3
-Title: Linear Models for Sequence Count Data 
-Version: 1.6.1
+Title: Linear Models for Sequence Count Data
+Version: 1.6.2
 Authors@R:
     c(person("Justin", "Silverman", email = "JustinSilverman@psu.edu", role = c("aut", "cre")),
       person("Greg", "Gloor", email = "ggloor@uwo.ca", role = c("aut")),
@@ -8,11 +8,13 @@ Authors@R:
 Description: Provides scalable generalized linear and mixed effects models tailored for sequence count data analysis (e.g., analysis of 16S or RNA-seq data). Uses Dirichlet-multinomial sampling to quantify uncertainty in relative abundance or relative expression conditioned on observed count data. 
     Implements scale models as a generalization of normalizations which account for uncertainty in scale (e.g., total abundances) as described in Nixon et al. (2025) <doi:10.1186/s13059-025-03609-3> and McGovern et al. (2025) <doi:10.1101/2025.08.05.668734>. 
 License: MIT + file LICENSE
+URL: https://github.com/jsilve24/ALDEx3
+BugReports: https://github.com/jsilve24/ALDEx3/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Suggests: 
     rBeta2009,
-    testthat (>= 3.0.0),
+    testthat (>= 3.2.0),
     lmtest,
     numDeriv,
     sandwich,

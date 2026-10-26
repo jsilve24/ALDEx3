@@ -390,7 +390,8 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4,
   scores
 }
 
-# Shared-anchor Satterthwaite df; see dev/blmm-inference/derivation.md.
+# Shared-anchor Satterthwaite df; see the derivation at the end of
+# vignettes/ALDEx3-mixed-effects.Rmd.
 blmm_anchor_df <- function(u, b, cholH, d) {
   h <- b + as.vector(u)
   if (!is.finite(d) || d <= 0 || any(!is.finite(h)))
@@ -819,52 +820,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
       }
     }
 
-    # Refit rejected draws together so exact-rescue overhead is paid once per
-    # affected feature rather than once per draw.
     rejected_idx <- which(rejected)
-    if (length(rejected_idx) > 0L) {
-      exact_rejected <- blmm_exact_feature(
-        Y_d[, rejected_idx, drop = FALSE], formula, data, contrasts = contrasts
-      )
-      n_rejected <- length(rejected_idx)
-      feature_estimate[, rejected_idx] <- matrix(
-        exact_rejected$estimate, nrow = p, ncol = n_rejected
-      )
-      feature_std.error[, rejected_idx] <- matrix(
-        exact_rejected$std.error, nrow = p, ncol = n_rejected
-      )
-      feature_df[, rejected_idx] <- matrix(
-        exact_rejected$df, nrow = p, ncol = n_rejected
-      )
-      feature_p.lower[, rejected_idx] <- matrix(
-        exact_rejected$p.lower, nrow = p, ncol = n_rejected
-      )
-      feature_p.upper[, rejected_idx] <- matrix(
-        exact_rejected$p.upper, nrow = p, ncol = n_rejected
-      )
-      feature_random[, rejected_idx] <- matrix(
-        exact_rejected$random.eff,
-        nrow = feature_random_rows,
-        ncol = n_rejected
-      )
-      if (!is.null(contrasts)) {
-        feature_contrast.estimate[, rejected_idx] <- matrix(
-          exact_rejected$contrast.estimate, nrow = nrow(contrasts), ncol = n_rejected
-        )
-        feature_contrast.std.error[, rejected_idx] <- matrix(
-          exact_rejected$contrast.std.error, nrow = nrow(contrasts), ncol = n_rejected
-        )
-        feature_contrast.df[, rejected_idx] <- matrix(
-          exact_rejected$contrast.df, nrow = nrow(contrasts), ncol = n_rejected
-        )
-        feature_contrast.p.lower[, rejected_idx] <- matrix(
-          exact_rejected$contrast.p.lower, nrow = nrow(contrasts), ncol = n_rejected
-        )
-        feature_contrast.p.upper[, rejected_idx] <- matrix(
-          exact_rejected$contrast.p.upper, nrow = nrow(contrasts), ncol = n_rejected
-        )
-      }
-    }
 
     fallback_message <- ""
     if (length(rejected_idx) > 0L) {
@@ -917,6 +873,23 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     )
   })
 
+  # Exact rescue is outside the approximation error handler: an exact-fit
+  # failure must not discard accepted draws and retry the entire feature.
+  if (!result$full_fallback && length(result$rejected_draws) > 0L) {
+    rejected_idx <- result$rejected_draws
+    exact_rejected <- tryCatch(
+      blmm_exact_feature(Y_d[, rejected_idx, drop = FALSE], formula, data,
+                         contrasts = contrasts),
+      error = function(e) stop(
+        "blmm: exact refit failed for feature ", d, " (draws ",
+        paste(rejected_idx, collapse = ", "), "): ", conditionMessage(e),
+        call. = FALSE
+      )
+    )
+    for (field in names(exact_rejected)) {
+      result$fit[[field]][, , rejected_idx] <- exact_rejected[[field]]
+    }
+  }
   result
 }
 
@@ -957,6 +930,11 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' Invalid anchor inference sensitivities, contrast variances, or contrast
 #' estimates also cause the affected draws to be refitted. Native
 #' \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
+#' If lmerTest returns invalid numerical contrast inference, valid fitted
+#' quantities are retained with a warning and \code{NA} contrast p-values.
+#' Model-fitting errors still stop the analysis; a failed exact draw refit
+#' is not retried as a whole-feature fallback. The derivation appears at the
+#' end of \code{vignette("ALDEx3-mixed-effects", package = "ALDEx3")}.
 #'
 #' @param logW numeric array (N x D x S)
 #' @param formula lme4 mixed-effects formula

@@ -34,6 +34,12 @@ effects, plus flat K x D x S contrast arrays when contrasts are supplied.
 \description{
 Implementation of SR-MEM: scale-reliant mixed effects models.
 }
+\details{
+Invalid numerical contrast inference returned by lmerTest emits
+a warning and produces \code{NA} p-values. Valid estimates, standard
+errors, and degrees of freedom are retained; invalid entries become
+\code{NA}. Model-fitting errors still stop the analysis.
+}
 \author{
 Kyle McGovern
 }

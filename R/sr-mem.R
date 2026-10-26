@@ -1,5 +1,10 @@
 ##' Implementation of SR-MEM: scale-reliant mixed effects models.
 ##'
+##' @details Invalid numerical contrast inference returned by lmerTest emits
+##'   a warning and produces \code{NA} p-values. Valid estimates, standard
+##'   errors, and degrees of freedom are retained; invalid entries become
+##'   \code{NA}. Model-fitting errors still stop the analysis.
+##'
 ##' @param logW a numeric array (N x D X S) where D is the number of taxa,
 ##'   N is the number of samples, and S is the number of posterior samples
 ##' @param formula an lme4 formula with fixed and random effects for lmer
@@ -93,6 +98,7 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
                          "p.lower", "p.upper")
 
     contrast_coefs <- NULL
+    invalid_contrasts <- 0L
     if (!is.null(contrasts)) {
       fixed_names <- rownames(coefs)
       if (!identical(fixed_names, colnames(contrasts))) {
@@ -112,7 +118,15 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
           std.error <- contest[1L, "Std. Error"]
           df <- contest[1L, "df"]
           if (!all(is.finite(c(estimate, std.error, df))) || std.error <= 0 || df <= 0) {
-            stop("lmerTest produced invalid contrast inference")
+            # Keep valid fitted quantities, but do not manufacture inference
+            # when lmerTest cannot supply a usable variance or denominator df.
+            invalid_contrasts <- invalid_contrasts + 1L
+            contrast_coefs[k, 1:3] <- c(
+              if (is.finite(estimate)) estimate else NA_real_,
+              if (is.finite(std.error) && std.error > 0) std.error else NA_real_,
+              if (is.finite(df) && df > 0) df else NA_real_
+            )
+            next
           }
           t_stat <- estimate / std.error
           contrast_coefs[k, ] <- c(
@@ -169,8 +183,16 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
 
     list(fixed_coefs=coefs,
          contrast_coefs=contrast_coefs,
+         invalid_contrasts=invalid_contrasts,
          random_coefs=t(re_df))
   })
+
+  invalid_contrasts <- sum(vapply(results, `[[`, integer(1), "invalid_contrasts"))
+  if (invalid_contrasts > 0L) {
+    warning("sr.mem: lmerTest produced invalid contrast inference for ",
+            invalid_contrasts, " contrast fit(s); affected p-values are NA",
+            call. = FALSE)
+  }
 
   ## To array, get names, build return list
   P <- nrow(results[[1]]$fixed_coefs)

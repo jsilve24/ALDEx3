@@ -12,3 +12,6 @@ maintainer-instructions.txt
 
 ^dev$
 ^SPARSE-IMPLEMENTATION-PLAN\.md$
+^\.agents$
+^cran-comments\.md$
+^release$

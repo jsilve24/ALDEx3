@@ -50,7 +50,12 @@ with \code{lmerTest} (which uses \code{lme4} for fitting). If only a
 draw's local update or inference fails validation, only that draw is
 refitted. A warning reports these refits. BLMM reuses matrix calculations
 and automatically chooses sparse or dense computation; no extra argument
-is needed. See the mixed-effects vignette for details and timing examples.}
+is needed. See the mixed-effects vignette for details and timing examples.
+If a fitted \code{lmerTest} contrast has invalid numerical inference,
+a warning is issued and its p-values are \code{NA}; valid fitted
+quantities are retained. Missing p-values propagate through Monte Carlo
+aggregation. Errors in model fitting still stop the analysis. A failed
+exact refit of rejected BLMM draws is not retried for the whole feature.}
 
 \item{nsample}{number of monte carlo replicates}
 

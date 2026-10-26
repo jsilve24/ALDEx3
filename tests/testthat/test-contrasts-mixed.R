@@ -163,6 +163,63 @@ test_that("natural BLMM partial rescue preserves contrast and coefficient fields
   }
 })
 
+test_that("failed exact draw rescue is not retried as a whole-feature fallback", {
+  z <- mixed_contrast_fixture(D = 1L, S = 2L)
+  C <- mixed_contrast_matrix(colnames(model.matrix(~ x, z$data)))
+  expect_identical(feature_fit_with_contrasts(z, C)$fallback_draws, 0L)
+  original <- ALDEx3:::blmm_anchor_df
+  calls <- 0L
+  refit_draws <- integer()
+  local_mocked_bindings(
+    blmm_anchor_df = function(...) {
+      calls <<- calls + 1L
+      if (calls == 4L) stop("forced contrast inference failure")
+      original(...)
+    },
+    blmm_exact_feature = function(Y_d, ...) {
+      refit_draws <<- c(refit_draws, ncol(Y_d))
+      stop("forced exact fit failure")
+    },
+    .package = "ALDEx3"
+  )
+  expect_error(feature_fit_with_contrasts(z, C),
+               "feature 1.*draw.*2.*forced exact fit failure")
+  expect_identical(refit_draws, 1L)
+})
+
+test_that("invalid lmerTest contrast df preserves fits and propagates missing inference", {
+  z <- mixed_contrast_fixture(D = 1L, S = 2L)
+  C <- mixed_contrast_matrix(colnames(model.matrix(~ x, z$data)))
+  fit <- function() ALDEx3:::sr.mem(z$logW, z$lme4_formula, z$data,
+    n.cores = 1L, method = "lme4", mem.args = list(), contrasts = C)
+  baseline <- fit()
+  contest1D <- lmerTest::contest1D
+  invalidated <- FALSE
+  local_mocked_bindings(contest1D = function(model, L, ...) {
+    result <- contest1D(model, L, ...)
+    if (!invalidated && identical(as.numeric(L), as.numeric(C["correlated", ]))) {
+      result[1L, "df"] <- NaN
+      invalidated <<- TRUE
+    }
+    result
+  }, .package = "lmerTest")
+  expect_warning(actual <- fit(), "invalid contrast inference.*1.*NA")
+  for (nm in c("estimate", "std.error", "df", "p.lower", "p.upper", "random.eff",
+               "contrast.estimate", "contrast.std.error")) {
+    expect_equal(actual[[nm]], baseline[[nm]], info = nm)
+  }
+  for (nm in c("contrast.df", "contrast.p.lower", "contrast.p.upper")) {
+    expected <- baseline[[nm]]
+    expected["correlated", 1L, 1L] <- NA_real_
+    expect_equal(actual[[nm]], expected, info = nm)
+  }
+  aggregated <- ALDEx3:::aldex.pvals(actual$contrast.p.lower,
+                                    actual$contrast.p.upper, "BH")
+  expect_true(is.na(aggregated$p.res[3L, 1L]))
+  expect_true(is.na(aggregated$p.adj.res[3L, 1L]))
+  expect_true(all(is.finite(aggregated$p.res[-3L, , drop = FALSE])))
+})
+
 test_that("lmerTest and nlme calculate named contrast arrays with their native df", {
   z <- mixed_contrast_fixture()
   C <- mixed_contrast_matrix(colnames(model.matrix(~ x, z$data)))

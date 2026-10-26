@@ -46,6 +46,11 @@
 ##'   refitted. A warning reports these refits. BLMM reuses matrix calculations
 ##'   and automatically chooses sparse or dense computation; no extra argument
 ##'   is needed. See the mixed-effects vignette for details and timing examples.
+##'   If a fitted \code{lmerTest} contrast has invalid numerical inference,
+##'   a warning is issued and its p-values are \code{NA}; valid fitted
+##'   quantities are retained. Missing p-values propagate through Monte Carlo
+##'   aggregation. Errors in model fitting still stop the analysis. A failed
+##'   exact refit of rejected BLMM draws is not retried for the whole feature.
 ##' @param nsample number of monte carlo replicates
 ##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
 ##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x

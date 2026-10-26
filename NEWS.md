@@ -1,3 +1,18 @@
+# ALDEx3 1.6.2
+
+## Review fixes
+
+- Keep coefficient plots separate from stored contrasts with the same name.
+- Prevent failed exact refits of rejected BLMM draws from retrying the whole
+  feature. Exact fitting errors identify the affected feature and draw indices.
+- Retain valid fitted quantities when lmerTest returns invalid numerical
+  contrast inference, warning and returning `NA` p-values. Missing inference
+  propagates through Monte Carlo aggregation; fitting errors still stop.
+- Include the shared-anchor Satterthwaite derivation at the end of the
+  mixed-effects vignette.
+- Update release metadata and documentation, add repository and issue-tracker
+  URLs, and require testthat >= 3.2.0 for the mocking helpers used by the tests.
+
 # ALDEx3 1.6.1
 
 ## Grouped multiple-testing adjustment
