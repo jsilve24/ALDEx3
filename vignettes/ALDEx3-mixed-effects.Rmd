@@ -45,11 +45,11 @@ Choose the fitting engine with `method` and the inference convention with `test`
 | `method` | Default when `test` is omitted | Other supported `test` values |
 |:--|:--|:--|
 | `"lm"` | `"t.HC3"` | `"t"`, `"t.HC0"` |
-| `"blmm"` | `"t.satterthwaite"` | `"t.residual"` |
+| `"blmm"` | `"t.satterthwaite"` | `"t.satterthwaite.adaptive"`, `"t.residual"` |
 | `"lme4"` | `"t"` (native `lmerTest` Satterthwaite) | None |
 | `"nlme"` | `"t"` (native `nlme` inference) | None |
 
-Names are case-sensitive. The two BLMM selectors cannot be used with another
+Names are case-sensitive. The BLMM selectors cannot be used with another
 engine. `lme4` still fits each draw fully and uses Satterthwaite inference
 internally. Fully optimized fitting does not make finite-sample inference exact.
 
@@ -122,6 +122,42 @@ fit_residual <- aldex(
   scale = supplied_scale_model, nsample = S, n.cores = 1
 )
 ```
+
+### Optional adaptive refinement
+
+Use `test = "t.satterthwaite.adaptive"` with `method = "blmm"` to refine each
+draw's covariance fit before calculating local Satterthwaite inference:
+
+```{r adaptive-example, eval=FALSE}
+fit_adaptive <- aldex(
+  Y, ~ age * genotype + (1 | mouse),
+  data = metadata, method = "blmm", test = "t.satterthwaite.adaptive",
+  contrasts = C, scale = supplied_scale_model, nsample = S, n.cores = 1
+)
+```
+
+Each response is centered using a QR decomposition of the fixed-effect design;
+the removed coefficients are restored after mixed-model fitting. This is a
+numerical reparameterization of the same model, including its random effects.
+It applies to arbitrary response draws and does not require a particular scale
+model. It does not replace mixed-model fitting with ordinary least squares.
+
+Starting from the shared anchor, adaptive fitting permits at most eight
+safeguarded covariance iterations. It refreshes curvature and checks both
+stationarity and the predicted inference change at one further Newton
+correction. The correction must have maximum absolute size at most `1e-3` and
+curvature-scaled gradient norm at most `1e-4`; the forward probe must change
+log SE and log df by at most `1e-3`, lower-tail probability by at most `1e-5`,
+and the test statistic by at most `1e-4`. The probe is a diagnostic, not an
+additional accepted iteration. Unsuccessful checks, invalid curvature, stalled
+updates, and an exhausted iteration budget trigger the existing exact rescue.
+
+These numerical checks are heuristics, not bounds on disagreement with an
+independent fit or guarantees of statistical calibration. Boundary fits may
+still require rescue, and replacement-fit warnings remain visible. Adaptive
+fitting can improve local inference at additional computational cost; the
+shared-anchor default remains unchanged. Streaming still determines anchor
+blocks, so changing stream size is not an exactly equivalent optimization.
 
 ## Reading the results
 

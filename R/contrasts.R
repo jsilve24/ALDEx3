@@ -41,6 +41,9 @@
     stop("contrast rows must be nonzero")
   }
 
+  design_qr <- qr(X)
+  if (design_qr$rank == ncol(X)) return(contrasts)
+
   ## A contrast c is estimable precisely when it lies in row(X).  Checking this
   ## before the full-rank engine guard gives a useful error for aliased terms.
   q <- qr(t(X))

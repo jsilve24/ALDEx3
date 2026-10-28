@@ -9,7 +9,7 @@ blmm(
   formula,
   data,
   n.cores = 1L,
-  inference = c("anchor", "residual"),
+  inference = c("anchor", "residual", "adaptive"),
   contrasts = NULL
 )
 }
@@ -24,7 +24,9 @@ blmm(
 If \code{n.cores > 1}, features are distributed across workers; the
 per-feature draw loop remains serial.}
 
-\item{inference}{Internal inference selector; the default is shared-anchor
+\item{inference}{Internal inference selector; \code{adaptive} uses per-draw
+centering and up to eight safeguarded covariance iterations with refreshed
+curvature and forward validation. The default is shared-anchor
 Satterthwaite inference. Public \code{aldex(test = "t.residual")} maps
 explicitly to residual degrees of freedom.}
 

@@ -2,6 +2,14 @@
 
 ## Review fixes
 
+- Add opt-in BLMM `test="t.satterthwaite.adaptive"`: per-draw centering,
+  at most eight safeguarded covariance iterations, local Satterthwaite
+  inference, and exact rescue when numerical checks fail. The shared-anchor
+  default remains unchanged.
+- Avoid duplicate TMB report evaluations and cache invariant design work;
+  batch adaptive exact rescues while retaining individual exact fits.
+- Avoid repeated wide QR decompositions when validating contrasts against a
+  full-rank design, substantially reducing overhead for cell-level models.
 - Keep coefficient plots separate from stored contrasts with the same name.
 - Prevent failed exact refits of rejected BLMM draws from retrying the whole
   feature. Exact fitting errors identify the affected feature and draw indices.

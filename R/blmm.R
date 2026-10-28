@@ -68,48 +68,17 @@ theta_to_phi_blmm <- function(theta, lower) {
 #' @param reTrms random-effects terms list from \code{lme4::lFormula()}
 #' @return named numeric vector of variance and covariance components
 #' @noRd
-blmm_random_effect_vector <- function(theta, sigma2, reTrms) {
-  cnms <- reTrms$cnms
-  if (length(cnms) == 0L) {
-    return(stats::setNames(sigma2, "Residual"))
-  }
-
-  block_sizes <- lengths(cnms, use.names = FALSE)
-  block_npar <- block_sizes * (block_sizes + 1L) / 2L
-  theta_split <- split(theta, rep(seq_along(block_sizes), block_npar))
-
-  values <- numeric(0)
-  names_out <- character(0)
-
-  for (g in seq_along(cnms)) {
-    grp_name <- names(cnms)[g] %||% paste0("grp", g)
-    term_names <- cnms[[g]]
-    block_size <- block_sizes[g]
-    block_theta <- theta_split[[g]]
-
-    L <- matrix(0, nrow = block_size, ncol = block_size)
-    L[lower.tri(L, diag = TRUE)] <- block_theta
+blmm_random_effect_vector <- function(theta, sigma2, reTrms,
+                                      metadata = blmm_random_effect_metadata(reTrms)) {
+  values <- numeric(length(metadata$names))
+  for (block in metadata$blocks) {
+    L <- matrix(0, block$size, block$size)
+    L[block$lower] <- theta[block$theta]
     Sigma <- sigma2 * tcrossprod(L)
-
-    for (i in seq_len(block_size)) {
-      values <- c(values, Sigma[i, i])
-      names_out <- c(names_out, paste(grp_name, term_names[i], sep = "."))
-    }
-
-    if (block_size > 1L) {
-      for (j in seq_len(block_size - 1L)) {
-        for (i in seq.int(j + 1L, block_size)) {
-          values <- c(values, Sigma[i, j])
-          names_out <- c(
-            names_out,
-            paste(grp_name, term_names[j], term_names[i], sep = ".")
-          )
-        }
-      }
-    }
+    values[block$output] <- Sigma[block$covariance]
   }
-
-  stats::setNames(c(values, sigma2), c(names_out, "Residual"))
+  values[length(values)] <- sigma2
+  stats::setNames(values, metadata$names)
 }
 
 # ---------------------------------------------------------------------------
@@ -323,8 +292,7 @@ blmm_fit_anchor <- function(obj, phi_init) {
 #'   \left(\overline{\frac{\partial \log PWRSS}{\partial \phi_j}}
 #'         - \frac{\partial \log PWRSS_s}{\partial \phi_j}\right)}
 #'
-#' @param obj TMB autodiff object, with \code{obj$fn} already evaluated at
-#'   \code{phi_bar} so that \code{obj$report()} reflects the anchor state
+#' @param obj TMB autodiff object; reports are evaluated with explicit parameters
 #' @param phi_bar numeric vector: the anchor (optimal phi for the average objective)
 #' @param PWRSS_s numeric vector of length S: per-draw penalised residual SS at
 #'   the anchor, from \code{obj$report()$PWRSS_s}
@@ -359,10 +327,8 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4,
     phi_p[j] <- phi_p[j] + step
     phi_m[j] <- phi_m[j] - step
 
-    obj$fn(phi_p)
-    rp <- obj$report()
-    obj$fn(phi_m)
-    rm <- obj$report()
+    rp <- obj$report(phi_p)
+    rm <- obj$report(phi_m)
 
     PWRSS_p <- rp$PWRSS_s
     PWRSS_m <- rm$PWRSS_s
@@ -642,23 +608,30 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' @noRd
 blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
                              reTrms, formula, data, forced_fallback = integer(0),
-                             inference = c("anchor", "residual"),
-                             contrasts = NULL, strict = blmm_strict()) {
+                             inference = c("anchor", "residual", "adaptive"),
+                             contrasts = NULL, strict = blmm_strict(),
+                             .design_context = NULL) {
   inference <- match.arg(inference)
   N <- nrow(X)
   p <- ncol(X)
   S <- dim(logW)[3]
-  contrasts <- .aldex_validate_contrasts(contrasts, X)
-  if (!is.null(contrasts) && qr(X)$rank < p) {
+  if (!blmm_valid_design_context(.design_context, X, contrasts, reTrms)) {
+    .design_context <- blmm_inference_context(X, contrasts, reTrms)
+    contrasts <- .design_context$contrasts
+  }
+  if (!is.null(contrasts) && .design_context$qr$rank < p) {
     stop("blmm: contrasts require a full-rank fixed-effect design")
   }
   Y_d <- logW[, d, , drop = FALSE]
   dim(Y_d) <- c(N, S)
 
-  feature_random_rows <- length(names(blmm_random_effect_vector(reTrms$theta, 1, reTrms)))
+  feature_random_rows <- length(.design_context$random$names)
   if (length(forced_fallback) > 0L && d %in% forced_fallback) {
+    started <- proc.time()[[3L]]
+    exact <- blmm_exact_feature(Y_d, formula, data, contrasts = contrasts)
     return(list(
-      fit = blmm_exact_feature(Y_d, formula, data, contrasts = contrasts),
+      fit = exact,
+      rescue_seconds = proc.time()[[3L]] - started,
       fallback = TRUE,
       fallback_message = "forced approximate failure for testing",
       fallback_draws = S,
@@ -667,6 +640,14 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     ))
   }
 
+  if (inference == "adaptive") {
+    return(blmm_fit_feature_adaptive(
+      d, Y_d, X, basis, is_log, phi_init, lower, reTrms, formula, data,
+      contrasts, strict, .design_context
+    ))
+  }
+
+  rescue_seconds <- 0
   result <- tryCatch({
     # Step 1: anchor — optimise the average-over-draws objective.
     response <- blmm_response_cache(basis, X, Y_d)
@@ -675,17 +656,12 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 
     # Step 2: score corrections — differentiate per-draw PWRSS w.r.t. phi at
     # the anchor, then Newton-step to draw-specific covariance parameters.
-    obj_full$fn(anchor$phi_bar)
-    anchor_report <- obj_full$report()
+    anchor_report <- obj_full$report(anchor$phi_bar)
     anchor_objectives <- blmm_profiled_objectives(anchor_report, N, p)
     if (any(!is.finite(anchor_objectives))) {
       stop("blmm: non-finite profiled REML objective at the anchor")
     }
-    inference_vectors <- if (is.null(contrasts)) {
-      diag(p)
-    } else {
-      cbind(diag(p), t(contrasts))
-    }
+    inference_vectors <- .design_context$vectors
     g_mat <- blmm_scores_batch(
       obj_full, anchor$phi_bar, anchor_report$PWRSS_s, N, p,
       contrasts = inference_vectors, inference = inference == "anchor"
@@ -783,7 +759,8 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
         random_draw <- blmm_random_effect_vector(
           theta = theta_draw,
           sigma2 = fe$sigma2,
-          reTrms = reTrms
+          reTrms = reTrms,
+          metadata = .design_context$random
         )
         if (any(!is.finite(fe$beta)) || any(!is.finite(fe$se)) || any(fe$se <= 0) ||
             any(!is.finite(random_draw))) {
@@ -863,8 +840,11 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     )
   }, error = function(e) {
     if (strict) stop(e)
+    started <- proc.time()[[3L]]
+    exact <- blmm_exact_feature(Y_d, formula, data, contrasts = contrasts)
+    rescue_seconds <<- proc.time()[[3L]] - started
     list(
-      fit = blmm_exact_feature(Y_d, formula, data, contrasts = contrasts),
+      fit = exact,
       fallback = TRUE,
       fallback_message = conditionMessage(e),
       fallback_draws = S,
@@ -877,6 +857,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
   # failure must not discard accepted draws and retry the entire feature.
   if (!result$full_fallback && length(result$rejected_draws) > 0L) {
     rejected_idx <- result$rejected_draws
+    started <- proc.time()[[3L]]
     exact_rejected <- tryCatch(
       blmm_exact_feature(Y_d[, rejected_idx, drop = FALSE], formula, data,
                          contrasts = contrasts),
@@ -886,10 +867,12 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
         call. = FALSE
       )
     )
+    rescue_seconds <- proc.time()[[3L]] - started
     for (field in names(exact_rejected)) {
       result$fit[[field]][, , rejected_idx] <- exact_rejected[[field]]
     }
   }
+  result$rescue_seconds <- rescue_seconds
   result
 }
 
@@ -939,7 +922,9 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' @param logW numeric array (N x D x S)
 #' @param formula lme4 mixed-effects formula
 #' @param data data.frame for formula evaluation
-#' @param inference Internal inference selector; the default is shared-anchor
+#' @param inference Internal inference selector; \code{adaptive} uses per-draw
+#'   centering and up to eight safeguarded covariance iterations with refreshed
+#'   curvature and forward validation. The default is shared-anchor
 #'   Satterthwaite inference. Public \code{aldex(test = "t.residual")} maps
 #'   explicitly to residual degrees of freedom.
 #' @param contrasts optional validated contrast matrix with one row per
@@ -955,7 +940,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' @importFrom TMB MakeADFun
 #' @useDynLib ALDEx3, .registration = TRUE
 blmm <- function(logW, formula, data, n.cores = 1L,
-                 inference = c("anchor", "residual"), contrasts = NULL) {
+                 inference = c("anchor", "residual", "adaptive"), contrasts = NULL) {
   inference <- match.arg(inference)
   N <- dim(logW)[1]
   D <- dim(logW)[2]
@@ -996,8 +981,9 @@ blmm <- function(logW, formula, data, n.cores = 1L,
   p.lower <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   p.upper <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
   random.eff <- array(NA_real_, c(Pr, D, S), dimnames = list(rnames, NULL, NULL))
-  contrasts <- .aldex_validate_contrasts(contrasts, X)
-  if (!is.null(contrasts) && qr(X)$rank < p) {
+  .design_context <- blmm_inference_context(X, contrasts, reTrms)
+  contrasts <- .design_context$contrasts
+  if (!is.null(contrasts) && .design_context$qr$rank < p) {
     stop("blmm: contrasts require a full-rank fixed-effect design")
   }
   if (!is.null(contrasts)) {
@@ -1027,7 +1013,8 @@ blmm <- function(logW, formula, data, n.cores = 1L,
       forced_fallback = forced_fallback,
       inference = inference,
       contrasts = contrasts,
-      strict = strict
+      strict = strict,
+      .design_context = .design_context
     )
   }
 
@@ -1144,7 +1131,7 @@ blmm <- function(logW, formula, data, n.cores = 1L,
     }
   }
 
-  c(list(
+  output <- c(list(
     estimate = estimate,
     std.error = std.error,
     df = df_arr,
@@ -1158,4 +1145,19 @@ blmm <- function(logW, formula, data, n.cores = 1L,
     contrast.p.lower = contrast.p.lower,
     contrast.p.upper = contrast.p.upper
   ))
+  hook <- getOption("ALDEx3.blmm.adaptive.diagnostics")
+  if (isTRUE(hook) || is.function(hook)) {
+    diagnostics <- lapply(feature_results, function(result) {
+      result$adaptive_diagnostics %||% list(
+        diagnostics = data.frame(draw = seq_len(S),
+          rescued = seq_len(S) %in% result$rejected_draws,
+          reason = ifelse(seq_len(S) %in% result$rejected_draws, result$fallback_message, "accepted"),
+          iterations = integer(S)),
+        rescue_seconds = result$rescue_seconds %||% 0
+      )
+    })
+    if (is.function(hook)) hook(diagnostics)
+    if (isTRUE(hook)) attr(output, "blmm.adaptive.diagnostics") <- diagnostics
+  }
+  output
 }

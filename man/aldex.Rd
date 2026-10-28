@@ -91,7 +91,8 @@ correction. See \code{p.adjust} for all available methods.}
 \item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
 \code{"lm"}, \code{"t.satterthwaite"} for \code{"blmm"}, and native \code{"t"} inference for
 \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or \code{"t.HC3"};
-for \code{blmm}, choose \code{"t.satterthwaite"} or \code{"t.residual"}; for \code{lme4} and
+for \code{blmm}, choose \code{"t.satterthwaite"}, \code{"t.satterthwaite.adaptive"},
+or \code{"t.residual"}; for \code{lme4} and
 \code{nlme}, only \code{"t"} is supported.}
 
 \item{onesided}{(default: FALSE) if sided return p-values for two-sided
@@ -168,10 +169,18 @@ variance, \code{"t.HC0"} uses the White sandwich covariance, and
 BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
 inference. This also applies when \code{test = "t.residual"}: draws that
 pass the checks use residual df, but refitted draws use Satterthwaite df.
+The opt-in \code{"t.satterthwaite.adaptive"} centers each response draw
+in the fixed-effect design, restores its coefficient shifts, and uses
+up to eight safeguarded covariance updates with refreshed curvature.
+Local Satterthwaite inference is accepted only after stationarity and
+forward inference-stability checks; otherwise the draw is refitted
+exactly. These checks are numerical heuristics, not error bounds or a
+guarantee of statistical calibration. Adaptive fitting can cost more
+than shared-anchor fitting and does not change the default.
 The \code{lme4}
 engine uses per-draw lmerTest Satterthwaite inference internally;
 \code{nlme} uses its native denominator df. Their public selector is
-\code{"t"}; neither accepts the two BLMM selectors. Names are
+\code{"t"}; neither accepts the BLMM selectors. Names are
 case-sensitive.
 
 Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full

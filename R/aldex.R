@@ -79,7 +79,8 @@
 ##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
 ##'   `"lm"`, `"t.satterthwaite"` for `"blmm"`, and native `"t"` inference for
 ##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
-##'   for `blmm`, choose `"t.satterthwaite"` or `"t.residual"`; for `lme4` and
+##'   for `blmm`, choose `"t.satterthwaite"`, `"t.satterthwaite.adaptive"`,
+##'   or `"t.residual"`; for `lme4` and
 ##'   `nlme`, only `"t"` is supported.
 ##' @details For \code{method = "lm"}, \code{"t"} uses ordinary residual
 ##'   variance, \code{"t.HC0"} uses the White sandwich covariance, and
@@ -89,10 +90,18 @@
 ##'   BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
 ##'   inference. This also applies when \code{test = "t.residual"}: draws that
 ##'   pass the checks use residual df, but refitted draws use Satterthwaite df.
+##'   The opt-in \code{"t.satterthwaite.adaptive"} centers each response draw
+##'   in the fixed-effect design, restores its coefficient shifts, and uses
+##'   up to eight safeguarded covariance updates with refreshed curvature.
+##'   Local Satterthwaite inference is accepted only after stationarity and
+##'   forward inference-stability checks; otherwise the draw is refitted
+##'   exactly. These checks are numerical heuristics, not error bounds or a
+##'   guarantee of statistical calibration. Adaptive fitting can cost more
+##'   than shared-anchor fitting and does not change the default.
 ##'   The \code{lme4}
 ##'   engine uses per-draw lmerTest Satterthwaite inference internally;
 ##'   \code{nlme} uses its native denominator df. Their public selector is
-##'   \code{"t"}; neither accepts the two BLMM selectors. Names are
+##'   \code{"t"}; neither accepts the BLMM selectors. Names are
 ##'   case-sensitive.
 ##'
 ##'   Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full
@@ -200,7 +209,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     stop("test must be a single character inference selector")
   }
   allowed.tests <- switch(method, lm=c("t", "t.HC0", "t.HC3"),
-                          blmm=c("t.satterthwaite", "t.residual"),
+                          blmm=c("t.satterthwaite", "t.satterthwaite.adaptive", "t.residual"),
                           lme4="t", nlme="t")
   if (!(test %in% allowed.tests)) {
     stop("test '", test, "' is not supported for method '", method,
@@ -312,7 +321,9 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     } else if (method=="blmm") {
       res <- blmm(aperm(out[[iter]]$logW, c(2,1,3)), formula,
                   data, n.cores,
-                  inference=if (test == "t.satterthwaite") "anchor" else "residual",
+                  inference=switch(test, t.satterthwaite="anchor",
+                                   t.satterthwaite.adaptive="adaptive",
+                                   t.residual="residual"),
                   contrasts=contrasts)
     }
     out[[iter]]$logW <- NULL # don't duplicate info in logComp and logScale 

@@ -11,6 +11,7 @@ maintainer-instructions.txt
 .codex
 
 ^dev$
+^diagnostics$
 ^SPARSE-IMPLEMENTATION-PLAN\.md$
 ^\.agents$
 ^cran-comments\.md$

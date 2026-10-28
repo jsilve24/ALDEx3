@@ -132,6 +132,10 @@ test_that("aldex returns named contrast results under return controls", {
 
 test_that("contrast validation reports malformed and nonestimable contrasts", {
   X <- cbind(`(Intercept)`=1, x=1:5, duplicate=1:5)
+  estimable <- rbind(shared_slope=c(0, 0.5, 0.5))
+  colnames(estimable) <- colnames(X)
+  expect_equal(ALDEx3:::.aldex_validate_contrasts(estimable, X), estimable)
+
   bad <- rbind(alias=c(0, 1, 0))
   colnames(bad) <- colnames(X)
   expect_error(ALDEx3:::.aldex_validate_contrasts(bad, X), "nonestimable")
@@ -141,6 +145,24 @@ test_that("contrast validation reports malformed and nonestimable contrasts", {
   expect_error(ALDEx3:::.aldex_validate_contrasts(C, X2), "nonzero")
   C <- matrix(c(0, 1), 1, dimnames=list("ok", rev(colnames(X2))))
   expect_equal(colnames(ALDEx3:::.aldex_validate_contrasts(C, X2)), colnames(X2))
+})
+
+test_that("contrast validation handles tall full-rank designs", {
+  observation <- seq_len(5000)
+  X <- cbind(intercept=1, trend=observation, group=rep(c(-1, 1), 2500))
+  contrasts <- rbind(trend=c(0, 1, 0), group=c(0, 0, 1))
+  colnames(contrasts) <- rev(colnames(X))
+  expected <- contrasts[, colnames(X), drop=FALSE]
+
+  expect_equal(qr(X)$rank, ncol(X))
+  validate <- ALDEx3:::.aldex_validate_contrasts
+  validation_environment <- new.env(parent=environment(validate))
+  validation_environment$qr <- function(design, ...) {
+    expect_lte(ncol(design), nrow(design))
+    base::qr(design, ...)
+  }
+  environment(validate) <- validation_environment
+  expect_equal(validate(contrasts, X), expected)
 })
 
 test_that("contrast validation covers dimensions, names, finite values, and dependence", {
