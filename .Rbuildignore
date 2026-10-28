@@ -4,6 +4,8 @@
 ^\.claude$
 ^Rplots\.pdf$
 ^plan-r2\.org$
+^plan-df\.org$
+^claude-df-plan\.org$
 rebuilt-long-vignettes.R
 vignettes/ALDEx3-Quickstart.Rmd.orig
 maintainer-instructions.txt

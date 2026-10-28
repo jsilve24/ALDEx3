@@ -1,3 +1,14 @@
+# Experimental branch: adaptive boundary handling
+
+- Keep the default/shared-anchor and residual BLMM paths unchanged. Adaptive
+  refinement alone uses bounded natural relative Cholesky coordinates.
+- For a stationary all-zero covariance fit with validated raw curvature and
+  feasible objective checks, use the cached QR calculation and the existing
+  first-order Satterthwaite limit, N-p, instead of a full lmerTest refit.
+- Keep exact rescue for partial-zero, unresolved and invalid-curvature fits.
+  This option remains experimental; numerical equivalence does not establish
+  statistical calibration at a data-selected variance boundary.
+
 # ALDEx3 1.6.2
 
 ## Review fixes

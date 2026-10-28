@@ -142,6 +142,17 @@ numerical reparameterization of the same model, including its random effects.
 It applies to arbitrary response draws and does not require a particular scale
 model. It does not replace mixed-model fitting with ordinary least squares.
 
+On the experimental boundary-handling branch, adaptive fitting uses bounded
+natural relative Cholesky entries, with nonnegative diagonals and free
+off-diagonal entries. The default shared-anchor path retains its existing
+parameterization. If the complete covariance factor is exactly zero at a
+stationary solution with validated observed curvature and feasible objective
+checks, a cached QR calculation gives the fitted coefficients, standard errors,
+and first-order Satterthwaite limit $N-p$. Partial-zero and unresolved fits
+still receive exact rescue. This reproduces the calculation at a fitted zero
+covariance; it does not assume zero variance before fitting or establish
+false-positive calibration after selecting that boundary from the data.
+
 Starting from the shared anchor, adaptive fitting permits at most eight
 safeguarded covariance iterations. It refreshes curvature and checks both
 stationarity and the predicted inference change at one further Newton
