@@ -5,7 +5,11 @@
 - For a stationary all-zero covariance fit with validated raw curvature and
   feasible objective checks, use the cached QR calculation and the existing
   first-order Satterthwaite limit, N-p, instead of a full lmerTest refit.
-- Keep exact rescue for partial-zero, unresolved and invalid-curvature fits.
+- At a validated partial boundary, remove complete zero Cholesky columns from
+  the Satterthwaite information calculation while retaining uncertainty from
+  residual variance and nonzero covariance parameters. Check decoupling,
+  curvature, stationarity and predicted inference changes before acceptance.
+- Keep exact rescue for unsupported, unresolved and invalid-curvature fits.
   This option remains experimental; numerical equivalence does not establish
   statistical calibration at a data-selected variance boundary.
 

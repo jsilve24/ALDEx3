@@ -148,10 +148,16 @@ off-diagonal entries. The default shared-anchor path retains its existing
 parameterization. If the complete covariance factor is exactly zero at a
 stationary solution with validated observed curvature and feasible objective
 checks, a cached QR calculation gives the fitted coefficients, standard errors,
-and first-order Satterthwaite limit $N-p$. Partial-zero and unresolved fits
-still receive exact rescue. This reproduces the calculation at a fitted zero
-covariance; it does not assume zero variance before fitting or establish
-false-positive calibration after selecting that boundary from the data.
+and first-order Satterthwaite limit $N-p$. At a partial boundary, complete zero
+Cholesky columns have zero first-order sensitivity and decouple from the other
+covariance coordinates. Their information block can be removed while retaining
+residual-variance uncertainty and Satterthwaite inference for the remaining
+parameters. Acceptance requires validated curvature, decoupling, stationarity
+and a forward-inference check. A zero diagonal with nonzero entries below it
+does not qualify. Unsupported and unresolved fits still receive exact rescue.
+These calculations use the covariance selected by fitting; they do not assume
+zero variance before fitting or establish false-positive calibration after
+selecting a boundary from the data.
 
 Starting from the shared anchor, adaptive fitting permits at most eight
 safeguarded covariance iterations. It refreshes curvature and checks both

@@ -141,14 +141,25 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
         last_gradient <<- list(location = location, gradient = gradient)
         gradient
       }
+      partial_information_at <- function(location) {
+        blmm_partial_information(location, lower, context$random,
+          raw_hessian_at(location), gradient_at(location))
+      }
       inference_at <- function(location, information) {
+        indices <- if (is.null(information$indices)) seq_along(location) else information$indices
         if (!is.null(last_inference) && identical(location, last_inference$location) &&
-            identical(information$H, last_inference$H)) return(last_inference$inference)
+            identical(information$H, last_inference$H) &&
+            identical(indices, last_inference$indices)) return(last_inference$inference)
         inference_calls <<- inference_calls + 1L
         report <- objective$report(location)
         sensitivity <- blmm_scores_batch(objective, location, report$PWRSS_s,
           N, p, contrasts = vectors, inference = TRUE)
-        dfs <- blmm_anchor_df(sensitivity$u[, 1, drop = FALSE], sensitivity$b,
+        dropped <- setdiff(seq_along(location), indices)
+        if (length(dropped) && (any(sensitivity$u[dropped, , drop = FALSE] != 0) ||
+                                any(sensitivity$b[dropped, , drop = FALSE] != 0)))
+          stop("partial boundary sensitivity does not decouple")
+        dfs <- blmm_anchor_df(sensitivity$u[indices, 1, drop = FALSE],
+          sensitivity$b[indices, , drop = FALSE],
           information$chol, N - p)
         pieces <- blmm_adaptive_common_pieces(location, basis, lower)
         fixed <- blmm_fixed_effects_draw(pieces, X, residual_s, response_s)
@@ -163,7 +174,8 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
           fixed$sigma2, reTrms, context$random)
         if (any(!is.finite(random))) stop("nonfinite random-effect inference")
         inference <- list(values = values, random = random)
-        last_inference <<- list(location = location, H = information$H, inference = inference)
+        last_inference <<- list(location = location, H = information$H,
+          indices = indices, inference = inference)
         inference
       }
       validate_interior <- function(location, H, value, gradient) {
@@ -216,8 +228,44 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
         diagnostics$status[s] <- "boundary_zero"
         diagnostics$reason[s] <- "stationary zero covariance"
       } else {
-        if (optimized$status != "interior") stop(optimized$reason)
-        current <- optimized$inference
+        if (optimized$status == "boundary") {
+          checks <- checks + 1L
+          location <- optimized$par
+          information <- partial_information_at(location)
+          gradient <- gradient_at(location)[information$indices]
+          correction <- as.vector(backsolve(information$chol,
+            forwardsolve(t(information$chol), gradient)))
+          decrement <- sqrt(sum(forwardsolve(t(information$chol), gradient)^2))
+          movement <- max(abs(correction))
+          if (decrement > 1e-4 || movement > 1e-3)
+            stop("partial boundary stationarity validation failed")
+          current <- inference_at(location, information)
+          probe_location <- location
+          probe_location[information$indices] <- location[information$indices] - correction
+          if (any(probe_location[information$indices] <= lower[information$indices] &
+                  is.finite(lower[information$indices])))
+            stop("infeasible partial boundary inference probe")
+          probe_objective_change <- value_at(probe_location) - optimized$objective
+          if (!is.finite(probe_objective_change) || probe_objective_change >
+              sqrt(.Machine$double.eps) * (1 + abs(optimized$objective)))
+            stop("partial boundary probe objective validation failed")
+          probe_information <- partial_information_at(probe_location)
+          if (!identical(probe_information$indices, information$indices))
+            stop("partial boundary probe changed zero columns")
+          probe <- inference_at(probe_location, probe_information)
+          stability <- max(abs(log(probe$values$std.error / current$values$std.error)),
+            abs(log(probe$values$df / current$values$df)))
+          tail_change <- max(abs(probe$values$p.lower - current$values$p.lower))
+          statistic_change <- max(abs(probe$values$estimate / probe$values$std.error -
+            current$values$estimate / current$values$std.error))
+          if (stability > 1e-3 || tail_change > 1e-5 || statistic_change > 1e-4)
+            stop("partial boundary forward inference validation failed")
+          diagnostics$status[s] <- "boundary_partial"
+          diagnostics$reason[s] <- "stationary partial zero covariance"
+        } else {
+          if (optimized$status != "interior") stop(optimized$reason)
+          current <- optimized$inference
+        }
       }
       current
     }, error = identity)
