@@ -58,6 +58,8 @@ use the ALDEx2-inspired diagnostics returned by \code{aldex.effect}. The contras
 must identify exactly one binary model coefficient. Effect diagnostics and
 MA plots require \code{logComp} and \code{logScale}, which are not returned when
 \code{aldex} streams large jobs.
+
+Not yet available for test="ssrv.bootstrap".
 }
 \author{
 Greg Gloor

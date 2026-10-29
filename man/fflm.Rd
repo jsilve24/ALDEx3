@@ -4,7 +4,7 @@
 \alias{fflm}
 \title{Freaking Fask Linear Models}
 \usage{
-fflm(Y, X, test = "t.HC3", contrasts = NULL)
+fflm(Y, X, test = "t.HC3", contrasts = NULL, .coefficients.only = FALSE)
 }
 \arguments{
 \item{Y}{a numeric array (N x D X S) where D is the number of taxa/genes, N
@@ -23,6 +23,9 @@ Model, The American Statistician.}
 
 \item{contrasts}{optional numeric matrix with named coefficient columns and
 one contrast per row.}
+
+\item{.coefficients.only}{Private flag: return estimates before residual
+standard errors, degrees of freedom, or probabilities are calculated.}
 }
 \value{
 A list of (P x D x S)-arrays with the OLS point estimates, standard

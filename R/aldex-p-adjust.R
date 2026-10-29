@@ -95,8 +95,10 @@
 ##' # Select the coefficient instead, grouped with the other contrast:
 ##' mixed.shared <- aldex.p.adjust(fit.shared,
 ##'   groups = c("coefficient:age", "group_effect"))
+##' @details Not yet available for test="ssrv.bootstrap".
 ##' @export
 aldex.p.adjust <- function(object, groups=NULL, method=NULL, onesided=NULL) {
+  .aldex_guard_ssrv(object, "aldex.p.adjust")
   if (!inherits(object, "aldex") || !is.list(object)) {
     stop("object must be an aldex fit")
   }

@@ -54,6 +54,8 @@ Values near 0.5 indicate uncertainty about direction. \code{overlap} is not a
 p-value, a confidence interval probability, or a literal area of overlap
 between two density curves.
 }
+
+Not yet available for test="ssrv.bootstrap".
 }
 \author{
 Greg Gloor, Justin Silverman

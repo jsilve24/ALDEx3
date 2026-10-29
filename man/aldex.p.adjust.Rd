@@ -65,6 +65,8 @@ The assumptions of the selected adjustment method still apply, and
 grouping does not establish a new FDR guarantee for Monte Carlo
 aggregated probabilities. Only contrasts already present in the fit
 can be included; this function does not construct new contrasts.
+
+Not yet available for test="ssrv.bootstrap".
 }
 \section{Choosing groups}{
 

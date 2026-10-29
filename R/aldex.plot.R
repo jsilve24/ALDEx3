@@ -27,10 +27,12 @@
 #' @author Greg Gloor
 #' @importFrom grDevices rgb
 #' @importFrom graphics abline barplot mtext plot.new points text
+#' @details Not yet available for test="ssrv.bootstrap".
 #' @export
 aldex.plot <-function(object, plot=c("volcano", "effect", "MA", "water"),
   contrast=NULL, threshold=0.05, min.diff=0.5, cohen=0.5, sig.col=rgb(1,0,0,0.5),
   water.show=5, water.col=c("red", "blue"), water.names=TRUE,  ... ){
+    .aldex_guard_ssrv(object, "aldex.plot")
     
     plot=match.arg(plot)
     if( is.null(contrast) ) stop("\nPlease enter the name of the contrast to plot")

@@ -45,6 +45,13 @@ By default, requested contrasts are included alongside coefficients. This
 only combines stored summaries; it does not change adjustment families.
 By default each coefficient and contrast has a separate family. Use
 \code{\link{aldex.p.adjust}} first to group selected rows without refitting.
+
+With test="ssrv.bootstrap", reports posterior means and pointwise
+equal-tailed 95\% intervals as estimate, credible.lower, credible.upper.
+Attributes level and interval record interval metadata. Works with summaries
+alone; does not reinterpret legacy Monte Carlo estimates as credible intervals.
+When a requested Laplace sequence cannot be generated, affected results are
+NA and a status column identifies available versus unavailable summaries.
 }
 \author{
 Justin Silverman

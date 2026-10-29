@@ -276,3 +276,44 @@ Exact values vary slightly with the random draws. The data.frame has one row per
 - `type`: present only when contrasts were requested; marks each row as `"coefficient"` or `"contrast"`.
 
 The per-draw arrays (`estimate`, `std.error`, `df`) and the raw `p.val` are stored in the fitted object; see `?aldex`.
+
+
+## Bootstrap SSRVs (1.8.0)
+
+For independent samples and ordinary linear models, `test="ssrv.bootstrap"`
+combines subject bootstrap uncertainty with named coefficient scale assumptions.
+The default returns posterior means, equal-tailed 95% intervals, and final draws.
+
+```r
+set.seed(2026)
+metadata <- data.frame(treatment=rep(0:1, each=8),
+                       age=seq(20,65,length.out=16))
+Y <- matrix(rpois(30*16,100),30,16)
+sc <- compose.sm(gaussian.sm("(Intercept)",sd=0),
+                 sparse.sm("treatment",uncertainty="hybrid"),
+                 gaussian.sm("age",sd=0.01))
+X <- model.matrix(~treatment+age,metadata)
+C <- matrix(c(0,1,10),1,dimnames=list("treatment plus ten years",colnames(X)))
+fit <- aldex(Y,~treatment+age,metadata,nsample=100,
+             test="ssrv.bootstrap",scale=sc,contrasts=C)
+summary(fit,component="contrasts")
+```
+
+Sparse blocks estimate one scalar correction shared across taxa per coefficient
+and draw. Gaussian blocks can retain a joint covariance. Every coefficient must
+be explicitly assigned, including the intercept; these composable priors use the original
+log2 proportions and total-scale coefficients, as in `coefficient.sm`. There is
+no automatic CLR centering. A zero intercept scale shift fixes reference total
+abundance at one. Separate blocks are independent except
+that sparse blocks share feature-bootstrap indices. Subjects and design rows
+are always resampled together. General regression uses paired row resampling;
+`bootstrap.strata` supplies explicit strata. Rank-deficient resamples have bounded
+redraws and recorded rejection counts.
+
+This path computes completed SSRV credible intervals, without residual t errors
+or p-values. It supports `return.pars="posterior"` and exact joint contrast
+summaries; current plotting, p-adjust and effect diagnostics reject these fits.
+Both hybrid candidates include subject resampling, extending the manuscript's
+original Laplace branch. Mixed-effects bootstrap inference is not supported.
+See [the tutorial](vignettes/ALDEx3-bootstrap-SSRV.Rmd) for bandwidth, hybrid
+selection, unbounded Laplace diagnostics, legacy adapters, and memory limitations.

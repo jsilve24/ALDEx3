@@ -20,12 +20,14 @@
 ##'   Model, The American Statistician. 
 ##' @param contrasts optional numeric matrix with named coefficient columns and
 ##'   one contrast per row.
+##' @param .coefficients.only Private flag: return estimates before residual
+##'   standard errors, degrees of freedom, or probabilities are calculated.
 ##' @return A list of (P x D x S)-arrays with the OLS point estimates, standard
 ##'   errors, degrees of freedom, and tail probabilities. If requested,
 ##'   contrast arrays have dimensions K x D x S.
 ##' @author Justin Silverman
 ##' @keywords internal
-fflm <- function(Y, X, test="t.HC3", contrasts=NULL) {
+fflm <- function(Y, X, test="t.HC3", contrasts=NULL, .coefficients.only=FALSE) {
    N <- dim(Y)[1]
    D <- dim(Y)[2]
    S <- dim(Y)[3]
@@ -48,6 +50,12 @@ fflm <- function(Y, X, test="t.HC3", contrasts=NULL) {
    A <- t(X) %*% X
    b <- t(X) %*% Y
    Theta <- solve(A, b)
+   if (.coefficients.only) {
+     out <- list(estimate=array(Theta, c(P, D, S)))
+     if (!is.null(contrasts))
+       out$contrast.estimate <- array(contrasts %*% Theta, c(nrow(contrasts), D, S))
+     return(out)
+   }
    sqerr <- (Y - X %*% Theta)^2
    inverseXtX <- chol2inv(chol(A))
 

@@ -21,6 +21,7 @@
 ##' @author Justin Silverman
 ##' @keywords internal
 cohensd <- function(m, var) {
+  .aldex_guard_ssrv(m, "cohensd")
   idx <- .aldex_resolve_contrast(m, substitute(var))
   pooled <- .aldex_pooled_var(m, idx)
   diff.mean <- m$estimate[idx,,]  # D x S
@@ -65,6 +66,7 @@ cohensd <- function(m, var) {
 ##'   p-value, a confidence interval probability, or a literal area of overlap
 ##'   between two density curves.
 ##'
+##' Not yet available for test="ssrv.bootstrap".
 ##' @title ALDEx3 Effect Diagnostics
 ##' @param object An object returned by `aldex`.
 ##' @param contrast The exact model coefficient or unambiguous binary data
@@ -74,6 +76,7 @@ cohensd <- function(m, var) {
 ##' @author Greg Gloor, Justin Silverman
 ##' @export
 aldex.effect <- function(object, contrast) {
+  .aldex_guard_ssrv(object, "aldex.effect")
   idx <- .aldex_resolve_contrast(object, substitute(contrast), contrast)
   pooled <- .aldex_pooled_var(object, idx)
   diff.mean <- object$estimate[idx,,]  # D x S
@@ -240,6 +243,12 @@ aitchison.mean <- function( n, log=FALSE ) {
 ##' By default each coefficient and contrast has a separate family. Use
 ##' \code{\link{aldex.p.adjust}} first to group selected rows without refitting.
 ##' 
+##' With test="ssrv.bootstrap", reports posterior means and pointwise
+##' equal-tailed 95% intervals as estimate, credible.lower, credible.upper.
+##' Attributes level and interval record interval metadata. Works with summaries
+##' alone; does not reinterpret legacy Monte Carlo estimates as credible intervals.
+##' When a requested Laplace sequence cannot be generated, affected results are
+##' NA and a status column identifies available versus unavailable summaries.
 ##' @title Summary Method for ALDEx3 Objects
 ##' @param object An object of class \code{aldex}
 ##' @param ignore.intercept (default=TRUE), ignore intercept when creating
@@ -253,11 +262,14 @@ aitchison.mean <- function( n, log=FALSE ) {
 ##'   \code{component = "all"} includes requested contrasts, an additional
 ##'   \code{type} column identifies \code{"coefficient"} or \code{"contrast"}
 ##'   rows. Without requested contrasts, the coefficient-only schema is preserved.
+##' @method summary aldex
 ##' @export
 ##' @author Justin Silverman
 summary.aldex <- function(object, ignore.intercept=TRUE,
                           component=c("all", "coefficients", "contrasts"), ...) {
   component <- match.arg(component)
+  if (identical(object$test, "ssrv.bootstrap"))
+    return(.aldex_ssrv_summary(object, ignore.intercept, component))
   if (component == "all") {
     coefficients <- summary.aldex(object, ignore.intercept,
                                   component = "coefficients")

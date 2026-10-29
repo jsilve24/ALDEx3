@@ -1,0 +1,469 @@
+---
+title: "Absolute abundance inference with bootstrap SSRVs"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    mathjax: null
+    pandoc_args: ["--mathml"]
+vignette: >
+  %\VignetteIndexEntry{Absolute abundance inference with bootstrap SSRVs}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse=TRUE, comment="#>")
+library(ALDEx3)
+```
+
+## Why we need a scale model
+
+Suppose a treatment doubles the abundance of a few microbial taxa and leaves the
+others unchanged. Those growing taxa now occupy a larger share of the community.
+The remaining taxa occupy smaller shares, even though their absolute abundances
+have not fallen. Sequencing measures those shares: an apparent decrease in
+proportion need not be a decrease in absolute abundance.
+
+To distinguish these possibilities, we need information about the sample's total
+abundance, or **scale**. Sequencing counts alone do not identify that total.
+ALDEx3 combines information about composition from the counts with an explicit
+scale model to infer absolute effects. Scale information can come from external
+measurements, biological prior knowledge, or assumptions about the feature
+effects. This vignette introduces the last approach: a **sparse scale model**.
+
+The sparse model uses a cluster of effects near zero to estimate the unknown
+scale change. Subject resampling adds uncertainty about the biological population
+from which we sampled. These are separate choices: the subject bootstrap can also
+be used with Gaussian scale priors or external scale measurements.
+
+We first describe the model, then fit a two-group example and a regression with a
+covariate. The examples use `test="ssrv.bootstrap"` and ordinary linear models.
+They assume independent biological samples. Repeated measures and mixed-effects
+bootstrap inference are not supported by this selector; see the
+[mixed-effects vignette](ALDEx3-mixed-effects.html) for existing mixed-model methods.
+
+## The model: proportions, totals, and absolute effects
+
+Let \(w_{id}\) be the absolute abundance of taxon \(d\) in sample \(i\),
+\(t_i=\sum_d w_{id}\) its total abundance, and \(p_{id}=w_{id}/t_i\) its
+proportion. Then
+
+\[
+\log_2 w_{id}=\log_2 p_{id}+\log_2 t_i.
+\]
+
+Counts inform \(p_{id}\), but do not reveal \(t_i\). Increasing the total
+while preserving the proportions gives the same sequencing composition.
+Uncertainty about the total therefore remains even at very high sequencing depth.
+
+Now regress each log proportion on the same design matrix \(X\). Let
+\(a_{kd}\) be coefficient \(k\) for taxon \(d\), and let \(b_k\) be the
+corresponding regression coefficient for log2 total abundance. Linearity of the
+regression gives the absolute-abundance coefficient
+
+\[
+\beta_{kd}=a_{kd}+b_k.
+\]
+
+For a control-versus-treatment indicator, \(a_{kd}\) is the difference in mean
+log2 proportion. The scale coefficient \(b_k\) is the difference in mean log2
+total abundance. Their sum is the difference in mean log2 absolute abundance.
+An absolute coefficient of 1 represents a twofold increase in geometric-mean
+abundance; -1 represents a twofold decrease.
+
+The same scalar \(b_k\) applies to **every taxon** for a given coefficient and
+draw. A scale model shifts the whole profile of feature effects; it does not
+independently perturb or shrink each feature's coefficient. An SSRV combines
+compositional-effect and scale-effect draws to represent uncertainty about the
+absolute effect.
+
+### What the sparse assumption adds
+
+Suppose the absolute treatment effects have a dominant density peak at zero:
+there is a sufficiently clear cluster of taxa with little or no absolute change.
+The corresponding peak of the compositional effects will be near \(-b_k\).
+Estimating that peak and negating its location gives a scale correction.
+
+For example, if the unchanged taxa have compositional log2 effects near -0.3,
+the sparse model places the total-abundance change near +0.3. Adding +0.3 to
+every taxon's compositional effect brings that cluster back near zero, while
+preserving the differences between taxa.
+
+This is a biological assumption, not something that sequencing alone establishes.
+A large coherent biological response can move the dominant absolute-effect peak
+away from zero. A sparse model can then attribute that response to scale and
+produce misleading absolute effects. External measurements or a different scale
+prior may be preferable in that setting. The method does not require choosing
+specific reference taxa, but the feature set still determines the estimated peak;
+filtering features can change the scale estimate.
+
+### What a Gaussian scale prior means
+
+Instead of estimating a scale coefficient from a sparse effect profile, we can
+state a Gaussian prior for it. For example,
+
+```r
+gaussian.sm("treatment", mean=-1, sd=0.25)
+```
+
+says that treatment is expected to halve total abundance, with SD 0.25 on the
+log2-total-abundance coefficient. It says nothing about which individual taxa
+change. This has the same scale meaning as the corresponding coefficient in
+`coefficient.sm()`.
+
+All coefficient models here start from **log2 proportions**, without automatic
+CLR centering. Scale coefficients describe absolute totals. A zero treatment
+scale coefficient assumes no treatment-related change in total abundance; it
+does not assume that every taxon's absolute effect is zero.
+
+## A two-group example
+
+We simulate independent samples in which five of 30 taxa have a twofold treatment
+effect. The remaining taxa have no systematic absolute treatment effect. Each
+sample also has biological variation before sequencing. Because we know how this
+example was generated, we can compare estimated effects with the simulated truth.
+
+```{r simulate}
+set.seed(2026)
+D <- 30
+N <- 24
+metadata <- data.frame(treatment=rep(0:1, each=N/2))
+treatment_effect <- c(rep(1, 5), rep(0, D-5))
+
+log_abundance <- matrix(rnorm(D*N, sd=0.2), D, N) +
+  rnorm(D, mean=10, sd=0.5) +
+  treatment_effect %o% metadata$treatment
+abundance <- 2^log_abundance
+proportions <- sweep(abundance, 2, colSums(abundance), `/`)
+Y <- vapply(seq_len(N), function(i) {
+  as.vector(rmultinom(1, size=100000, prob=proportions[, i]))
+}, integer(D))
+rownames(Y) <- paste0("taxon", seq_len(D))
+colnames(Y) <- paste0("sample", seq_len(N))
+```
+
+The input count matrix has features in rows and samples in columns. Metadata
+rows follow the same sample order. Before assigning scale models, inspect the
+coefficient names:
+
+```{r names}
+colnames(model.matrix(~ treatment, metadata))
+```
+
+We use a sparse scale model for the treatment coefficient and specify the
+intercept separately:
+
+```{r two-group}
+two_group_scale <- compose.sm(
+  gaussian.sm("(Intercept)", mean=0, sd=0),
+  sparse.sm("treatment", uncertainty="bootstrap")
+)
+fit <- aldex(Y, ~ treatment, metadata,
+             method="lm", test="ssrv.bootstrap", scale=two_group_scale, nsample=128)
+```
+
+`compose.sm()` assigns one scale model to every coefficient. Exact coefficient
+names are required; missing, unknown, or overlapping assignments are errors.
+There is no automatic sparse assumption for the intercept.
+
+The intercept above fixes reference total abundance at one in the chosen abundance
+units. It is a convention for the otherwise unknown absolute level, not a
+measurement of the baseline load. Treatment effects concern abundance ratios
+and do not depend on this fixed choice of reference level. To interpret baseline
+abundances in cells or another measured unit, supply corresponding information
+about the intercept scale instead.
+
+We use 128 draws to keep this tutorial quick. The default is 2000; substantive
+analyses should check Monte Carlo stability rather than treat the tutorial's
+small draw count as a recommendation.
+
+### Read the results
+
+```{r summarize}
+results <- summary(fit)
+results$simulated.effect <- treatment_effect[match(results$entity, rownames(Y))]
+results[match(c("taxon1", "taxon2", "taxon26", "taxon27"), results$entity), ]
+```
+
+`estimate` is the posterior mean absolute log2 treatment effect.
+`credible.lower` and `credible.upper` are the pointwise equal-tailed 95% limits
+from the completed effect draws. The first two taxa have simulated effect 1;
+the last two have simulated effect 0. Finite biological sampling and sequencing
+uncertainty mean the estimates need not equal those values exactly.
+
+An interval wholly above zero indicates that the simulated absolute-effect
+distribution lies mostly above zero under the chosen scale model. It is not a
+BH-adjusted significance decision. These are pointwise intervals, with no claim
+that checking many of them controls frequentist false discoveries.
+
+### What was resampled?
+
+For each global Monte Carlo draw, ALDEx3:
+
+1. Draws a latent composition for each original sample, using a Dirichlet
+   distribution with parameters `Y[, i] + 0.5`.
+2. Resamples subjects and their design rows together, with replacement. A repeated
+   copy of a subject uses the same latent composition drawn in step 1.
+3. Fits all log-proportion responses with the existing `fflm` regression solver.
+4. Draws the scale coefficients and adds each scalar to every original taxon.
+
+With `uncertainty="bootstrap"`, step 4 also resamples the **features** with
+replacement to estimate the compositional-effect peak. Those feature indices
+only estimate the scalar correction: every original feature remains in the
+output. Sparse coefficients share the feature indices within a draw.
+
+The subject bootstrap represents biological sampling uncertainty; the feature
+bootstrap represents uncertainty in the sparse scale estimate. Neither replaces
+the other, and they do not form a Cartesian product of two Monte Carlo loops.
+Increasing sequencing depth does not remove uncertainty from having only a
+finite number of biological samples.
+
+## Covariate adjustment and different scale information
+
+Suppose age also belongs in the model. We can use a sparse treatment scale model
+and a Gaussian age scale prior in the same fit. Here age is centered at 40 years
+and expressed in decades so the coefficient and its prior are easy to interpret.
+We add an illustrative age covariate to the simulated data; the following prior
+is a modeling example, not knowledge recovered from this simulation's counts.
+
+```{r covariates}
+metadata$age <- sample(20:65, N, replace=TRUE)
+metadata$age10 <- (metadata$age-40)/10
+x <- model.matrix(~ treatment + age10, metadata)
+colnames(x)
+
+adjusted_scale <- compose.sm(
+  gaussian.sm("(Intercept)", mean=0, sd=0),
+  sparse.sm("treatment", uncertainty="hybrid", bandwidth=0.2),
+  gaussian.sm("age10", mean=0.1, sd=0.05)
+)
+C <- matrix(c(0, 1, 1), 1,
+            dimnames=list("treated at 50 versus control at 40", colnames(x)))
+adjusted <- aldex(Y, ~ treatment + age10, metadata, nsample=128,
+                  test="ssrv.bootstrap", scale=adjusted_scale, contrasts=C,
+                  return.pars="posterior")
+head(summary(adjusted, component="contrasts"))
+```
+
+The age prior describes an expected increase of 0.1 log2 units in **total
+abundance per decade**, with SD 0.05. It does not place a separate prior on each
+taxon's age effect. The contrast adds the absolute treatment coefficient and
+one decade's absolute age coefficient. Its intervals come from that sum within
+each joint draw, preserving dependence. They are not differences of marginal
+interval endpoints, and the contrast gets no additional sparse correction.
+
+Priors refer to the exact design basis and units. Changing age from decades to
+years requires transforming its mean and SD consistently. Factor recoding can
+also change a coefficient's meaning.
+
+### Correlated Gaussian coefficients
+
+Separately specified Gaussian blocks draw independently. If scale information
+couples two coefficients, put them in the same Gaussian block. For example,
+if external information centers the reference total near 30000 units and its
+uncertainty is correlated with uncertainty about the age trend, a block could be:
+
+```{r gaussian-block}
+correlated <- compose.sm(
+  gaussian.sm(c("(Intercept)", "age10"), mean=c(log2(30000), 0.1),
+              covariance=matrix(c(0.25, 0.005, 0.005, 0.0025), 2)),
+  sparse.sm("treatment", "bootstrap")
+)
+```
+
+Rows and columns of the covariance follow the supplied coefficient order. The
+matrix diagonal contains variances, not SDs. A coefficient cannot simultaneously
+belong to this correlated block and another sparse or Gaussian block.
+
+## Choosing scale uncertainty
+
+`sparse.sm()` estimates the peak with a Gaussian kernel density estimate (KDE)
+and offers three uncertainty modes:
+
+* `"bootstrap"` negates the mode after ordinary with-replacement feature
+  resampling, as in the first example.
+* `"laplace"` draws one Gaussian scalar around minus the mode. Its variance is
+  the inverse negative curvature of the **log** KDE at that mode. This is a local
+  curvature approximation, not a double-exponential or LASSO shrinkage prior.
+* `"hybrid"`, the default, collects both candidate scale sequences over all
+  Monte Carlo draws. For each sparse coefficient, it selects the entire sequence
+  with the larger sample variance. Exact ties choose bootstrap.
+
+Both candidates use the same subject-bootstrap compositional coefficients in
+this regression extension. This deliberately differs from the manuscript's
+original Laplace branch, which did not include subject resampling. The Gaussian
+perturbation is one scalar shared across taxa, following the author correction
+to supplement S5. The larger-variance choice defines the procedure; it is not a
+general theorem guaranteeing conservative intervals or frequentist FDR control.
+
+### The coordinate choice matters
+
+Hybrid selection compares **scale-coefficient** variances in the original
+log-proportion coordinates. If a coordinate change adds a draw-dependent scalar
+\(c_s\) to every compositional feature coefficient, both candidate scale
+coefficients subtract \(c_s\). Each candidate's absolute effects are unchanged,
+but their scale variances can change by different amounts because their
+covariances with \(c_s\) differ. Hybrid can then select a different candidate.
+A fixed coefficient offset across all draws does not change the selection.
+
+For this reason, automatic CLR centering is not an interchangeable numerical
+step. It would change the meaning of Gaussian total-scale priors and could
+change the hybrid choice. CLR assumptions remain explicitly available through
+`scale=clr.sm` in the existing scale interface.
+
+### Bandwidth and numerical failures
+
+By default, bandwidth is `bw.nrd0`, re-estimated in each feature bootstrap.
+An explicit positive `bandwidth`, such as 0.2 above, fixes the Gaussian kernel
+SD in log2 coefficient units. This is a smoothing choice, not the Gaussian
+scale-prior SD. Assess sensitivity when the effect profile has competing peaks.
+All original features enter scale estimation; there is no hidden feature filter.
+
+For stability, the KDE calculation subtracts an offset and expresses distances
+in bandwidth units, then restores the original units. These are algebraic
+coordinate changes inside the KDE, not CLR centering or a different scale prior.
+There is no bandwidth floor: the default is `bw.nrd0` on centered coordinates.
+If a profile is constant, including a constant feature-bootstrap resample, supply
+an explicit positive `bandwidth`; the code does not choose a smoothing variance
+for that case. This can matter especially with very few features.
+
+Mode search uses a grid with spacing at most one eighth of the bandwidth,
+includes every kernel center, and refines bracketed stationary maxima using the
+analytic derivative. Bounded density optimization is used when the derivative
+is not bracketed. Optimizer/root tolerances are expressed in bandwidth units.
+There is no fixed grid-coarsening cap or near-equal-peak tolerance: exact ties
+in the computed densities choose the leftmost maximum. This remains a numerical
+mode search, not a proof of exact global optimization or an independently verified
+reproduction of the reference implementation.
+
+### Infinite or undefined Laplace variance
+
+The variance is the inverse negative log-density curvature, with **no curvature
+cutoff, variance cap, or automatic bootstrap substitution**. Zero curvature gives
+`Inf`; a positive but very small negative log-density curvature can give a very
+large finite variance and is left unchanged. A positive log-density curvature
+cannot define the requested Gaussian Laplace approximation.
+
+An infinite-variance Gaussian is not a proper distribution from which finite
+coefficient draws can be generated. In that case, the fit warns that the sparse
+model may be inappropriate and suggests explicitly requesting bootstrap if that
+is the model you want. It retains `Inf` in
+`diagnostics$laplace.max.conditional.variance` and records the number of such
+iterations in `diagnostics$laplace.unbounded.draws`.
+
+No completed Laplace sequence exists for that coefficient, so there is no sample
+variance to compare under the hybrid rule. The hybrid branch is recorded as `NA`,
+rather than substituting bootstrap or inventing a sample variance. Affected
+coefficient estimates and summaries are `NA`, and `summary()` adds a `status`
+column marking unavailable results. No problematic iterations are dropped to
+summarize a smaller set of draws. Other coefficients and contrasts that do not
+involve unavailable coefficients remain usable. `diagnostics$available.draws`
+records zero completed draws for unavailable coefficients and the full draw
+count for available ones.
+
+The same explicit-unavailability policy applies to an undefined Laplace
+approximation, and to a pure Laplace request that cannot generate its draws.
+Inspect `diagnostics$unavailable.coefficients`, `unavailable.contrasts`, and
+`laplace.unavailable.draws`. `laplace.variance` records the sample variance of the
+actual candidate sequence; it is `NA` when that sequence is unavailable or was
+not requested. It is distinct from the conditional curvature-based variance,
+which may be infinite. For fits with both candidate sequences available, hybrid
+always compares their all-draw sample variances and uses bootstrap on an exact tie.
+
+## Subject resampling and scope
+
+An intercept-plus-binary design defaults to subject resampling within its two
+groups. General regression uses paired row resampling. To supply simple strata
+explicitly, give a nonmissing length-N vector in the original sample order:
+
+```{r strata}
+stratified <- aldex(Y, ~ treatment, metadata, nsample=128,
+                    test="ssrv.bootstrap", scale=two_group_scale,
+                    bootstrap.strata=metadata$treatment)
+stratified$diagnostics$resampling
+```
+
+Strata preserve sample sizes within those groups. They do not make
+repeated observations independent or provide cluster inference. ALDEx3 does not
+automatically stratify by every covariate value in a general formula.
+
+The design matrix is built once, preserving factor levels, reference coding and
+coefficient names. An originally rank-deficient design is rejected. A singular
+bootstrap resample is redrawn, with at most `bootstrap.max.attempts=100` total
+attempts per requested draw. Exhaustion stops the analysis with rejection
+diagnostics rather than dropping coefficients or discarding the draw. Successful
+fits record rejection counts in `diagnostics`.
+
+## Stored results and existing scale models
+
+By default, `fit$estimate` is a P x D x S array of final absolute-effect draws.
+Here P is the coefficient count, D the feature count and S the draw count.
+`fit$posterior` contains P x D matrices `mean`, `lower`, and `upper`, plus
+`level=0.95` and `interval="equal-tailed"`. Contrasts use the same structure
+under `fit$contrasts`. `fit$nsample` records the number of global iterations; `diagnostics$available.draws`
+records the completed effect-draw count for each coefficient.
+
+Use `return.pars="posterior"`, as in the covariate example, to discard draws
+after calculating exact summaries. `summary()` works with those summaries alone;
+`ignore.intercept` and `component="all"`, `"coefficients"`, or `"contrasts"`
+control its rows. Its `level` and `interval` attributes record interval metadata.
+Arbitrary interval levels cannot be reconstructed from stored endpoints alone.
+
+Exact quantiles use all final coefficient draws after hybrid selection. Although
+sample-level arrays are processed one draw at a time, coefficient working memory
+remains O(P D S), including summaries-only fits. Candidate scale arrays are only
+P x S. Random-number order is draw-major and does not depend on streaming or
+retention choices. `streamsize` uses the existing heuristic threshold; it is not
+a hard memory limit. Sample-level arrays are not returned by this initial path.
+
+The existing `clr.sm`, `tss.sm`, `sample.sm`, `coefficient.sm`, custom sample-scale
+callbacks, and N x nsample scale matrices are also supported with the subject
+bootstrap. Their sample-scale draws are projected through the same resampled
+regression as the log proportions, preserving sample identity and draw alignment.
+A sample scale `X^T b` recovers `b` under a full-rank resampled design; arbitrary
+sample scales need not lie entirely in the design span. Scale is added once.
+
+These completed SSRV summaries differ from the existing t-test-based inference.
+No residual t errors, frequentist p-values, or BH-adjusted posterior probabilities
+are added. Existing inference selectors and defaults remain available, but
+`aldex.plot()`, `aldex.p.adjust()`, `aldex.effect()`, and Cohen's-d diagnostics
+explicitly reject `test="ssrv.bootstrap"` fits. Unsupported SE/df/p-value output
+requests also fail clearly.
+
+## Custom coefficient-scale functions
+
+For a fully joint custom coefficient model, pass a function with an `A` formal.
+It receives the P x D log2-proportion coefficient matrix `A`, original P x N
+`X`, original D x N x 1 `logComp`, bootstrap `indices`, and global `draw` number.
+Return a finite named P-vector of log2-total-scale coefficients. For example,
+a fixed zero total-scale coefficient for every model term can be written as:
+
+```{r custom}
+joint <- function(A, X, logComp, indices, draw) {
+  setNames(rep(0, nrow(A)), rownames(A))
+}
+joint_fit <- aldex(Y, ~ treatment + age10, metadata, nsample=16,
+                   test="ssrv.bootstrap", scale=joint)
+```
+
+This explicitly assumes total abundance one for every subject, with no scale
+uncertainty; it is not a sparse model. Custom sample-scale callbacks without an
+`A` formal retain their original signatures. They are called once per global
+draw with a singleton third composition dimension and must return an N x 1
+matrix. They should not maintain external state that depends on streaming chunks.
+
+## Further reading and implementation provenance
+
+Gu, Chiaromonte, and Silverman, *Sparse Bayesian Partially Identified Models for
+Microbiome Data*, motivates sparse scale models. See also Nixon, Gloor, and
+Silverman (2025), *Incorporating scale uncertainty in microbiome and gene
+expression analysis as an extension of normalization*, Genome Biology,
+[doi:10.1186/s13059-025-03609-3](https://doi.org/10.1186/s13059-025-03609-3),
+for the broader scale-model formulation.
+
+This implementation follows the supplied specification and the correction to
+supplement S5. No manuscript PDFs or original reference implementation were
+supplied during development. Validation uses independent regression and bootstrap
+calculations; it does not establish exact reproduction of the original full
+hybrid procedure. Mixed-effects bootstrap inference and Bayesian multiple-testing
+or plotting extensions remain outside this release.

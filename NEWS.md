@@ -1,3 +1,24 @@
+# ALDEx3 1.8.0
+
+* Add `aldex(test="ssrv.bootstrap", method="lm")`: draw-major subject
+  bootstrap SSRVs, final absolute coefficient draws, posterior means and
+  pointwise equal-tailed 95% intervals, including joint linear contrasts.
+* Composable and custom coefficient scales use original log2-proportion
+  coordinates, consistent with `coefficient.sm`, without automatic CLR centering.
+* Add `sparse.sm`, `gaussian.sm`, and `compose.sm` for exact named coefficient
+  assignments. Sparse Gaussian-KDE modes support Laplace, ordinary feature
+  bootstrap, and all-draw larger-variance hybrid uncertainty. Each scale shift
+  is one scalar across taxa. Both hybrid candidates include subject resampling.
+* Adapt existing scale callbacks/matrices by the same bootstrap fitting operator;
+  preserve correlated Gaussian blocks and all legacy inference/deprecated args.
+* Add explicit strata, bounded rank redraws and numerical/selection diagnostics.
+  Zero curvature is reported as infinite conditional Laplace variance; no
+  curvature cutoff, variance cap, or automatic bootstrap substitution is used.
+  Unavailable posterior results are warned about and marked explicitly.
+  Default bandwidth has no floor; constant profiles require explicit bandwidth.
+  Existing plotting, p-adjust and effect diagnostics explicitly reject this path.
+  Mixed-effects bootstrap inference is not supported.
+
 # ALDEx3 1.7.0
 
 ## Changes to mixed-model results

@@ -29,11 +29,19 @@
 ##'     \item{\code{"nlme"}}{an \code{nlme} mixed model; requires \code{random}
 ##'       and optionally accepts \code{correlation} (see \code{\link[nlme]{lme}}).}
 ##'   }
-##' @param nsample number of Monte Carlo draws.
+##' @param nsample number of Monte Carlo draws (at least two for bootstrap SSRVs).
+##' @param bootstrap.strata Optional length-N nonmissing vector for independent
+##'   subject resampling within strata in test="ssrv.bootstrap". By default,
+##'   intercept-plus-binary designs resample within groups; other designs use
+##'   paired row resampling. This does not provide cluster inference.
+##' @param bootstrap.max.attempts Maximum attempts per full-rank bootstrap
+##'   design (default 100); exhaustion stops with rejection diagnostics.
 ##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
 ##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
 ##'   nsample} matrix of log2-scale draws. Additional arguments for a
-##'   scale-model function are passed through \code{...}. See
+##'   scale-model function are passed through \code{...}. With
+##'   \code{test="ssrv.bootstrap"}, also accepts named coefficient blocks from
+##'   \code{\link{compose.sm}} or a custom coefficient-scale callback. See
 ##'   "Writing a custom scale model" in the Examples section for the required
 ##'   interface.
 ##' @param streamsize (default 8000) size threshold for processing draws in
@@ -53,11 +61,34 @@
 ##'   correction. See `p.adjust` for all available methods.
 ##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
 ##'   `"lm"`, `"t.satterthwaite.adaptive"` for `"blmm"`, and `"t"` for
-##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
+##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, `"t.HC3"`, or `"ssrv.bootstrap"`;
 ##'   for `blmm`, choose `"t.satterthwaite.adaptive"`, `"t.satterthwaite"`,
 ##'   or the deprecated `"t.residual"`; for `lme4` and `nlme`, only `"t"` is
 ##'   supported. Names are case-sensitive.
 ##' @details
+##' \strong{Bootstrap SSRVs (1.8.0).} Select \code{test="ssrv.bootstrap"}
+##'   with \code{method="lm"} for independent-subject fixed-effects inference.
+##'   Each draw samples original-subject compositions, resamples subjects and
+##'   design rows together, fits all features with fflm, and adds a single
+##'   coefficient-scale shift across taxa. No residual t errors or p-values
+##'   are computed. Use \code{\link{compose.sm}} for sparse/Gaussian mixtures;
+##'   every coefficient including the intercept must be explicitly assigned.
+##'   Composable and custom coefficient models use original log2 proportions,
+##'   without automatic CLR centering. Gaussian shifts describe total-scale
+##'   coefficients with the same meaning as \code{coefficient.sm}.
+##'   Existing sample-scale functions and matrices are projected through the
+##'   same resampled fitting operator, preserving sample identity.
+##'   Default \code{return.pars=c("posterior","estimate")} retains final
+##'   absolute coefficient draws plus means and pointwise equal-tailed 95%
+##'   intervals. \code{return.pars="posterior"} drops draws after computing
+##'   exact quantiles. Summaries are stored in \code{posterior} (mean, lower,
+##'   upper, level, interval) and \code{contrasts$posterior}. The draw count
+##'   and rank-rejection/scale-selection diagnostics are recorded. Sample arrays
+##'   are processed one draw at a time; coefficient working memory remains
+##'   proportional to P*D*nsample. RNG order is independent of streaming and
+##'   retention. Inference-dependent plotting/effect/p-adjust helpers are
+##'   unavailable. See \code{vignette("ALDEx3-bootstrap-SSRV")} for assumptions,
+##'   custom joint coefficient draws, and examples.
 ##' \strong{Scale models.} Sequence counts determine the relative composition of each sample, but not
 ##' its total abundance or scale. The \code{scale} argument tells ALDEx3 what is
 ##' known about that missing quantity and how uncertain that knowledge is.
@@ -120,7 +151,9 @@
 ##'   coefficient set and are reordered to the fitted design. Contrast rows
 ##'   have unique nonempty names, are finite and nonzero, and need not sum to
 ##'   zero or be independent. Contrasts require a full-rank fixed-effect design
-##'   with positive residual degrees of freedom. They do not change composition
+##'   with positive residual degrees of freedom for existing t-based inference.
+##'   The bootstrap path requires full rank but does not calculate residual
+##'   degrees of freedom. Contrasts do not change composition
 ##'   or scale sampling or adjustment families. For BLMM, checks on an added
 ##'   contrast can cause further refinement or a refit, which can also change
 ##'   coefficient results slightly.
@@ -131,8 +164,15 @@
 ##'   \code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
 ##'   include \code{random} or \code{correlation}.
 ##' @return An \code{aldex} list. \code{X} (P x N), \code{streaming},
-##'   \code{method}, the resolved \code{test}, \code{p.adjust.method}, and
-##'   \code{onesided} are always recorded. Here P is
+##'   \code{method}, and the resolved \code{test} are always recorded.
+##'   Existing t-based inference also records \code{p.adjust.method} and
+##'   \code{onesided}. Bootstrap SSRVs instead record \code{nsample},
+##'   \code{scale.basis}, and \code{diagnostics}; their posterior outputs and
+##'   defaults are described in Details. Unbounded/undefined Laplace approximations
+##'   warn and record their conditional variance, including infinity. Affected
+##'   posterior results are unavailable (NA), not replaced by bootstrap. Summary
+##'   adds a status column for such fits; see the bootstrap SSRV vignette.
+##'   Here P is
 ##'   the coefficient count, D the feature count, N the observation count, and
 ##'   S the Monte Carlo draw count. \code{return.pars} controls:
 ##'   \describe{
@@ -192,6 +232,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
                                 "p.val.adj", "logComp", "logScale"),
                   p.adjust.method="BH", test=NULL,
                   onesided=FALSE, contrasts=NULL,
+                  bootstrap.strata=NULL, bootstrap.max.attempts=100L,
                   ...) {
   if (!is.character(method) || length(method) != 1L || is.na(method) ||
       !(method %in% c("lm", "blmm", "lme4", "nlme"))) {
@@ -204,6 +245,23 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   if (!is.character(test) || length(test) != 1L || is.na(test)) {
     stop("test must be a single character inference selector")
   }
+  if (test == "ssrv.bootstrap") {
+    if (method != "lm") stop("test = 'ssrv.bootstrap' supports only method = 'lm'")
+    if (inherits(X, "formula") && any(all.names(X) %in% c("|", "||")))
+      stop("random-effects terms are not supported by test = 'ssrv.bootstrap'")
+    args <- list(...)
+    if (any(names(args) %in% c("random", "correlation", "weights", "cluster", "groups")))
+      stop("random/correlation/cluster arguments are unsupported for ssrv.bootstrap")
+    if (!missing(p.adjust.method) || (!missing(onesided) && !identical(onesided, FALSE)))
+      stop("p.adjust.method and one-sided inference are unavailable for ssrv.bootstrap")
+    if (missing(return.pars)) return.pars <- c("posterior", "estimate")
+    return(.aldex_ssrv_bootstrap(Y, X, data, nsample, scale, streamsize,
+                                return.pars, contrasts, bootstrap.strata,
+                                bootstrap.max.attempts,
+                                .upgrade_deprecated_scale_args(scale, args)))
+  }
+  if (inherits(scale, c("aldex_coefficient_scale", "aldex_sparse_scale", "aldex_gaussian_scale")))
+    stop("composable coefficient scales require test = 'ssrv.bootstrap'")
   allowed.tests <- switch(method, lm=c("t", "t.HC0", "t.HC3"),
                           blmm=c("t.satterthwaite", "t.satterthwaite.adaptive", "t.residual"),
                           lme4="t", nlme="t")
