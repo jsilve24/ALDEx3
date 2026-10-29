@@ -1020,6 +1020,13 @@ blmm <- function(logW, formula, data, n.cores = 1L,
         suppressPackageStartupMessages(library(ALDEx3))
         NULL
       })
+      # Socket workers start fresh R sessions and do not inherit options.
+      # Collect diagnostics there, but keep any callback in the parent.
+      diagnostic_hook <- getOption("ALDEx3.blmm.adaptive.diagnostics")
+      parallel::clusterCall(cl, options, list(
+        ALDEx3.blmm.adaptive.diagnostics =
+          isTRUE(diagnostic_hook) || is.function(diagnostic_hook)
+      ))
       feature_results <- parLapply(cl, feature_indices, feature_worker)
     } else {
       feature_results <- parallel::mclapply(

@@ -473,8 +473,27 @@ test_that("partial boundary inference preserves shifts and worker ordering", {
   shift <- c(100, -20)
   responses <- array(c(z$Y, z$Y + as.vector(X %*% shift)), c(nrow(X), 2L, 1L))
   serial <- ALDEx3:::blmm(responses, z$formula, z$data, inference = "adaptive")
-  workers <- ALDEx3:::blmm(responses, z$formula, z$data, inference = "adaptive", n.cores = 2L)
+  # Exercise Windows socket dispatch on every platform, without changing the
+  # platform seen by dependencies or by the fresh worker sessions.
+  socket_blmm <- ALDEx3:::blmm
+  environment(socket_blmm) <- new.env(parent = environment(socket_blmm))
+  environment(socket_blmm)$.Platform <- list(OS.type = "windows")
+  workers <- socket_blmm(responses, z$formula, z$data, inference = "adaptive", n.cores = 2L)
   expect_equal(workers, serial)
+  expect_true("status" %in% names(attr(workers, "blmm.adaptive.diagnostics")[[1]]$diagnostics))
+
+  # A function hook requests the same worker diagnostics and runs once, here.
+  callback_diagnostics <- NULL
+  options(ALDEx3.blmm.adaptive.diagnostics = function(diagnostics) {
+    callback_diagnostics <<- diagnostics
+  })
+  callback_fit <- socket_blmm(responses, z$formula, z$data,
+                            inference = "adaptive", n.cores = 2L)
+  expect_null(attr(callback_fit, "blmm.adaptive.diagnostics"))
+  expect_equal(callback_diagnostics, attr(serial, "blmm.adaptive.diagnostics"))
+  expected_fit <- serial
+  attr(expected_fit, "blmm.adaptive.diagnostics") <- NULL
+  expect_equal(callback_fit, expected_fit)
   expect_equal(serial$estimate[, 2L, 1L], serial$estimate[, 1L, 1L] + shift,
                tolerance = 1e-6)
   for (field in c("std.error", "df", "random.eff"))
