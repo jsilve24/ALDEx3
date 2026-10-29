@@ -89,7 +89,7 @@ below.}
 correction. See \code{p.adjust} for all available methods.}
 
 \item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
-\code{"lm"}, \code{"t.satterthwaite"} for \code{"blmm"}, and native \code{"t"} inference for
+\code{"lm"}, \code{"t.satterthwaite.adaptive"} for \code{"blmm"}, and native \code{"t"} inference for
 \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or \code{"t.HC3"};
 for \code{blmm}, choose \code{"t.satterthwaite"}, \code{"t.satterthwaite.adaptive"},
 or \code{"t.residual"}; for \code{lme4} and
@@ -165,11 +165,13 @@ For \code{method = "lm"}, \code{"t"} uses ordinary residual
 variance, \code{"t.HC0"} uses the White sandwich covariance, and
 \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
 \code{"t.satterthwaite"} uses the shared-anchor approximation and
-\code{"t.residual"} uses residual degrees of freedom. Draws that fail
+deprecated \code{"t.residual"} uses residual degrees of freedom. It warns
+once per call; its behavior is retained with no scheduled removal version.
+Draws that fail
 BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
 inference. This also applies when \code{test = "t.residual"}: draws that
 pass the checks use residual df, but refitted draws use Satterthwaite df.
-The opt-in \code{"t.satterthwaite.adaptive"} centers each response draw
+The default \code{"t.satterthwaite.adaptive"} centers each response draw
 in the fixed-effect design, restores its coefficient shifts, and uses
 up to eight safeguarded covariance updates in bounded Cholesky
 coordinates with refreshed curvature. Validated zero and partial
@@ -178,7 +180,7 @@ refit. Stationarity, curvature and inference-stability checks govern
 acceptance; unsupported or unresolved draws are refitted exactly. These
 checks are numerical heuristics, not error bounds or a
 guarantee of statistical calibration. Adaptive fitting can cost more
-than shared-anchor fitting and does not change the default.
+than shared-anchor fitting, which remains available explicitly.
 The \code{lme4}
 engine uses per-draw lmerTest Satterthwaite inference internally;
 \code{nlme} uses its native denominator df. Their public selector is

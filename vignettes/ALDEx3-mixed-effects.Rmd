@@ -32,9 +32,9 @@ inference fails the checks, only that draw is refitted. ALDEx3 reports these
 refits in a warning. Refitting takes extra time, so the speedup depends partly
 on how often it is needed.
 
-## Inference defaults introduced in 1.5.0
+## Inference defaults
 
-BLMM now uses shared-anchor Satterthwaite inference by default. Each coefficient
+Since 1.7.0, BLMM uses adaptive Satterthwaite inference by default. Each coefficient
 or requested contrast gets its own degrees of freedom, allowing approximately
 for uncertainty in estimated variance components. A treatment assigned once per
 mouse, for example, has fewer independent units than the observation count
@@ -45,7 +45,7 @@ Choose the fitting engine with `method` and the inference convention with `test`
 | `method` | Default when `test` is omitted | Other supported `test` values |
 |:--|:--|:--|
 | `"lm"` | `"t.HC3"` | `"t"`, `"t.HC0"` |
-| `"blmm"` | `"t.satterthwaite"` | `"t.satterthwaite.adaptive"`, `"t.residual"` |
+| `"blmm"` | `"t.satterthwaite.adaptive"` | `"t.satterthwaite"`, `"t.residual"` (deprecated) |
 | `"lme4"` | `"t"` (native `lmerTest` Satterthwaite) | None |
 | `"nlme"` | `"t"` (native `nlme` inference) | None |
 
@@ -53,12 +53,15 @@ Names are case-sensitive. The BLMM selectors cannot be used with another
 engine. `lme4` still fits each draw fully and uses Satterthwaite inference
 internally. Fully optimized fitting does not make finite-sample inference exact.
 
-Consider the experimental opt-in adaptive selector when there are few
-biological groups but many cells per group, particularly when standard errors
-and degrees of freedom are important to the analysis. It performs more local
-checks and may require exact rescues, so its additional cost depends on the
-model, data and available computational resources. First-order agreement with
-`lmerTest` at a covariance boundary does not establish null calibration.
+Adaptive inference refines each draw's covariance fit and calculates local
+Satterthwaite inference, retaining exact rescue when validation fails. Explicit
+`test = "t.satterthwaite"` retains the shared-anchor approximation used by default
+in versions 1.5.0–1.6.2. It can use less time and memory. Existing calls that omit
+`test` may now return different estimates, SEs, df and probabilities.
+`test = "t.residual"` is deprecated and warns once per call; it retains its
+behavior for legacy analyses, with no scheduled removal version. First-order
+agreement with `lmerTest` at a covariance boundary does not establish null
+calibration.
 
 The new `contrasts` argument specifies linear hypotheses during fitting. It
 does **not** change R's factor-coding contrasts or the regression design.
@@ -117,10 +120,13 @@ fit <- aldex(
 )
 ```
 
-Omitting `test` selects `"t.satterthwaite"`. To reproduce the previous convention,
-use `test = "t.residual"`. With that option, accepted approximate draws use
+Omitting `test` selects `"t.satterthwaite.adaptive"`. To retain the shared-anchor
+behavior of versions 1.5.0–1.6.2, use `test = "t.satterthwaite"`. The older
+`test = "t.residual"` convention is deprecated and emits a warning once per
+call. It is retained for legacy analyses: accepted approximate draws use
 residual degrees of freedom (df), while draws refitted with `lmerTest` use its
-Satterthwaite inference.
+Satterthwaite inference. Reproducing a historical analysis also requires its
+inputs, package environment and anchor batches.
 
 ```{r residual-example, eval=FALSE}
 fit_residual <- aldex(
@@ -130,9 +136,10 @@ fit_residual <- aldex(
 )
 ```
 
-### Optional adaptive refinement
+### Adaptive refinement
 
-Use `test = "t.satterthwaite.adaptive"` with `method = "blmm"` to refine each
+The default, also selectable explicitly as `test = "t.satterthwaite.adaptive"`
+with `method = "blmm"`, refines each
 draw's covariance fit before calculating local Satterthwaite inference:
 
 ```{r adaptive-example, eval=FALSE}
@@ -151,7 +158,7 @@ model. It does not replace mixed-model fitting with ordinary least squares.
 
 Adaptive fitting uses bounded
 natural relative Cholesky entries, with nonnegative diagonals and free
-off-diagonal entries. The default shared-anchor path retains its existing
+off-diagonal entries. The explicit shared-anchor path retains its existing
 parameterization. If the complete covariance factor is exactly zero at a
 stationary solution with validated observed curvature and feasible objective
 checks, a cached QR calculation gives the fitted coefficients, standard errors,
@@ -193,8 +200,8 @@ iteration budget trigger the existing exact rescue.
 These numerical checks are heuristics, not bounds on disagreement with an
 independent fit or guarantees of statistical calibration. Boundary fits may
 still require rescue, and replacement-fit warnings remain visible. Adaptive
-fitting can improve local inference at additional computational cost; the
-shared-anchor default remains unchanged. Streaming still determines anchor
+fitting can improve local inference at additional computational cost. Explicit
+shared-anchor inference remains available. Streaming still determines anchor
 blocks, so changing stream size is not an exactly equivalent optimization.
 
 ## Reading the results
@@ -275,7 +282,31 @@ provide joint adjustment for their combined discovery lists. The selected
 adjustment method's assumptions still apply; grouping is not a new FDR
 guarantee for the Monte Carlo aggregated results.
 
-## Why the default changed
+## Why adaptive is the default in 1.7.0
+
+Targeted matched comparisons on supplied expression responses, retained IBDMDB
+responses and synthetic controls support adaptive refinement's agreement with
+full fits. In a ten-worker expression block with 20 genes and 211 draws, two
+runs took 9.2/14.7 seconds for adaptive versus 9.8/18.7 for shared-anchor and
+430/454 for full `lme4`. Adaptive rescued 57 of 4,220 draws versus 138 for
+shared-anchor. Observed aggregate memory was about 7.7–7.9 GiB for adaptive
+and 5.9–6.2 GiB for shared-anchor. These are targeted block measurements,
+not general speed guarantees or estimates of a full production analysis.
+
+A limited null assessment used 600 independent synthetic datasets on one real
+covariate design. Adaptive and full `lmerTest` had identical primary and
+family-level rejection decisions. At weak random-effect variance both rejected
+14/200 primary nulls (7%, two-sided 95% interval 3.9–11.5%). This did not clear
+the development screen's absolute calibration criterion; it does not establish
+inflation or favor the older approximation. The maintainer chose adaptive for
+its numerical agreement and bounded computational cost, while retaining this
+unresolved calibration limitation. Neither these comparisons nor full fitting
+establish general false-positive control across supported study designs.
+
+The selectors' numerical rules and rescue checks are unchanged by promotion.
+The development inputs and detailed reports are not distributed in this package.
+
+## Why shared-anchor replaced residual df in 1.5.0
 
 The target comparison is agreement with fully fitted `lmerTest` on identical
 response draws, especially after ALDEx aggregation. In an eight-group example

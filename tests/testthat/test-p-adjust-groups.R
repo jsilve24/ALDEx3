@@ -237,7 +237,12 @@ test_that("aldex.p.adjust reconstructs stored mixed-model coefficient and contra
   )
   for (specification in specifications) {
     set.seed(940 + match(specification$method, c("lme4", "nlme", "blmm")))
-    fit <- do.call(aldex, c(common, specification))
+    if (identical(specification$test, "t.residual")) {
+      expect_warning(fit <- do.call(aldex, c(common, specification)),
+                     "t[.]residual.*deprecated")
+    } else {
+      fit <- do.call(aldex, c(common, specification))
+    }
     reconstructed <- aldex.p.adjust(fit)
     expect_equal(reconstructed$p.val, fit$p.val, tolerance=1e-12,
                  info=paste(specification$method, specification$test))

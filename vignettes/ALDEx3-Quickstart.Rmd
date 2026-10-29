@@ -104,8 +104,9 @@ ALDEx3 implements the published [SR-MEM method](https://link.springer.com/articl
 engines and the approximate `blmm` engine. The quickstart no longer walks
 through those models inline. See the dedicated mixed-effects vignette
 `vignettes/ALDEx3-mixed-effects.Rmd` for a runnable age-by-genotype contrast
-example, the shared-anchor Satterthwaite default, and the evidence and
-limitations behind the BLMM inference change in 1.5.0.
+example, adaptive Satterthwaite inference (the default since 1.7.0), explicit
+shared-anchor inference and deprecated residual df. The vignette describes
+the evidence, computational tradeoffs and limitations of these choices.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 

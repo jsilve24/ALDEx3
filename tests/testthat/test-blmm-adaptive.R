@@ -98,7 +98,7 @@ test_that("adaptive partial rescues are batched and exact failures are not retri
   expect_identical(exact_calls, 1L)
 })
 
-test_that("adaptive selector routes through streaming and leaves the default intact", {
+test_that("adaptive default routes through streaming on both backends", {
   z <- inference_fixture(S = 4L, noise = .002)
   N <- nrow(z$Y)
   saved <- aperm(z$logW, c(2, 1, 3))
@@ -118,12 +118,26 @@ test_that("adaptive selector routes through streaming and leaves the default int
                   contrasts = C, streamsize = N * 8 * 2 / 100000,
                   return.pars = c("estimate", "std.error", "df", "p.val", "p.val.adj"))
   }
-  expect_equal(run(), run("t.satterthwaite"))
+  for (backend in c("dense", "sparse")) {
+    default <- run(backend = backend)
+    expect_identical(default$test, "t.satterthwaite.adaptive")
+    expect_equal(default, run("t.satterthwaite.adaptive", backend))
+  }
   a <- run("t.satterthwaite.adaptive")
   expect_identical(a$test, "t.satterthwaite.adaptive")
   expect_true(a$streaming)
   expect_equal(cursor, 4L)
   expect_equal(a, run("t.satterthwaite.adaptive", "sparse"), tolerance = 1e-4)
+  deprecations <- character()
+  residual <- withCallingHandlers(run("t.residual"), warning = function(w) {
+    if (grepl("t.residual.*deprecated", conditionMessage(w))) {
+      deprecations <<- c(deprecations, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  })
+  expect_length(deprecations, 1L)
+  expect_true(residual$streaming)
+  expect_identical(residual$test, "t.residual")
   expect_error(ALDEx3::aldex(matrix(1, 1, N), ~ x, z$data,
                             method = "lm", test = "t.satterthwaite.adaptive"), "not supported")
 })

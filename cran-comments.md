@@ -2,9 +2,12 @@
 
 This candidate updates CRAN version 1.4.0. NEWS records contrasts, selectable
 mixed-model inference, sparse computation, grouped adjustment and refit/plot
-fixes, together with the new bounded adaptive option. Shared-anchor
-Satterthwaite remains the maintained BLMM default; adaptive remains experimental
-and opt-in. No new df method or df clipping was introduced.
+fixes, together with bounded adaptive inference. BLMM now defaults to
+the adaptive selector. Explicit
+`t.satterthwaite` retains shared-anchor behavior. `t.residual` is deprecated:
+it warns once per call but retains its fitting and inference behavior, with
+no scheduled removal version. No df formula, clipping or rescue-rule change
+was introduced by promotion.
 
 ## Local environment and exact archive
 
@@ -15,16 +18,18 @@ and opt-in. No new df method or df clipping was introduced.
   flags. The package Makevars specifies only C++17.
 - HTML Tidy 5.8.0 and V8 8.2.1 were provided from temporary check locations.
   These are validation tools, not package dependencies.
-- Archive: `ALDEx3_1.7.0.tar.gz` (290,957 bytes).
-- SHA256: `57bc30be119832b184888859648ceb2660ca69b7762904ff151857bf5ec77143`.
+- Archive: `ALDEx3_1.7.0.tar.gz` (294,260 bytes).
+- SHA256: `a700bfd6b5c237d55effb7c33e2f074d22a0e1d6224224dd16026b812bd90aba`.
+- Pre-promotion archive/logs are retained in
+  `release/1.7.0-pre-adaptive-default-20261028/`.
 - Archive inspection found no private investigation inputs, diagnostics,
   working libraries or compiled object files.
 
 ## Check results
 
-`R CMD check --as-cran`: **OK**, zero errors, warnings and notes.
-
-Tests reported 1,431 passing expectations, zero failures, warnings and skips.
+Final promoted-default `R CMD check --as-cran`: **OK**, zero errors, warnings
+and notes. Tests reported 1,438 passing expectations with zero failures,
+warnings or skips.
 Examples including donttest, both vignette rebuilds, and PDF/HTML manuals passed.
 The source archive and corresponding logs/checksums are preserved locally in
 `release/`; earlier 1.6.2 artifacts were preserved before replacing current notes.
@@ -32,8 +37,9 @@ The ordinary installed user package was not overwritten.
 
 ## Numerical validation and default decision
 
-All candidate R function bodies and native source were verified against the
-frozen, previously tested numerical implementation. Matched real-input engine
+All numerical solver function bodies and native source were verified against
+the frozen, previously tested implementation. The public API change only
+selects adaptive when `test` is omitted and warns for explicit residual mode. Matched real-input engine
 comparisons use identical response arrays and full intended anchor blocks.
 The independent null assessment uses explicitly synthetic counts on a retained
 covariate design: 600 independent datasets, three variance regimes and 32 draws.
@@ -42,9 +48,14 @@ It is a limited calibration screen rather than universal validation.
 Adaptive and full lmerTest agreed on the primary and family-level rejection
 decisions in every paired dataset. The weak-variance primary rejection count
 was 14/200 for both (7%; two-sided 95% interval 3.88–11.47%). Its uncertainty
-did not clear the prespecified default-promotion criterion. Consequently the
-default is unchanged. This does not establish that the older approximation is
-statistically safer. Boundary matching is not described as proof of calibration.
+did not clear the original absolute default-promotion screen. The initial
+candidate retained the default. On 2026-10-29 the maintainer explicitly revised
+the release judgment and authorized adaptive as default based on its paired
+agreement with full fits and bounded computational cost. The absolute screen
+remains failed; no study, outcome, cutoff or numerical method was changed to
+make it pass. This result does not establish inflation or that the older
+approximation is statistically safer. Calibration remains limited and unresolved;
+boundary matching is not described as proof of calibration.
 Convergence warnings from two full-reference calls and approximation-rescue
 notifications were retained in the diagnostic evidence; they are not failures
 or warnings from the package check above.
@@ -58,13 +69,13 @@ packages. This does not cover unlisted downstream projects.
 
 ## Outstanding external checks — not submission-ready yet
 
-- Windows/R-devel: not run. Automatic approval review blocked uploading this
-  source archive to Win-builder and its maintainer-email notification. Explicit
-  authorization was requested; no upload occurred.
-- macOS and atlas/Linux R-devel: not run. The current candidate is not on
-  GitHub, and no verified R-hub upload identity is available locally. The live
-  manifest confirms the requested `atlas` platform is R-devel; a check against
-  older published main would not validate this archive.
-- No GitHub push, release tag, CRAN submission or public R-hub upload was made.
+Windows, macOS and atlas/Linux R-devel remain pending for this exact candidate.
+The maintainer prefers established local checks plus the existing R-hub GitHub
+workflow (`.github/workflows/rhub.yaml`). The candidate branch must be published
+before that workflow can check it; no push or dispatch has been authorized here.
+Verify the requested R versions and actual job logs, not just platform names.
 
-Update these notes with actual platform results before tagging or submission.
+No Win-builder upload occurred. That optional route was dropped in favor of
+the existing workflow after the maintainer's clarification on 2026-10-29.
+No GitHub push, release tag, CRAN submission or public check upload was made.
+Update these notes with actual workflow results before tagging or submission.

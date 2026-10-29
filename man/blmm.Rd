@@ -27,8 +27,10 @@ per-feature draw loop remains serial.}
 \item{inference}{Internal inference selector; \code{adaptive} uses per-draw
 centering and up to eight safeguarded covariance iterations with refreshed
 curvature and forward validation. The default is shared-anchor
-Satterthwaite inference. Public \code{aldex(test = "t.residual")} maps
-explicitly to residual degrees of freedom.}
+Satterthwaite inference internally. Public \code{aldex()} defaults to
+adaptive inference; its deprecated \code{test = "t.residual"} maps
+to residual degrees of freedom for accepted draws, while refitted draws
+use Satterthwaite degrees of freedom.}
 
 \item{contrasts}{optional validated contrast matrix with one row per
 contrast and columns matching the fixed-effect design.}
@@ -46,13 +48,15 @@ Fast approximate mixed-effects engine for ALDEx3.
 Internal engine called by \code{\link{aldex}} when \code{method = "blmm"}.
 
 Uses an \code{lme4}-style profiled Gaussian LMM formulation. One batched
-anchor REML problem is fit per feature across all S MC draws; draw-specific
-local covariance updates are obtained via a single Newton step; exact
-conditional GLS fixed-effect solves are then run per draw. Fixed effects and
+anchor REML problem is fit per feature across all S MC draws. The
+shared-anchor and residual modes use one Newton covariance step per draw, while
+adaptive mode refines each draw within its iteration budget. Conditional GLS
+fixed-effect solves are run per draw. Fixed effects and
 standard errors are exact conditional on the updated covariance parameters;
 this does not imply exact finite-sample inference. Shared-anchor
-Satterthwaite inference is the default; residual degrees of freedom remain
-available internally for reproducible scripts. The anchor degrees of freedom
+Satterthwaite inference is the internal default; public \code{aldex()} uses
+adaptive inference by default. Residual degrees of freedom remain available
+internally for reproducible scripts. The anchor degrees of freedom
 are
 \deqn{2 / \{2/d + (u_s+b_c)^T H^{-1}(u_s+b_c)\}.}
 Here \code{d = N - p}, with N observations and fitted fixed-effect dimension

@@ -2,7 +2,7 @@
 
 ## Adaptive mixed-model inference
 
-- The experimental opt-in `test = "t.satterthwaite.adaptive"` now refines
+- BLMM now defaults to `test = "t.satterthwaite.adaptive"`, which refines
   covariance parameters in bounded Cholesky coordinates. Validated zero and
   partial covariance boundaries can use local inference without an exact refit;
   unsupported or unresolved cases continue to use `lmerTest` rescue.
@@ -13,8 +13,13 @@
   solution, residual sum of squares and covariance factor. Computational cost
   remains dependent on the model, data, and frequency of exact rescue.
 - Boundary inference uses a first-order approximation. Agreement with
-  `lmerTest` at a boundary does not establish null calibration. The shared-anchor
-  Satterthwaite selector remains the default.
+  `lmerTest` at a boundary does not establish null calibration.
+- Explicit `test = "t.satterthwaite"` retains shared-anchor fitting and inference
+  for reproducibility and a less expensive approximation. Existing BLMM calls
+  that omit `test` can return different estimates, SEs, df and probabilities.
+- `test = "t.residual"` is deprecated. It remains available for legacy analyses
+  with unchanged fitting/inference behavior and warns once per `aldex()` call.
+  Use the adaptive default for new analyses; no removal version is scheduled.
 
 # ALDEx3 1.6.2
 

@@ -77,7 +77,7 @@
 ##' @param p.adjust.method (default BH) The method for multiple hypothesis test
 ##'   correction. See `p.adjust` for all available methods.
 ##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
-##'   `"lm"`, `"t.satterthwaite"` for `"blmm"`, and native `"t"` inference for
+##'   `"lm"`, `"t.satterthwaite.adaptive"` for `"blmm"`, and native `"t"` inference for
 ##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
 ##'   for `blmm`, choose `"t.satterthwaite"`, `"t.satterthwaite.adaptive"`,
 ##'   or `"t.residual"`; for `lme4` and
@@ -86,11 +86,13 @@
 ##'   variance, \code{"t.HC0"} uses the White sandwich covariance, and
 ##'   \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
 ##'   \code{"t.satterthwaite"} uses the shared-anchor approximation and
-##'   \code{"t.residual"} uses residual degrees of freedom. Draws that fail
+##'   deprecated \code{"t.residual"} uses residual degrees of freedom. It warns
+##'   once per call; its behavior is retained with no scheduled removal version.
+##'   Draws that fail
 ##'   BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
 ##'   inference. This also applies when \code{test = "t.residual"}: draws that
 ##'   pass the checks use residual df, but refitted draws use Satterthwaite df.
-##'   The opt-in \code{"t.satterthwaite.adaptive"} centers each response draw
+##'   The default \code{"t.satterthwaite.adaptive"} centers each response draw
 ##'   in the fixed-effect design, restores its coefficient shifts, and uses
 ##'   up to eight safeguarded covariance updates in bounded Cholesky
 ##'   coordinates with refreshed curvature. Validated zero and partial
@@ -99,7 +101,7 @@
 ##'   acceptance; unsupported or unresolved draws are refitted exactly. These
 ##'   checks are numerical heuristics, not error bounds or a
 ##'   guarantee of statistical calibration. Adaptive fitting can cost more
-##'   than shared-anchor fitting and does not change the default.
+##'   than shared-anchor fitting, which remains available explicitly.
 ##'   The \code{lme4}
 ##'   engine uses per-draw lmerTest Satterthwaite inference internally;
 ##'   \code{nlme} uses its native denominator df. Their public selector is
@@ -204,7 +206,7 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
     stop("method must be one of 'lm', 'blmm', 'lme4', or 'nlme'")
   }
   if (is.null(test)) {
-    test <- switch(method, lm="t.HC3", blmm="t.satterthwaite",
+    test <- switch(method, lm="t.HC3", blmm="t.satterthwaite.adaptive",
                    lme4="t", nlme="t")
   }
   if (!is.character(test) || length(test) != 1L || is.na(test)) {
@@ -216,6 +218,11 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   if (!(test %in% allowed.tests)) {
     stop("test '", test, "' is not supported for method '", method,
          "'; allowed selectors are: ", paste(allowed.tests, collapse=", "))
+  }
+  if (method == "blmm" && test == "t.residual") {
+    warning("test = 't.residual' is deprecated; use 't.satterthwaite.adaptive' ",
+            "or explicitly choose 't.satterthwaite' for shared-anchor inference",
+            call.=FALSE)
   }
   scale.args <- list(...)
   scale.args <- .upgrade_deprecated_scale_args(scale, scale.args)

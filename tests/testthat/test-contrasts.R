@@ -40,7 +40,7 @@ test_that("aldex resolves method selectors before sampling", {
   expect_error(aldex(Y, X, method="blmm", test="t.HC3", scale=clr.sm), "allowed selectors")
 })
 
-test_that("BLMM default selector uses anchor degrees of freedom", {
+test_that("explicit BLMM anchor and residual selectors preserve their inference", {
   data <- data.frame(g=factor(rep(1:8, each=5)),
                      x=rep(rep(c(-.5, .5), each=5), 4))
   N <- nrow(data)
@@ -54,21 +54,14 @@ test_that("BLMM default selector uses anchor degrees of freedom", {
   C <- matrix(c(0, 1), 1, dimnames=list("x", c("(Intercept)", "x")))
   testthat::local_mocked_bindings(aldex.sampler=function(...) list(logW=saved),
                                   .package="ALDEx3")
-  anchor <- aldex(Y, ~x + (1 | g), data, method="blmm", n.cores=1,
+  anchor <- aldex(Y, ~x + (1 | g), data, method="blmm", test="t.satterthwaite", n.cores=1,
                   nsample=1, scale=scale, contrasts=C,
                   return.pars=c("estimate", "df", "p.val"))
-  anchor.explicit <- aldex(Y, ~x + (1 | g), data, method="blmm",
-                           test="t.satterthwaite", n.cores=1,
-                           nsample=1, scale=scale, contrasts=C,
-                           return.pars=c("estimate", "df", "p.val"))
-  residual <- aldex(Y, ~x + (1 | g), data, method="blmm", test="t.residual",
+  expect_warning(residual <- aldex(Y, ~x + (1 | g), data, method="blmm", test="t.residual",
                     n.cores=1, nsample=1, scale=scale, contrasts=C,
-                    return.pars=c("estimate", "df", "p.val"))
+                    return.pars=c("estimate", "df", "p.val")), "deprecated")
   expect_identical(anchor$test, "t.satterthwaite")
-  expect_identical(anchor.explicit$test, "t.satterthwaite")
   expect_identical(residual$test, "t.residual")
-  expect_equal(anchor$estimate, anchor.explicit$estimate)
-  expect_equal(anchor$df, anchor.explicit$df)
   expect_true(all(vapply(c("estimate", "df", "p.val"),
                          function(field) !is.null(anchor[[field]]) &&
                            all(is.finite(anchor[[field]])), logical(1))))
@@ -81,6 +74,8 @@ test_that("BLMM default selector uses anchor degrees of freedom", {
     reTrms=parsed$reTrms, formula=~x + (1 | g), data=data,
     inference="anchor", contrasts=C)
   expect_false(feature$fallback)
+  expect_equal(unname(anchor$estimate[, 1, , drop=FALSE]), unname(feature$fit$estimate))
+  expect_equal(unname(anchor$df[, 1, , drop=FALSE]), unname(feature$fit$df))
 })
 
 test_that("all method defaults and explicit native selectors are recorded", {
@@ -484,7 +479,7 @@ test_that("streamed BLMM is checked against its explicit chunks, not one anchor"
     list(logW=blocks[[calls]])
   }, .package="ALDEx3")
   streamed <- aldex(matrix(10, D, N), ~x + (1 | g), data, method="blmm",
-                    n.cores=1, nsample=3, scale=matrix(0, N, 3),
+                    test="t.satterthwaite", n.cores=1, nsample=3, scale=matrix(0, N, 3),
                     streamsize=.013, contrasts=C,
                     return.pars=c("estimate", "std.error", "df", "p.val", "p.val.adj"))
   chunks <- lapply(blocks, function(logW) {
