@@ -505,7 +505,10 @@ test_that("all-zero covariance matches exact inference on both backends", {
     C <- matrix(c(1, -0.5), 1, dimnames = list("combination", c("(Intercept)", "x")))
     reference <- suppressMessages(lmerTest::lmer(
       update(z$formula, y ~ .), data = transform(z$data, y = z$Y[, 1])))
-    expect_true(all(lme4::getME(reference, "theta") == 0), info = design)
+    # theta is a Cholesky factor relative to the residual SD. Use lme4's
+    # default boundary tolerance: optimizer roundoff need not be exactly zero.
+    # For these fixtures, this bounds relative variances by at most 2e-10.
+    expect_true(all(abs(lme4::getME(reference, "theta")) < 1e-5), info = design)
     exact <- ALDEx3:::blmm_exact_feature(z$Y, z$formula, z$data, contrasts = C)
     for (backend in c("dense", "sparse")) {
       options(ALDEx3.blmm.backend = backend)
