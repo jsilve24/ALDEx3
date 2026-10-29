@@ -1,28 +1,43 @@
 # ALDEx3 1.7.0
 
-## Adaptive mixed-model inference
+## Changes to mixed-model results
 
-- BLMM now defaults to `test = "t.satterthwaite.adaptive"`, which refines
-  covariance parameters in bounded Cholesky coordinates. Validated zero and
-  partial covariance boundaries can use local inference without an exact refit;
-  unsupported or unresolved cases continue to use `lmerTest` rescue.
-- Boundary acceptance checks stationarity, curvature, feasible objective
-  probes and inference stability. A valid probe that shows unsettled inference
-  can continue refinement within the existing iteration budget.
-- Adaptive inference reuses the compiled kernel's conditional fixed-effect
-  solution, residual sum of squares and covariance factor. Computational cost
-  remains dependent on the model, data, and frequency of exact rescue.
-- Boundary inference uses a first-order approximation. Agreement with
-  `lmerTest` at a boundary does not establish null calibration.
-- Explicit `test = "t.satterthwaite"` retains shared-anchor fitting and inference
-  for reproducibility and a less expensive approximation. Existing BLMM calls
-  that omit `test` can return different estimates, SEs, df and probabilities.
-- `test = "t.residual"` is deprecated. It remains available for legacy analyses
-  with unchanged fitting/inference behavior and warns once per `aldex()` call.
-  Use the adaptive default for new analyses; no removal version is scheduled.
-- Reorganize the mixed-model vignette around the adaptive workflow, with a
-  runnable contrast analysis, local-inference derivation, warnings and resource
-  guidance. Alternative selectors, engines and historical comparisons appear last.
+- `method = "blmm"` now defaults to `test = "t.satterthwaite.adaptive"`. Each
+  Monte Carlo draw refines its own covariance fit from a shared starting
+  point (at most eight steps) and gets its own Satterthwaite degrees of
+  freedom. Draws that fail the numerical checks are refit with `lmerTest`.
+  **BLMM calls that omit `test` will give different estimates, standard
+  errors, df and p-values than in earlier versions.**
+- To reproduce the BLMM default of 1.5.0–1.6.2, pass `test = "t.satterthwaite"`
+  (the shared-anchor approximation; cheaper than the adaptive default).
+- `test = "t.residual"`, which reproduces the BLMM default of 1.4.0 and
+  earlier, is deprecated and warns once per `aldex()` call.
+- Refits are less frequent when a variance component is near zero: the
+  adaptive start no longer forces whole-feature refits, and covariance
+  parameters that are numerically zero are set to the boundary.
+- Boundary fits get local inference without a refit when every covariance
+  parameter is zero, or when whole columns of the covariance Cholesky factor
+  are zero. Other boundary cases are refit with `lmerTest`.
+- The mixed-effects vignette (`vignette("ALDEx3-mixed-effects")`) has been
+  rewritten as a shorter user guide with a technical appendix.
+
+## Upgrading from 1.4.0 (last CRAN release)
+
+Versions 1.5.0–1.6.2 were not released on CRAN. Compared with 1.4.0:
+
+- The BLMM default changed as described above.
+- New `contrasts` argument to `aldex()` for testing linear combinations of
+  fixed effects; results are stored in `fit$contrasts`.
+- `summary()` includes requested contrasts with the coefficients and adds a
+  `type` column to tell them apart. Use `component = "coefficients"` or
+  `"contrasts"` to select one.
+- New `aldex.p.adjust()` adjusts several coefficients or contrasts as one
+  multiple-testing family without refitting.
+- `df` (per-draw degrees of freedom) is now included in `return.pars` by
+  default.
+- `test = NULL` resolves per engine, and incompatible `method`/`test`
+  combinations now fail before sampling.
+- `Matrix (>= 1.6-0)` is now a runtime dependency.
 
 # ALDEx3 1.6.2
 
@@ -88,26 +103,6 @@
   rationale once per BLMM invocation or streaming chunk. Memory estimates
   include worker and automatic-differentiation (AD) costs; they are not a hard
   process-memory limit.
-- On the saved IBDMDB pilot (three taxa, eight draws each, 1,297 observations),
-  automatic BLMM took a median 0.100 s versus 1.203 s for fresh `lmerTest`
-  fitting, about 12 times faster. Three repetitions used varied engine order;
-  each BLMM run refitted the same single draw for one taxon with `lmerTest`
-  (one of the 24 fits).
-  The IBD reference emitted convergence/Hessian warnings for Bacteroides; this
-  timing comparison does not establish that those reference fits are reliable.
-- On the saved large simulation pilot (one taxon, 300 draws, 6,000 observations,
-  300 random-intercept groups), median automatic BLMM time was 0.680 s versus
-  17.790 s for one fresh `lmerTest` run, about 26 times faster. Forced dense and
-  sparse BLMM medians were 1.949 s and 0.601 s. Both benefit from cached matrix
-  products; sparse factorization provides additional savings on this design.
-- These Linux measurements use identical saved draws, one worker, and one BLAS
-  thread; fitting includes time spent refitting rejected draws with `lmerTest` and excludes input
-  loading, design parsing, and compilation. BLMM medians use three repetitions.
-  They are pilot results, not universal speed guarantees or a completed IBDMDB
-  reanalysis. High factor fill-in and frequent full `lmerTest` refits can reduce
-  the benefit. Tests of numerical results and derivatives support equivalence to
-  the existing method. They do not establish how well its approximate p-values
-  are calibrated across different study designs.
 - Correct the `streamsize` documentation to describe the existing heuristic of
   ten times the raw array size (the default corresponds to about 800 MB of response
   draws). Streaming behavior is unchanged; its threshold is not a hard memory
@@ -146,10 +141,7 @@
   to zero, and contrast rows need not be independent.
 - Rewrote the mixed-effects vignette around a runnable age-by-genotype example,
   interpretation, scale assumptions, a compact evidence summary, and a separate
-  mathematical explanation. The maintainer's adoption decision supersedes the
-  experimental-status recommendations in the preserved investigation reports.
-  The full publication benchmark remains incomplete; no completed IBD aggregate
-  validation or universal accuracy, calibration, or acceleration claim is made.
+  mathematical explanation.
 - Preserve singleton array axes when combining streaming results, and preserve
   the coefficient dimension in intercept-only mixed-model fits.
 
