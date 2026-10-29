@@ -56,40 +56,41 @@ if (!require("devtools", quietly = TRUE)) {
 devtools::install_github("jsilve24/ALDEx3")
 ```
 
-## Preparing the examples
-
-The examples below share one preprocessing step. Very sparse features are pooled into a single `other` row. This keeps each sample's total count, which the Dirichlet–multinomial model uses. The 75% threshold is a pragmatic default for speed and stability; adjust it to your sequencing depth and scientific question.
-
-``` r
-library(ALDEx3)
-
-# Pool features that are zero in more than 75% of samples into an 'other' row.
-filter_sparse <- function(Y, max.zero = 0.75) {
-  sparse <- rowMeans(Y == 0) > max.zero
-  rbind(Y[!sparse, , drop = FALSE], other = colSums(Y[sparse, , drop = FALSE]))
-}
-
-# Crohn's disease vs. control data
-data(gut_crohns_data)
-Y <- filter_sparse(gut_crohns_data$counts)
-X <- gut_crohns_data$metadata   # samples x metadata values
-X$Health.status <- factor(X$Health.status, levels = c("Control", "CD"))
-```
-
 ## Quickstart (Inference with Relative Abundances)
 
 The first example uses `clr.sm` with `gamma=0` to reproduce the fixed CLR assumption used by ALDEx2. This is a compatibility example, not a general recommendation. When no external scale measurements or biological prior information are available, `tss.sm` with `gamma=0.5` is a reasonable starting point. Results should still be checked across scientifically plausible scale models.
 
 ``` r
+library(ALDEx3)
 set.seed(42)
-# Relative abundances, CD vs. Control
+# Load Crohn's Disease vs. Control Data
+data(gut_crohns_data)
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# This is a pragmatic default for speed and stability in very sparse tables;
+# adjust based on your depth and scientific question. Always keep an aggregated
+# ‘other’ category so each sample’s total count is preserved under the count
+# model.
+Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
+# Metadata Samples x Metadata Values
+X <- gut_crohns_data$metadata
+X$Health.status <- factor(X$Health.status,
+                           levels=c("Control", "CD"))
+
+# Relative Abundances CD vs. Control
 aldex.gut.raw <- aldex(Y,
                        ~Health.status,
                        X,
                        nsample=2000,
                        scale=clr.sm,   # CLR assumption
-                       gamma=0)        # gamma=0: no scale uncertainty
-head(summary(aldex.gut.raw))
+                       gamma=0)        # Gamma=0 no scale uncertainty
+aldex.gut.summary <- summary(aldex.gut.raw)
+head(aldex.gut.summary)
 ```
 
 ## Mixed-Effects Models: BLMM, `lme4`, and `nlme`
@@ -97,22 +98,31 @@ head(summary(aldex.gut.raw))
 ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models). For a mixed-effects analysis, use `method = "blmm"` with its default adaptive Satterthwaite inference:
 
 ``` r
+library(ALDEx3)
 set.seed(42)
+# Load Data
 data(oral_mouthwash_data)
-Y.oral <- filter_sparse(oral_mouthwash_data$counts)
-X.oral <- oral_mouthwash_data$metadata
 
-# Fixed effects: interaction between treatment and discrete time point
-# Random effects: random intercept for each study participant
-aldex.mouthwash.raw <- aldex(Y.oral,
+# 75% Sparsity Filter
+Y <- oral_mouthwash_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+X <- oral_mouthwash_data$metadata
+
+# Fixed Effects: Interaction between Treatment and Discrete Time Point
+# Random Effects: Random intercept for each study participant
+aldex.mouthwash.raw <- aldex(Y,
                              ~treat*timec+(1|participant_id),
-                             X.oral,
-                             method="blmm",   # approximate mixed-effects engine
-                             n.cores=4,       # parallelize across features
+                             X,
+                             method="blmm",   # Approximate mixed-effects engine
+                             n.cores=4,        # Parallelize across features
                              nsample=250,
                              scale=clr.sm,    # CLR assumption
-                             gamma=0)         # gamma=0: no scale uncertainty
-head(summary(aldex.mouthwash.raw))
+                             gamma=0)         # Gamma=0 no scale uncertainty
+aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
+head(aldex.mouthwash.summary)
 ```
 
 For each feature, BLMM fits one shared covariance starting point (the **anchor**) across all draws, then refines each draw from there and computes Satterthwaite degrees of freedom per coefficient. Draws that fail its numerical checks are refit with `lmerTest`, and a warning reports how many.
@@ -131,23 +141,42 @@ To test linear combinations of fixed effects, pass a named contrast matrix via `
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 
-The first analysis compared relative abundances in Crohn's disease (CD) and control samples. The following examples show how different kinds of scale information change that analysis. They reuse `Y` and `X` from [Preparing the examples](#preparing-the-examples).
+The first analysis compared relative abundances in Crohn's disease (CD) and control samples. The following examples show how different kinds of scale information change that analysis.
 
 ### Prior Knowledge About a Group Difference
 
 Suppose previous studies suggest that total microbial load is about fourfold lower in CD than in controls. A fourfold reduction is -2 on the log2 scale. We are not certain that the reduction is exactly fourfold, so we place an SD of 0.5 around it. Because `Health.status` uses Control as its reference level, the second model coefficient is the CD-minus-Control difference. We therefore set `c.mu = c(0, -2)` and `c.sd = c(0, 0.5)`: the first entries leave the intercept fixed, and the second entries describe the expected CD shift and its uncertainty.
 
 ``` r
+library(ALDEx3)
 set.seed(42)
+# Load Data
+data(gut_crohns_data)
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
+Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
+# Metadata Samples x Metadata Values
+X <- gut_crohns_data$metadata
+X$Health.status <- factor(X$Health.status,
+                           levels=c("Control", "CD"))
 # Prior for c(intercept, CD-minus-Control)
-aldex.gut.coef <- aldex(Y,
-                        ~Health.status,
-                        X,
-                        nsample=2000,
-                        scale=coefficient.sm,
-                        c.mu=c(0, -2),
-                        c.sd=c(0, 0.5))
-head(summary(aldex.gut.coef))
+aldex.gut.abs.raw <- aldex(Y,
+                       ~Health.status,
+                       X,
+                       nsample=2000,
+                       scale=coefficient.sm,
+                       c.mu=c(0, -2),
+                       c.sd=c(0, 0.5))
+
+aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
+head(aldex.gut.abs.summary)
 ```
 
 ### External Measurements for Individual Samples
@@ -155,18 +184,38 @@ head(summary(aldex.gut.coef))
 The Crohn's dataset also contains a flow-cytometry estimate of microbial load for every sample. This is more direct information than a group-level prior, so we use `sample.sm`. The mean scale for each sample is the log2 flow-cytometry measurement. We use `s.sd = 0.5` to allow measurement error around each value. These errors are independent across samples; if the measurement errors were correlated, we would supply their covariance matrix through `s.cov` instead.
 
 ``` r
+library(ALDEx3)
 set.seed(42)
-# Log2 scale measurements, with SD 0.5 for technical error
+# Load Data
+data(gut_crohns_data)
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
+Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
+# Metadata Samples x Metadata Values
+X <- gut_crohns_data$metadata
+X$Health.status <- factor(X$Health.status,
+                           levels=c("Control", "CD"))
+# Log2 Scale Measurements
 s.mu <- log2(X$Average.cell.count..per.gram.of.frozen.feces.)
+# Account For Potential Technical Error in Measurements
 s.sd <- rep(0.5, length(s.mu))
-aldex.gut.flow <- aldex(Y,
-                        ~Health.status,
-                        X,
-                        nsample=2000,
-                        scale=sample.sm,   # sample scale model
-                        s.mu=s.mu,
-                        s.sd=s.sd)
-head(summary(aldex.gut.flow))
+# Estimate Absolute Abundance Changes
+aldex.gut.abs.raw <- aldex(Y,
+                       ~Health.status,
+                       X,
+                       nsample=2000,
+                       scale=sample.sm,         # sample scale model
+                       s.mu=s.mu,
+                       s.sd=s.sd)
+aldex.gut.abs.summary <- summary(aldex.gut.abs.raw)
+head(aldex.gut.abs.summary)
 ```
 
 ## CLR with Scale Uncertainty
@@ -174,29 +223,47 @@ head(summary(aldex.gut.flow))
 When no external measurement or group-level prior is available, CLR can supply a starting point rather than a fixed answer. The `clr.sm` model centers the analysis on the CLR-implied sample scales. Here, `gamma=1` allows each scale-model coefficient to vary around that center with an SD of one log2 unit. This uncertainty can reduce false positives caused by treating CLR normalization as exact, as demonstrated for this dataset by [Nixon et al.](https://link.springer.com/article/10.1186/s13059-025-03609-3).
 
 ``` r
+library(ALDEx3)
 set.seed(42)
+# Load Data
+data(gut_crohns_data)
+
+# NOTE: We recommend a ~75% sparsity filter of counts!
+# Genera w/ sparsity > 75% amalgamated into 'other' row
+# Keep other counts for multinomial-Dirichlet accuracy
+Y <- gut_crohns_data$counts
+keep_names <- row.names(Y[((rowSums(Y==0))/ncol(Y))<=0.75,])
+other <- colSums(Y[((rowSums(Y==0))/ncol(Y))>0.75,])
+Y <- Y[keep_names,]
+Y <- rbind(Y, other)
+
+# Metadata Samples x Metadata Values
+X <- gut_crohns_data$metadata
+X$Health.status <- factor(X$Health.status,
+                           levels=c("Control", "CD"))
 # Allow uncertainty around the CLR-implied scale differences
-aldex.gut.clr1 <- aldex(Y,
-                        ~Health.status,
-                        X,
-                        nsample=2000,
-                        scale=clr.sm,  # CLR assumption
-                        gamma=1)       # gamma=1: SD of 1 around CLR assumption
-head(summary(aldex.gut.clr1))
+aldex.gut.raw <- aldex(Y,
+                       ~Health.status,
+                       X,
+                       nsample=2000,
+                       scale=clr.sm,  # CLR assumption
+                       gamma=1)       # Gamma=1: SD around CLR assumption
+aldex.gut.summary <- summary(aldex.gut.raw)
+head(aldex.gut.summary)
 ```
 
 ## Model Outputs
 
-`summary()` of an `aldex` fit is usually the most useful output. For the flow-cytometry (`sample.sm`) example above, `head(summary(aldex.gut.flow))` gives:
+`summary()` of an `aldex` fit is usually the most useful output. For the flow-cytometry (`sample.sm`) example above, it looks like:
 
 ```
         parameter          entity   estimate std.error    p.val.adj
-1 Health.statusCD    Agathobacter -1.8036338  1.704191 3.585030e-01
-2 Health.statusCD     Akkermansia -6.1972896  1.171886 1.341654e-05
-3 Health.statusCD       Alistipes -6.1010462  1.306783 4.760054e-05
-4 Health.statusCD Anaerobutyricum -3.2366868  1.403536 4.306112e-02
-5 Health.statusCD    Anaerostipes -6.2686881  1.171873 8.778170e-06
-6 Health.statusCD     Bacteroides  0.1276413  1.499862 9.689928e-01
+1 Health.statusCD    Agathobacter -1.7951101  1.702948 3.665291e-01
+2 Health.statusCD     Akkermansia -6.1827824  1.168809 9.867942e-06
+3 Health.statusCD       Alistipes -6.1123999  1.307723 4.871389e-05
+4 Health.statusCD Anaerobutyricum -3.2153272  1.397338 4.276630e-02
+5 Health.statusCD    Anaerostipes -6.2694178  1.177097 9.477381e-06
+6 Health.statusCD     Bacteroides  0.1164949  1.503918 9.687594e-01
 ```
 
 Exact values vary slightly with the random draws. The data.frame has one row per model coefficient and feature:

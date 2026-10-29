@@ -18,8 +18,9 @@
 - Boundary fits get local inference without a refit when every covariance
   parameter is zero, or when whole columns of the covariance Cholesky factor
   are zero. Other boundary cases are refit with `lmerTest`.
-- The mixed-effects vignette (`vignette("ALDEx3-mixed-effects")`) has been
-  rewritten as a shorter user guide with a technical appendix.
+- The mixed-effects vignette (`vignette("ALDEx3-mixed-effects")`) now
+  describes the adaptive method and its Satterthwaite df, with the
+  `oral_mouthwash_data` example, contrasts and measured runtimes.
 
 ## Upgrading from 1.4.0 (last CRAN release)
 
