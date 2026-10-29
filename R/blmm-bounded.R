@@ -1,7 +1,8 @@
 # Natural relative Cholesky coordinates: lower bounds apply to the diagonal
 # entries. Search curvature may be damped; returned/inference curvature is raw.
 blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
-                                  validate_interior = NULL) {
+                                  validate_interior = NULL,
+                                  validate_boundary = NULL) {
   location <- as.numeric(start)
   lower <- as.numeric(lower)
   if (length(lower) != length(location) || !length(location) ||
@@ -43,7 +44,22 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
       projected_gradient[active & gradient >= 0] <- 0
       eigenH <- eigen(H, symmetric = TRUE)
       escape <- NULL
-      if (any(active) && max(abs(projected_gradient)) <= 1e-6) {
+      boundary_stationary <- max(abs(projected_gradient)) <= 1e-6
+      if (any(active) && !boundary_stationary && !is.null(validate_boundary) &&
+          all(gradient[active] >= 0)) {
+        # Check the undamped information in the free tangent coordinates.
+        # A negative active gradient must not qualify through this scaled test.
+        free <- which(!active)
+        boundary_stationary <- if (!length(free)) TRUE else tryCatch({
+          information_free <- blmm_validate_H(H[free, free, drop = FALSE])
+          factor_free <- chol(information_free)
+          scaled_gradient <- forwardsolve(t(factor_free), gradient[free])
+          correction_free <- backsolve(factor_free, scaled_gradient)
+          sqrt(sum(scaled_gradient^2)) <= 1e-4 &&
+            max(abs(correction_free)) <= 1e-3
+        }, error = function(e) FALSE)
+      }
+      if (any(active) && boundary_stationary) {
         checks <- checks + 1L
         # Check inward coordinates and both signs of raw curvature directions.
         # Projection is needed for mixed free/bounded covariance blocks.
@@ -68,7 +84,11 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
           # direction). Conservatively leave such ambiguous cases to rescue.
           if (min(eigenH$values) < -1e-8 * max(1, max(abs(eigenH$values))))
             return(finish("unresolved", "boundary negative curvature"))
-          return(finish("boundary", "stationary boundary"))
+          validation <- if (is.null(validate_boundary)) TRUE else
+            validate_boundary(location, H, value, gradient)
+          ok <- if (is.list(validation)) isTRUE(validation$ok) else isTRUE(validation)
+          if (ok) return(finish("boundary", "stationary boundary",
+            if (is.list(validation)) validation$inference else NULL))
         }
       }
       information <- tryCatch(blmm_validate_H(H), error = identity)

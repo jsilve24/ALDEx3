@@ -159,6 +159,20 @@ These calculations use the covariance selected by fitting; they do not assume
 zero variance before fitting or establish false-positive calibration after
 selecting a boundary from the data.
 
+During draw refinement at a boundary, stationarity can also be assessed in the
+free covariance coordinates using the same raw-curvature-scaled correction
+criteria as interior refinement. This route requires nonnegative gradients at
+active bounds, feasible objective probes and validated boundary inference.
+Anchor convergence retains its previous rule. Boundary inference is checked
+before returning a point, so a valid probe showing unsettled inference can
+lead to further refinement within the existing iteration budget.
+
+Adaptive inference reuses the compiled kernel's conditional fixed-effect
+solution, residual sum of squares and covariance factor, avoiding a duplicate
+factorization in R. This retains the mixed-model calculation and its existing
+df and acceptance checks. Updating this experimental source requires a clean
+native rebuild and a fresh R session.
+
 Starting from the shared anchor, adaptive fitting permits at most eight
 safeguarded covariance iterations. It refreshes curvature and checks both
 stationarity and the predicted inference change at one further Newton
@@ -166,8 +180,9 @@ correction. The correction must have maximum absolute size at most `1e-3` and
 curvature-scaled gradient norm at most `1e-4`; the forward probe must change
 log SE and log df by at most `1e-3`, lower-tail probability by at most `1e-5`,
 and the test statistic by at most `1e-4`. The probe is a diagnostic, not an
-additional accepted iteration. Unsuccessful checks, invalid curvature, stalled
-updates, and an exhausted iteration budget trigger the existing exact rescue.
+additional accepted iteration. Valid probes showing unsettled inference permit
+further refinement; invalid curvature, unresolved stalls and an exhausted
+iteration budget trigger the existing exact rescue.
 
 These numerical checks are heuristics, not bounds on disagreement with an
 independent fit or guarantees of statistical calibration. Boundary fits may

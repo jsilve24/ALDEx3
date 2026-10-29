@@ -12,6 +12,15 @@
 - Keep exact rescue for unsupported, unresolved and invalid-curvature fits.
   This option remains experimental; numerical equivalence does not establish
   statistical calibration at a data-selected variance boundary.
+- Reuse the compiled kernel's conditional fixed-effect solution, residual sum
+  of squares and covariance factor during adaptive inference, avoiding duplicate
+  factorization in R. Objective derivatives, df formulas and acceptance checks
+  are unchanged. Rebuild the compiled package and restart R when updating.
+- Permit scaled stationarity checks on free covariance coordinates during
+  adaptive draw refinement at a boundary, followed by the existing feasibility,
+  curvature and forward-inference checks. Validate boundary inference before
+  stopping; unsettled inference can refine further within the eight-step budget.
+  Anchor convergence and the shared-anchor default are unchanged.
 
 # ALDEx3 1.6.2
 

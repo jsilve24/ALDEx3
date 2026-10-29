@@ -24,31 +24,6 @@ blmm_valid_design_context <- function(context, X, contrasts, reTrms) {
     identical(context$cnms, reTrms$cnms)
 }
 
-# Evaluate the shared covariance solve in natural Cholesky coordinates without
-# passing theta through the log-coordinate conversion used by default BLMM.
-blmm_adaptive_common_pieces <- function(theta, basis, lower) {
-  if (length(theta) != length(lower) || any(!is.finite(theta)) || any(theta < lower))
-    stop("blmm: proposed natural covariance parameters are non-finite or infeasible")
-  T <- basis$Lambdat
-  T@x <- theta[basis$Lind]
-  A <- Matrix::forceSymmetric(T %*% basis$G %*% Matrix::t(T) +
-                              Matrix::Diagonal(nrow(T)))
-  if (basis$backend == "sparse") {
-    factor <- Matrix::update(basis$symbolic, A)
-    ldL2 <- as.numeric(Matrix::determinant(factor, logarithm = TRUE, sqrt = FALSE)$modulus)
-  } else {
-    factor <- chol(as.matrix(A))
-    ldL2 <- 2 * sum(log(diag(factor)))
-  }
-  BX <- as.matrix(T %*% basis$ZX)
-  solved_X <- blmm_factor_solve(factor, BX, basis$backend)
-  M <- basis$XX - crossprod(BX, solved_X)
-  LX <- t(chol((M + t(M)) / 2))
-  dimnames(LX) <- NULL
-  list(factor = factor, backend = basis$backend, BX = BX, LX = LX,
-       T = T, design = basis, ldL2 = ldL2)
-}
-
 # Raw-response exact rescue is deliberately outside the approximation handler.
 # An exact fitting error propagates without retrying accepted draws.
 blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
@@ -102,6 +77,7 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
       gradient_calls <- inference_calls <- 0L
     decrement <- movement <- stability <- tail_change <- statistic_change <-
       probe_objective_change <- NA_real_
+    stale_report_error <- NULL
     attempted <- tryCatch({
       response_s <- list(ZY = initial$response$ZY[, s, drop = FALSE],
         XY = initial$response$XY[, s, drop = FALSE], yy = initial$response$yy[s])
@@ -152,6 +128,19 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
             identical(indices, last_inference$indices)) return(last_inference$inference)
         inference_calls <<- inference_calls + 1L
         report <- objective$report(location)
+        if (!is.matrix(report$LX) || !identical(dim(report$LX), c(p, p)) ||
+            any(!is.finite(report$LX)) || length(report$PWRSS_s) != 1L ||
+            !is.finite(report$PWRSS_s) || report$PWRSS_s <= 0)
+          stop("blmm: invalid native inference report")
+        if (is.null(report$beta)) {
+          error <- simpleError("blmm: native report lacks beta; reinstall the package to update its compiled kernel")
+          class(error) <- c("blmm_missing_report_beta", class(error))
+          stale_report_error <<- error
+          stop(error)
+        }
+        if (!is.matrix(report$beta) || !identical(dim(report$beta), c(p, 1L)) ||
+            any(!is.finite(report$beta)))
+          stop("blmm: invalid native inference report")
         sensitivity <- blmm_scores_batch(objective, location, report$PWRSS_s,
           N, p, contrasts = vectors, inference = TRUE)
         dropped <- setdiff(seq_along(location), indices)
@@ -161,17 +150,17 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
         dfs <- blmm_anchor_df(sensitivity$u[indices, 1, drop = FALSE],
           sensitivity$b[indices, , drop = FALSE],
           information$chol, N - p)
-        pieces <- blmm_adaptive_common_pieces(location, basis, lower)
-        fixed <- blmm_fixed_effects_draw(pieces, X, residual_s, response_s)
-        estimates <- as.vector(crossprod(vectors, fixed$beta + initial$offsets[, s]))
-        standard_errors <- sqrt(fixed$sigma2 * colSums(forwardsolve(pieces$LX, vectors)^2))
+        beta <- as.vector(report$beta[, 1])
+        sigma2 <- as.numeric(report$PWRSS_s) / (N - p)
+        estimates <- as.vector(crossprod(vectors, beta + initial$offsets[, s]))
+        standard_errors <- sqrt(sigma2 * colSums(forwardsolve(report$LX, vectors)^2))
         values <- list(estimate = estimates, std.error = standard_errors, df = dfs,
           p.lower = stats::pt(estimates / standard_errors, dfs))
         if (any(!is.finite(unlist(values))) || any(standard_errors <= 0))
           stop("nonfinite inference")
         values$p.upper <- stats::pt(estimates / standard_errors, dfs, lower.tail = FALSE)
         random <- blmm_random_effect_vector(location,
-          fixed$sigma2, reTrms, context$random)
+          sigma2, reTrms, context$random)
         if (any(!is.finite(random))) stop("nonfinite random-effect inference")
         inference <- list(values = values, random = random)
         last_inference <<- list(location = location, H = information$H,
@@ -202,73 +191,77 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, is_log, phi_init,
         list(ok = stability <= 1e-3 && tail_change <= 1e-5 && statistic_change <= 1e-4,
           inference = current)
       }
+      validate_boundary <- function(location, H, value, gradient) {
+        if (all(location == 0)) {
+          blmm_validate_H(H)
+          sigma2 <- sum(residual_s^2) / (N - p)
+          R <- qr.R(context$qr)
+          unpivoted <- matrix(0, p, ncol(vectors))
+          unpivoted[seq_len(p), ] <- vectors[context$qr$pivot, , drop = FALSE]
+          standard_errors <- sqrt(sigma2 * colSums(forwardsolve(t(R), unpivoted)^2))
+          estimates <- as.vector(crossprod(vectors, initial$offsets[, s]))
+          dfs <- rep(N - p, length(estimates))
+          values <- list(estimate = estimates, std.error = standard_errors, df = dfs,
+            p.lower = stats::pt(estimates / standard_errors, dfs),
+            p.upper = stats::pt(estimates / standard_errors, dfs, lower.tail = FALSE))
+          if (any(!is.finite(unlist(values))) || any(standard_errors <= 0))
+            stop("nonfinite boundary inference")
+          current <- list(values = values, random = blmm_random_effect_vector(
+            location, sigma2, reTrms, context$random))
+          return(list(ok = TRUE, inference = current))
+        }
+        checks <<- checks + 1L
+        information <- partial_information_at(location)
+        gradient <- gradient_at(location)[information$indices]
+        correction <- as.vector(backsolve(information$chol,
+          forwardsolve(t(information$chol), gradient)))
+        decrement <<- sqrt(sum(forwardsolve(t(information$chol), gradient)^2))
+        movement <<- max(abs(correction))
+        if (decrement > 1e-4 || movement > 1e-3)
+          stop("partial boundary stationarity validation failed")
+        current <- inference_at(location, information)
+        probe_location <- location
+        probe_location[information$indices] <- location[information$indices] - correction
+        if (any(probe_location[information$indices] <= lower[information$indices] &
+                is.finite(lower[information$indices])))
+          stop("infeasible partial boundary inference probe")
+        probe_objective_change <<- value_at(probe_location) - value
+        if (!is.finite(probe_objective_change) || probe_objective_change >
+            sqrt(.Machine$double.eps) * (1 + abs(value)))
+          stop("partial boundary probe objective validation failed")
+        probe_information <- partial_information_at(probe_location)
+        if (!identical(probe_information$indices, information$indices))
+          stop("partial boundary probe changed zero columns")
+        probe <- inference_at(probe_location, probe_information)
+        stability <<- max(abs(log(probe$values$std.error / current$values$std.error)),
+          abs(log(probe$values$df / current$values$df)))
+        tail_change <<- max(abs(probe$values$p.lower - current$values$p.lower))
+        statistic_change <<- max(abs(probe$values$estimate / probe$values$std.error -
+          current$values$estimate / current$values$std.error))
+        list(ok = stability <= 1e-3 && tail_change <= 1e-5 && statistic_change <= 1e-4,
+          inference = current)
+      }
       optimized <- blmm_bounded_optimize(
         list(fn = value_at, gr = gradient_at, he = raw_hessian_at),
         initial$anchor$par, lower, max_steps = 8L,
-        validate_interior = validate_interior)
+        validate_interior = validate_interior, validate_boundary = validate_boundary)
       iterations <- optimized$iterations
       evaluations <- optimized$diagnostics$evaluations
       diagnostics$status[s] <- optimized$status
-      if (optimized$status == "boundary" && all(optimized$par == 0)) {
-        blmm_validate_H(optimized$H)
-        sigma2 <- sum(residual_s^2) / (N - p)
-        R <- qr.R(context$qr)
-        unpivoted <- matrix(0, p, ncol(vectors))
-        unpivoted[seq_len(p), ] <- vectors[context$qr$pivot, , drop = FALSE]
-        standard_errors <- sqrt(sigma2 * colSums(forwardsolve(t(R), unpivoted)^2))
-        estimates <- as.vector(crossprod(vectors, initial$offsets[, s]))
-        dfs <- rep(N - p, length(estimates))
-        values <- list(estimate = estimates, std.error = standard_errors, df = dfs,
-          p.lower = stats::pt(estimates / standard_errors, dfs),
-          p.upper = stats::pt(estimates / standard_errors, dfs, lower.tail = FALSE))
-        if (any(!is.finite(unlist(values))) || any(standard_errors <= 0))
-          stop("nonfinite boundary inference")
-        current <- list(values = values, random = blmm_random_effect_vector(
-          optimized$par, sigma2, reTrms, context$random))
-        diagnostics$status[s] <- "boundary_zero"
-        diagnostics$reason[s] <- "stationary zero covariance"
-      } else {
-        if (optimized$status == "boundary") {
-          checks <- checks + 1L
-          location <- optimized$par
-          information <- partial_information_at(location)
-          gradient <- gradient_at(location)[information$indices]
-          correction <- as.vector(backsolve(information$chol,
-            forwardsolve(t(information$chol), gradient)))
-          decrement <- sqrt(sum(forwardsolve(t(information$chol), gradient)^2))
-          movement <- max(abs(correction))
-          if (decrement > 1e-4 || movement > 1e-3)
-            stop("partial boundary stationarity validation failed")
-          current <- inference_at(location, information)
-          probe_location <- location
-          probe_location[information$indices] <- location[information$indices] - correction
-          if (any(probe_location[information$indices] <= lower[information$indices] &
-                  is.finite(lower[information$indices])))
-            stop("infeasible partial boundary inference probe")
-          probe_objective_change <- value_at(probe_location) - optimized$objective
-          if (!is.finite(probe_objective_change) || probe_objective_change >
-              sqrt(.Machine$double.eps) * (1 + abs(optimized$objective)))
-            stop("partial boundary probe objective validation failed")
-          probe_information <- partial_information_at(probe_location)
-          if (!identical(probe_information$indices, information$indices))
-            stop("partial boundary probe changed zero columns")
-          probe <- inference_at(probe_location, probe_information)
-          stability <- max(abs(log(probe$values$std.error / current$values$std.error)),
-            abs(log(probe$values$df / current$values$df)))
-          tail_change <- max(abs(probe$values$p.lower - current$values$p.lower))
-          statistic_change <- max(abs(probe$values$estimate / probe$values$std.error -
-            current$values$estimate / current$values$std.error))
-          if (stability > 1e-3 || tail_change > 1e-5 || statistic_change > 1e-4)
-            stop("partial boundary forward inference validation failed")
+      if (optimized$status == "boundary") {
+        if (all(optimized$par == 0)) {
+          diagnostics$status[s] <- "boundary_zero"
+          diagnostics$reason[s] <- "stationary zero covariance"
+        } else {
           diagnostics$status[s] <- "boundary_partial"
           diagnostics$reason[s] <- "stationary partial zero covariance"
-        } else {
-          if (optimized$status != "interior") stop(optimized$reason)
-          current <- optimized$inference
         }
-      }
+      } else if (optimized$status != "interior") stop(optimized$reason)
+      current <- optimized$inference
+      if (is.null(current)) stop("blmm: optimizer returned no validated inference")
       current
     }, error = identity)
+    if (!is.null(stale_report_error)) stop(stale_report_error)
     for (field in c("iterations", "evaluations", "hessians", "checks", "objective_calls",
                     "gradient_calls", "inference_calls", "decrement", "movement", "stability",
                     "tail_change", "statistic_change", "probe_objective_change"))

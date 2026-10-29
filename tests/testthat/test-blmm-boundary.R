@@ -44,8 +44,11 @@ test_that("only established full zero boundaries bypass rescue", {
       par <- rep(0, length(start))
       if (scenario == "partial") par[2] <- 0.1
       if (scenario == "tiny") par[1] <- 1e-12
+      validation <- if (scenario == "unresolved") NULL else
+        list(...)$validate_boundary(par, obj$he(par), obj$fn(par), obj$gr(par))
       list(status = if (scenario == "unresolved") "unresolved" else "boundary",
            reason = "injected", par = par, iterations = 0L,
+           inference = validation$inference,
            diagnostics = list(evaluations = 0L))
     }, .package = "ALDEx3")
     fit <- feature_fit(z, inference = "adaptive")
@@ -61,8 +64,11 @@ test_that("zero boundary with invalid raw curvature is rescued", {
     testthat::local_mocked_bindings(blmm_bounded_optimize = function(obj, start, lower, ...) {
       calls <<- calls + 1L
       if (calls == 1L) return(original(obj, start, lower, ...))
+      par <- rep(0, length(start))
+      H <- diag(curvature, length(start))
+      validation <- list(...)$validate_boundary(par, H, obj$fn(par), obj$gr(par))
       list(status = "boundary", reason = "injected", par = rep(0, length(start)),
-           H = diag(curvature, length(start)), iterations = 0L,
+           H = H, iterations = 0L, inference = validation$inference,
            diagnostics = list(evaluations = 0L))
     }, .package = "ALDEx3")
     fit <- feature_fit(z, inference = "adaptive")

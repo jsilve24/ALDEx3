@@ -246,6 +246,10 @@ Type objective_function<Type>::operator()() {
   const Type nll = Type(0.5) *
     (ldL2 + ldRX2 + np * mean_log_PWRSS);
 
+  if (isDouble<Type>::value) {
+    matrix<Type> beta = solve_upper_from_lower(LX, Cbeta);
+    REPORT(beta);
+  }
   REPORT(PWRSS_s);
   REPORT(LX);
   REPORT(ldL2);
