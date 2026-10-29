@@ -53,6 +53,13 @@ Names are case-sensitive. The BLMM selectors cannot be used with another
 engine. `lme4` still fits each draw fully and uses Satterthwaite inference
 internally. Fully optimized fitting does not make finite-sample inference exact.
 
+Consider the experimental opt-in adaptive selector when there are few
+biological groups but many cells per group, particularly when standard errors
+and degrees of freedom are important to the analysis. It performs more local
+checks and may require exact rescues, so its additional cost depends on the
+model, data and available computational resources. First-order agreement with
+`lmerTest` at a covariance boundary does not establish null calibration.
+
 The new `contrasts` argument specifies linear hypotheses during fitting. It
 does **not** change R's factor-coding contrasts or the regression design.
 
@@ -142,7 +149,7 @@ numerical reparameterization of the same model, including its random effects.
 It applies to arbitrary response draws and does not require a particular scale
 model. It does not replace mixed-model fitting with ordinary least squares.
 
-On the experimental boundary-handling branch, adaptive fitting uses bounded
+Adaptive fitting uses bounded
 natural relative Cholesky entries, with nonnegative diagonals and free
 off-diagonal entries. The default shared-anchor path retains its existing
 parameterization. If the complete covariance factor is exactly zero at a
@@ -170,8 +177,7 @@ lead to further refinement within the existing iteration budget.
 Adaptive inference reuses the compiled kernel's conditional fixed-effect
 solution, residual sum of squares and covariance factor, avoiding a duplicate
 factorization in R. This retains the mixed-model calculation and its existing
-df and acceptance checks. Updating this experimental source requires a clean
-native rebuild and a fresh R session.
+df and acceptance checks.
 
 Starting from the shared anchor, adaptive fitting permits at most eight
 safeguarded covariance iterations. It refreshes curvature and checks both

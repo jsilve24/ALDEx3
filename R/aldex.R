@@ -92,10 +92,12 @@
 ##'   pass the checks use residual df, but refitted draws use Satterthwaite df.
 ##'   The opt-in \code{"t.satterthwaite.adaptive"} centers each response draw
 ##'   in the fixed-effect design, restores its coefficient shifts, and uses
-##'   up to eight safeguarded covariance updates with refreshed curvature.
-##'   Local Satterthwaite inference is accepted only after stationarity and
-##'   forward inference-stability checks; otherwise the draw is refitted
-##'   exactly. These checks are numerical heuristics, not error bounds or a
+##'   up to eight safeguarded covariance updates in bounded Cholesky
+##'   coordinates with refreshed curvature. Validated zero and partial
+##'   covariance boundaries can use local Satterthwaite inference without a
+##'   refit. Stationarity, curvature and inference-stability checks govern
+##'   acceptance; unsupported or unresolved draws are refitted exactly. These
+##'   checks are numerical heuristics, not error bounds or a
 ##'   guarantee of statistical calibration. Adaptive fitting can cost more
 ##'   than shared-anchor fitting and does not change the default.
 ##'   The \code{lme4}
