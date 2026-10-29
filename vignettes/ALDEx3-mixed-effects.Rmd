@@ -1,11 +1,12 @@
 ---
-title: "Mixed models and linear contrasts in ALDEx3"
+title: "Adaptive BLMM and linear contrasts in ALDEx3"
 output:
   rmarkdown::html_vignette:
+    toc: true
     mathjax: null
     pandoc_args: ["--mathml"]
 vignette: >
-  %\VignetteIndexEntry{Mixed models and linear contrasts in ALDEx3}
+  %\VignetteIndexEntry{Adaptive BLMM and linear contrasts in ALDEx3}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -15,64 +16,44 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(ALDEx3)
 ```
 
-## What changed in 1.6.0
+## Mixed models with adaptive BLMM
 
-BLMM now reuses matrix calculations and automatically chooses sparse or dense
-computation for the random effects. Existing `aldex()` calls use these
-improvements without an extra argument. The inference method, scale sampling,
-multiple-testing adjustment, and checks on approximate fits are unchanged.
-The performance section below gives timing examples and explains their limits.
+Use `aldex(..., method = "blmm")` to analyze count data with repeated
+observations from animals, participants or other biological groups. A mixed
+model describes both the fixed effects of interest and dependence within
+those groups. Choose a random-effects structure appropriate to the study;
+BLMM fits that structure to each Monte Carlo response draw.
 
-BLMM saves time by sharing part of the fit across Monte Carlo draws. For each
-feature, it estimates covariance parameters jointly across draws, then makes a
-local adjustment for each draw. We call the shared fit the **anchor**. If that
-fit fails, BLMM fits every draw for the feature separately with `lmerTest`,
-which uses `lme4` for model fitting. If only an individual draw's adjustment or
-inference fails the checks, only that draw is refitted. ALDEx3 reports these
-refits in a warning. Refitting takes extra time, so the speedup depends partly
-on how often it is needed.
+A **draw** is one possible log2-abundance response generated from the composition
+and scale models. Fitting every draw independently can be expensive. BLMM
+shares a starting fit of the random-effect variances and correlations across
+the draws of each feature, called the
+**anchor**, then refines each draw separately. The anchor is a computational
+reference, not a biological reference group or a fit to stacked observations.
 
-## Inference defaults
+Since 1.7.0, the default is **adaptive Satterthwaite inference**. Adaptive BLMM
+improves each draw's covariance fit until its numerical checks pass, within a
+budget of eight refinement steps. It calculates a standard error and degrees
+of freedom for each coefficient and requested contrast. Satterthwaite df adjust
+the t reference distribution for uncertainty in the estimated variance
+components. If an approximation
+cannot be validated, BLMM fits the affected draw fully with `lmerTest`.
+The fitted object records the selected method and inference convention.
 
-Since 1.7.0, BLMM uses adaptive Satterthwaite inference by default. Each coefficient
-or requested contrast gets its own degrees of freedom, allowing approximately
-for uncertainty in estimated variance components. A treatment assigned once per
-mouse, for example, has fewer independent units than the observation count
-suggests. P-values can change even when estimates and standard errors barely do.
+This vignette starts with a complete analysis, then explains adaptive fitting,
+its checks, computational settings and statistical limits. Other selectors,
+other engines and historical comparisons are collected at the end.
 
-Choose the fitting engine with `method` and the inference convention with `test`:
-
-| `method` | Default when `test` is omitted | Other supported `test` values |
-|:--|:--|:--|
-| `"lm"` | `"t.HC3"` | `"t"`, `"t.HC0"` |
-| `"blmm"` | `"t.satterthwaite.adaptive"` | `"t.satterthwaite"`, `"t.residual"` (deprecated) |
-| `"lme4"` | `"t"` (native `lmerTest` Satterthwaite) | None |
-| `"nlme"` | `"t"` (native `nlme` inference) | None |
-
-Names are case-sensitive. The BLMM selectors cannot be used with another
-engine. `lme4` still fits each draw fully and uses Satterthwaite inference
-internally. Fully optimized fitting does not make finite-sample inference exact.
-
-Adaptive inference refines each draw's covariance fit and calculates local
-Satterthwaite inference, retaining exact rescue when validation fails. Explicit
-`test = "t.satterthwaite"` retains the shared-anchor approximation used by default
-in versions 1.5.0–1.6.2. It can use less time and memory. Existing calls that omit
-`test` may now return different estimates, SEs, df and probabilities.
-`test = "t.residual"` is deprecated and warns once per call; it retains its
-behavior for legacy analyses, with no scheduled removal version. First-order
-agreement with `lmerTest` at a covariance boundary does not establish null
-calibration.
-
-The new `contrasts` argument specifies linear hypotheses during fitting. It
-does **not** change R's factor-coding contrasts or the regression design.
-
-## A small runnable example
+## A runnable analysis
 
 Suppose each mouse is observed at ages P14 and P56, and genotype is WT or KO.
 We want KO minus WT at each age, and the change in that difference between ages.
 These synthetic counts and supplied scale draws make the example self-contained.
 Known total scale is an illustrative assumption, not a recommendation for
-studies without scale measurements.
+studies without scale measurements. Count rows are features, columns are
+observations, and metadata rows must follow the same observation order.
+The 32 draws keep this example quick; assess Monte Carlo stability when choosing
+the number of draws for an analysis.
 
 ```{r inputs}
 set.seed(1500)
@@ -99,10 +80,18 @@ S <- 32L
 supplied_scale_model <- matrix(log2(colSums(abundance)), ncol(Y), S)
 ```
 
-Build the matrix from the actual coefficient names. Every column is required,
+The formula includes fixed age, genotype and interaction effects, plus a random
+intercept for each mouse. The random intercept accounts for dependence between
+observations from the same mouse. Genotype is assigned at the mouse level;
+repeated observations do not create additional independent mice.
+
+Build the contrast matrix from the actual coefficient names. Every column is required,
 including zeros for the intercept and nuisance terms. Each named row tests
 whether its weighted sum of coefficients is zero. Rows need not sum to zero
-or be linearly independent.
+or be linearly independent. The fixed-effect design itself must have full
+column rank, with more observations than fitted coefficients. Define contrasts
+before fitting; this interface tests individual zero-null hypotheses rather
+than omnibus tests.
 
 ```{r contrasts}
 C <- matrix(0, 3, ncol(X), dimnames = list(
@@ -112,7 +101,12 @@ C["KO-WT at P14", "genotypeKO"] <- 1
 C["KO-WT at P56", c("genotypeKO", "ageP56:genotypeKO")] <- 1
 C["change in KO-WT", "ageP56:genotypeKO"] <- 1
 C
+```
 
+Fit all three comparisons with adaptive BLMM. Omitting `test` selects the
+default, `"t.satterthwaite.adaptive"`:
+
+```{r fit}
 fit <- aldex(
   Y, ~ age * genotype + (1 | mouse),
   data = metadata, method = "blmm", contrasts = C,
@@ -120,89 +114,9 @@ fit <- aldex(
 )
 ```
 
-Omitting `test` selects `"t.satterthwaite.adaptive"`. To retain the shared-anchor
-behavior of versions 1.5.0–1.6.2, use `test = "t.satterthwaite"`. The older
-`test = "t.residual"` convention is deprecated and emits a warning once per
-call. It is retained for legacy analyses: accepted approximate draws use
-residual degrees of freedom (df), while draws refitted with `lmerTest` use its
-Satterthwaite inference. Reproducing a historical analysis also requires its
-inputs, package environment and anchor batches.
-
-```{r residual-example, eval=FALSE}
-fit_residual <- aldex(
-  Y, ~ age * genotype + (1 | mouse),
-  data = metadata, method = "blmm", test = "t.residual", contrasts = C,
-  scale = supplied_scale_model, nsample = S, n.cores = 1
-)
+```{r selected-inference}
+fit$test
 ```
-
-### Adaptive refinement
-
-The default, also selectable explicitly as `test = "t.satterthwaite.adaptive"`
-with `method = "blmm"`, refines each
-draw's covariance fit before calculating local Satterthwaite inference:
-
-```{r adaptive-example, eval=FALSE}
-fit_adaptive <- aldex(
-  Y, ~ age * genotype + (1 | mouse),
-  data = metadata, method = "blmm", test = "t.satterthwaite.adaptive",
-  contrasts = C, scale = supplied_scale_model, nsample = S, n.cores = 1
-)
-```
-
-Each response is centered using a QR decomposition of the fixed-effect design;
-the removed coefficients are restored after mixed-model fitting. This is a
-numerical reparameterization of the same model, including its random effects.
-It applies to arbitrary response draws and does not require a particular scale
-model. It does not replace mixed-model fitting with ordinary least squares.
-
-Adaptive fitting uses bounded
-natural relative Cholesky entries, with nonnegative diagonals and free
-off-diagonal entries. The explicit shared-anchor path retains its existing
-parameterization. If the complete covariance factor is exactly zero at a
-stationary solution with validated observed curvature and feasible objective
-checks, a cached QR calculation gives the fitted coefficients, standard errors,
-and first-order Satterthwaite limit $N-p$. At a partial boundary, complete zero
-Cholesky columns have zero first-order sensitivity and decouple from the other
-covariance coordinates. Their information block can be removed while retaining
-residual-variance uncertainty and Satterthwaite inference for the remaining
-parameters. Acceptance requires validated curvature, decoupling, stationarity
-and a forward-inference check. A zero diagonal with nonzero entries below it
-does not qualify. Unsupported and unresolved fits still receive exact rescue.
-These calculations use the covariance selected by fitting; they do not assume
-zero variance before fitting or establish false-positive calibration after
-selecting a boundary from the data.
-
-During draw refinement at a boundary, stationarity can also be assessed in the
-free covariance coordinates using the same raw-curvature-scaled correction
-criteria as interior refinement. This route requires nonnegative gradients at
-active bounds, feasible objective probes and validated boundary inference.
-Anchor convergence retains its previous rule. Boundary inference is checked
-before returning a point, so a valid probe showing unsettled inference can
-lead to further refinement within the existing iteration budget.
-
-Adaptive inference reuses the compiled kernel's conditional fixed-effect
-solution, residual sum of squares and covariance factor, avoiding a duplicate
-factorization in R. This retains the mixed-model calculation and its existing
-df and acceptance checks.
-
-Starting from the shared anchor, adaptive fitting permits at most eight
-safeguarded covariance iterations. It refreshes curvature and checks both
-stationarity and the predicted inference change at one further Newton
-correction. The correction must have maximum absolute size at most `1e-3` and
-curvature-scaled gradient norm at most `1e-4`; the forward probe must change
-log SE and log df by at most `1e-3`, lower-tail probability by at most `1e-5`,
-and the test statistic by at most `1e-4`. The probe is a diagnostic, not an
-additional accepted iteration. Valid probes showing unsettled inference permit
-further refinement; invalid curvature, unresolved stalls and an exhausted
-iteration budget trigger the existing exact rescue.
-
-These numerical checks are heuristics, not bounds on disagreement with an
-independent fit or guarantees of statistical calibration. Boundary fits may
-still require rescue, and replacement-fit warnings remain visible. Adaptive
-fitting can improve local inference at additional computational cost. Explicit
-shared-anchor inference remains available. Streaming still determines anchor
-blocks, so changing stream size is not an exactly equivalent optimization.
 
 ## Reading the results
 
@@ -214,7 +128,6 @@ explicitly when needed:
 summary(fit)
 summary(fit, component = "coefficients")
 summary(fit, component = "contrasts")
-fit$test
 ```
 
 Positive estimates mean KO exceeds WT for the first two contrasts. For the
@@ -227,7 +140,10 @@ from variation between Monte Carlo draws.
 `estimate`, `std.error`, and `df` components are contrast × feature × draw
 arrays; `p.val` and `p.val.adj` are contrast × feature matrices. Singleton axes
 are retained. `fit$X` and coefficient results retain their original meaning.
-`fit$method` and `fit$test` record the resolved choices.
+`fit$method` and `fit$test` record the resolved choices. Adding a contrast
+keeps the statistical model and sampled responses fixed, but its validation
+can require further refinement or a full refit. Coefficient results can then
+change along with the contrast results.
 
 The same `return.pars` fields control coefficient and contrast results. For
 example, `return.pars = c("p.val", "p.val.adj")` omits stored estimates, SEs, and
@@ -254,7 +170,7 @@ aggregate. Adjustment is not applied just once to averaged p-values.
 `onesided = "lower"` or `"upper"` selects that undoubled directional result.
 
 Adding a contrast does not automatically enlarge another contrast's adjustment
-family. Since 1.6.1, use `aldex.p.adjust()` to pool selected stored contrasts
+family. Use `aldex.p.adjust()` to pool selected stored contrasts
 into one family without refitting:
 
 ```{r grouped-adjustment}
@@ -282,242 +198,268 @@ provide joint adjustment for their combined discovery lists. The selected
 adjustment method's assumptions still apply; grouping is not a new FDR
 guarantee for the Monte Carlo aggregated results.
 
-## Why adaptive is the default in 1.7.0
+## How adaptive fitting works
 
-Targeted matched comparisons on supplied expression responses, retained IBDMDB
-responses and synthetic controls support adaptive refinement's agreement with
-full fits. In a ten-worker expression block with 20 genes and 211 draws, two
-runs took 9.2/14.7 seconds for adaptive versus 9.8/18.7 for shared-anchor and
-430/454 for full `lme4`. Adaptive rescued 57 of 4,220 draws versus 138 for
-shared-anchor. Observed aggregate memory was about 7.7–7.9 GiB for adaptive
-and 5.9–6.2 GiB for shared-anchor. These are targeted block measurements,
-not general speed guarantees or estimates of a full production analysis.
+For each feature and streaming chunk, adaptive BLMM proceeds as follows:
 
-A limited null assessment used 600 independent synthetic datasets on one real
-covariate design. Adaptive and full `lmerTest` had identical primary and
-family-level rejection decisions. At weak random-effect variance both rejected
-14/200 primary nulls (7%, two-sided 95% interval 3.9–11.5%). This did not clear
-the development screen's absolute calibration criterion; it does not establish
-inflation or favor the older approximation. The maintainer chose adaptive for
-its numerical agreement and bounded computational cost, while retaining this
-unresolved calibration limitation. Neither these comparisons nor full fitting
-establish general false-positive control across supported study designs.
+1. **Center the responses.** A QR decomposition of the fixed-effect design
+   removes the part of each response in that design's span. The removed
+   coefficients are saved and restored after mixed-model fitting. This reduces
+   cancellation when fixed effects are large. The random effects remain in
+   the fitted model, with the same covariance estimation and variance partition.
+2. **Fit the anchor.** Estimate covariance parameters using the mean profiled
+   restricted-likelihood objective across the centered draws. This supplies a
+   common starting point. More Monte Carlo draws do not count as more biological
+   observations.
+3. **Refine each draw.** Starting from the anchor, take up to eight safeguarded
+   covariance steps, refreshing derivatives and curvature (the local shape of
+   the fitting objective) as needed. Shorten
+   steps that would worsen the fitting objective. Stop when the remaining
+   correction is small and a forward check indicates that inference has settled.
+4. **Calculate local inference.** Restore the coefficient shifts and calculate
+   mixed-model estimates, SEs and Satterthwaite df at the accepted draw-specific
+   point. Contrasts use the full coefficient covariance, including correlations
+   between coefficients.
+5. **Refit unresolved cases.** If a draw fails validation, fit it fully through
+   `lmerTest`. If an anchor cannot be obtained, refit every draw for that feature.
+   Accepted draws are retained when only some draws need replacement.
 
-The selectors' numerical rules and rescue checks are unchanged by promotion.
-The development inputs and detailed reports are not distributed in this package.
+Centering is a numerical reparameterization of the same mixed model. It works
+for arbitrary response draws and does not require the scale model to depend on
+the fixed-effect design. It does not estimate random-effect variance by fitting
+only the fixed effects. Scale uncertainty across draws and uncertainty within
+a fitted mixed model remain distinct.
 
-## Why shared-anchor replaced residual df in 1.5.0
+The eight-step limit applies to **per-draw refinement**, not to anchor fitting,
+objective evaluations or the replacement fits. The anchor has its own optimizer
+budget. The technical section gives the stopping criteria and first-order df
+calculation.
 
-The target comparison is agreement with fully fitted `lmerTest` on identical
-response draws, especially after ALDEx aggregation. In an eight-group example
-with five observations per group and one draw, residual inference used 38 df;
-the shared-anchor method and the reference used approximately six. Estimates
-and SEs nearly matched, and the draw passed BLMM's checks without refitting.
-This isolates the inference problem from covariance fitting.
+### Zero variances and singular covariance fits
 
-In a focused count-data comparison (three datasets, 48 features in total), the
-maximum adjusted-p error at 256 draws was 0.227 for residual inference versus
-0.00145 for the shared-anchor method. That method identified the same discoveries
-as the reference at 0.05, without refitting any draws. This was a focused
-agreement study, not broad FDR validation.
+A covariance estimate can lie on a **boundary**, where the random-effect
+covariance loses rank. A variance may be zero, or a correlation may reach
+$-1$ or $1$ even when the marginal variances are positive. Adaptive BLMM uses
+bounded covariance-factor parameters so
+it can represent such fits directly. It checks feasible nearby points and the
+local curvature before accepting their inference.
 
-The completed oral application used 59 taxa, 12 coefficients, and 2,000 draws:
+At a validated fit with no remaining random-effect covariance, the fitted
+coefficients and SEs reduce to their ordinary least-squares values, and the
+first-order Satterthwaite calculation gives $N-p$ df. At a supported partial
+boundary, inference retains uncertainty in the nonzero covariance components.
+Near-zero estimates are not automatically rounded to zero; unsupported or
+unresolved boundary cases still receive full refits.
 
-| Difference from fully fitted reference | Residual | Anchor |
-|:--|--:|--:|
-| Median absolute adjusted-p error | 0.002673 | 0.001082 |
-| 95th percentile | 0.007501 | 0.002425 |
-| Maximum | 0.016516 | 0.004531 |
-| Discovery gains / losses at 0.05 | 0 / 0 | 0 / 0 |
+These calculations describe inference at the fitted covariance. They do not
+prove calibration after selecting a zero variance from data. Positive df below
+one are not inherently invalid and are not clipped.
 
-Only seven of the 118,000 combinations of feature and draw required refitting
-with `lmerTest`. Almost all fits therefore used BLMM's approximation.
+## Understanding refit warnings
 
-There were regressions too. In the one completed six-participant dataset from
-the publication's simulation generator, the shared-anchor method improved
-median and 95th-percentile adjusted-p errors and reduced disease-discovery disagreements from six to two.
-The maximum error worsened from 0.216 to 0.368. The largest regression was far
-from 0.05, but two discrepancies near the threshold remained. One dataset cannot
-establish general FDR calibration. The full publication benchmark was not
-completed; there is no completed IBD aggregate validation.
+A warning that draws "fell back to exact lme4" means BLMM rejected their
+approximations and replaced them using `lmerTest`, which fits models through
+`lme4`. The warning reports counts and representative reasons. A rejected
+approximation is not itself a failed replacement fit. Refit cost depends on
+both the number and difficulty of the affected fits.
 
-The maintainer adopted the shared-anchor method on this evidence. These numbers
-summarize maintainer development studies; the underlying benchmark inputs and
-reports are not distributed with this release. The mathematical derivation
-and implementation tests are included in the source package.
+Replacement estimates, SEs, df and directional probabilities are used together.
+Warnings from the replacement optimizer remain visible. If replacement contrast
+inference is numerically invalid, valid fitted quantities are retained with
+`NA` contrast p-values and a warning; missing probabilities propagate through
+Monte Carlo aggregation. A fitting error stops the analysis. A failed draw
+refit is not retried by refitting the whole feature.
 
-## Limitations and choosing an engine
+For example, a fit may be rescued when its objective cannot be distinguished
+from a boundary fit within numerical precision. This is a conservative numerical
+decision, even if the coefficient estimates already appear stable.
 
-BLMM approximates both covariance optimization and inference. Exact conditional
-GLS estimates and SEs do not imply exact finite-sample p-values. More Monte Carlo
-draws can stabilize final outputs without eliminating approximation error.
-Large variation between draws, near-boundary variance components, and few
-independent groups can challenge the approximation.
+Small df and significant p-values alone do not trigger refitting. The numerical
+checks target convergence, feasible covariance fits, usable curvature and
+stable inference; they do not guarantee a specified error bound on p-values.
 
-BLMM checks both the shared fit and each draw's local adjustment. If the shared
-fit fails to converge or its curvature matrix (Hessian) cannot be used, every
-draw for that feature is fitted separately with `lmerTest`. If a local covariance
-adjustment is invalid, makes the fit worse beyond numerical tolerance, or gives
-invalid inference quantities, only the affected draw is refitted. Its estimates,
-SEs, df, and both directional probabilities are replaced together. A warning
-reports how many features or individual draws needed refitting, with examples
-of the reasons. The warning calls this a fallback to `lme4`.
+## Streaming, parallelism and memory
 
-These checks detect numerical and fitting failures; they do not guarantee a
-particular level of accuracy for the approximate p-values. Small df or
-significant p-values alone do not cause a draw to be refitted.
+BLMM reuses design calculations and automatically selects dense or sparse
+random-effect computation. Both backends evaluate the same fitting objective.
+Sparse computation can save work for large, sparse designs, but factorization
+can introduce many extra nonzeros, called **fill-in**. Small problems or dense
+factors may favor the dense backend. Automatic selection requires no extra
+argument and occurs once per call, or per streaming chunk.
 
-Use `method = "lme4"` when fully optimized per-draw fitting is affordable and
-approximation error matters to the scientific conclusion. Use `nlme` for its
-supported residual correlation structures; BLMM does not replace an AR(1)
-analysis by accepting the same random-effects formula. For `nlme` contrasts,
-nonzero weights must refer to coefficients with the same denominator df;
-unsupported combinations produce an error. Models must have a full-rank
-fixed-effects design. Each contrast is a scalar zero-null test; omnibus tests,
-nonzero nulls, and post-fit arbitrary contrasts are outside this interface.
+`n.cores` controls workers. BLMM distributes **features** across workers; draws
+within a feature are processed serially. Workers also need memory, so increasing
+`n.cores` is not a free speedup. Control BLAS/OpenMP thread settings when comparing
+runs, and account for any other simultaneous analyses.
 
-Streaming fits a separate BLMM anchor in each chunk, so changing the partition
-can change approximate results. Contrasts use the corresponding coefficient
-fits within each chunk and are aggregated over all draws. Parallel execution
-distributes work across features or fits, according to the engine.
-The existing `streamsize` heuristic uses ten times the raw response-array size
-in decimal MB. At the default of 8000, streaming starts above about 800 MB of
-response draws. This is a working-size heuristic, not a hard memory limit;
-`streamsize = Inf` disables streaming. Version 1.6.0 documents this existing
-scaling without changing chunk sizes.
-
-## Computation and performance in 1.6.0
-
-BLMM calculates matrix products that can be reused across fits. It automatically
-chooses sparse or dense computation based on the model size, number of draws,
-and the number of nonzero entries expected during matrix factorization. A sparse
-input matrix can produce a much denser factor; this is called **fill-in**.
-Both approaches evaluate the same fitting objective and solve for the same
-conditional fixed effects. You do not need to choose between them. BLMM makes
-the choice once per call, or once per chunk when streaming, and uses it for all
-features in that call or chunk.
-
-The following measurements reuse the actual saved inputs from the publication
-investigation. Automatic BLMM selected sparse computation in both pilots.
-
-| Workload | Automatic BLMM | Fresh `lmerTest` reference | Observed speedup |
-|:--|--:|--:|--:|
-| IBDMDB: 3 taxa, 8 draws each, 1,297 observations | 0.100 s | 1.203 s | 12 times |
-| Large simulation: 1 taxon, 300 draws, 6,000 observations, 300 groups | 0.680 s | 17.790 s | 26 times |
-
-These are fitting times on Linux with an Intel Core Ultra 7 165U, R 4.6.1,
-one worker, and one BLAS thread. Input loading, design parsing, and compilation
-are excluded; time spent refitting rejected draws is included. BLMM times and
-the IBDMDB reference time are medians of three repetitions with varied engine
-order. The large-simulation
-reference was fitted once. On that large design, forced dense and sparse BLMM
-medians were 1.949 s and 0.601 s: cached products improve both paths, with a
-further gain from sparse factorization.
-The IBD reference emitted convergence and Hessian warnings for Bacteroides;
-the timing comparison does not establish the reliability of those reference
-fits. Their warnings are retained in the benchmark records.
-
-Across the three taxa and eight draws in the IBDMDB pilot, all BLMM versions
-refitted the same single draw for one taxon with `lmerTest` (one of 24 fits).
-The large-simulation pilot required no refitting. Dense, sparse, and archived
-original results agree closely, and regression tests compare objective values,
-gradients, Hessians, and final outputs. This supports computational equivalence
-to the existing method, not a new claim of statistical calibration.
-
-These pilots do not establish the runtime of a full IBDMDB reanalysis or
-universal speedups. The earlier 1,000-draw IBDMDB run completed only 14 of 44
-taxa; all draws for seven of those taxa had to be fitted with `lmerTest`.
-The new computation leaves the criteria for refitting unchanged, so frequent
-refits can still limit the speedup. Crossed effects can also produce much denser
-factors, reducing the advantage of a sparse input design. Small problems may
-favor dense computation. Increasing `n.cores` adds worker memory; neither
-`streamsize` nor the backend's working-memory estimate is a hard process-memory
-limit. These measurements do not demonstrate reduced total process memory.
-
-Development benchmark inputs and reports are not distributed with this release.
-Historical timings in the 1.5.0 investigation predate these changes
-and should not be used as controlled old-versus-new speed ratios.
-
-## Technical details
-
-Fix one feature. Let $s=1,\ldots,S$ index the Monte Carlo response vectors $y_s$,
-each with $N$ observations. Let $X$ be the $N\times p$ fixed-effects design and
-$d=N-p$ the residual dimension. The covariance-shape vector $\phi$ parameterizes
-random-effects covariance relative to residual variance. Write the relative
-marginal covariance as $R(\phi)$ and define
+`streamsize` controls an allocation heuristic. For $N$ observations, $D$ features
+and $S$ draws, streaming is used when
 
 \[
-M(\phi)=X^T R(\phi)^{-1}X,\qquad
+\frac{8NDS}{100000}>\mathtt{streamsize}.
+\]
+
+A streamed chunk contains at most
+$\lfloor\mathtt{streamsize}\times100000/(8ND)\rfloor$ draws, capped by the
+remaining draws; a threshold too small for one draw produces an error. The
+default `streamsize = 8000` corresponds to about 800 MB of raw response draws.
+Copies, factorization, derivatives, retained results and workers add memory.
+This is not a hard process-memory limit; assess the whole job rather than the
+parent process alone. `streamsize = Inf` disables streaming and should be used
+only when the complete allocation and working memory fit safely.
+
+Each chunk has its own anchor. Changing `streamsize` can therefore change the
+approximation and the resulting inference, even though the statistical model
+is unchanged. Hold the actual response arrays and chunk boundaries fixed when
+comparing implementations. Composition and scale draws are not returned when
+streaming, but the default retained estimates, SEs and df still support grouped
+adjustment.
+
+## Evidence and limits of the default
+
+A matched expression-data comparison used the same actual 20-feature,
+16,659-observation, 211-draw block for all engines, with ten workers and one
+linear-algebra thread. Two repetitions reversed the engine order. The measured
+engine wall times include fitting and replacement fits; input generation and
+setup were excluded.
+
+| Engine | Fitting seconds, runs 1 / 2 | Replaced draws per run | Observed aggregate memory |
+|:--|--:|--:|--:|
+| Adaptive BLMM | 9.2 / 14.7 | 57 / 4,220 | 7.7–7.9 GiB |
+| Shared-anchor BLMM | 9.8 / 18.7 | 138 / 4,220 | 5.9–6.2 GiB |
+| Full `lme4` | 430 / 454 | All 4,220 draws fitted fully | 32.7 GiB in run 2 |
+
+Memory uses proportional shared-page accounting across the job's processes;
+the first full-`lme4` run lacked complete job-memory coverage. These are targeted
+block measurements, not a universal speed ratio or a measured full-production
+runtime. They cannot exclude memory pressure at larger response allocations.
+Full `lme4` used PSOCK workers and BLMM used fork workers on this Linux host,
+so the comparison includes those engines' worker and serialization costs.
+
+Adaptive's maximum grouped-adjusted contrast-probability difference from the
+raw full-`lme4` comparator was $1.69\times10^{-5}$, versus about 0.200 for
+shared-anchor. No grouped-contrast decisions changed at 0.05. Full `lme4` had
+small between-run numerical differences itself and is a useful reference,
+not numerical truth. Targeted IBDMDB and synthetic-control comparisons also
+support local numerical agreement; they do not establish population error rates.
+
+A separate null assessment used 600 independent synthetic datasets on one real
+covariate design, with zero, weak and moderate random-intercept variance. Adaptive
+and full `lmerTest` made identical primary and family-level rejection decisions.
+At weak variance both rejected 14/200 primary nulls (7%, two-sided 95% interval
+3.9–11.5%). The screen required the one-sided 95% upper bound on rejection
+to be below 8%; this result's upper bound was 10.7%. The criterion was not met.
+This does not establish inflation or favor the older approximation.
+The maintainer chose adaptive for its numerical agreement and measured cost,
+while retaining this unresolved calibration limitation. The screen used 32
+draws and one design; it does not establish general false-positive or FDR control.
+
+More draws can stabilize Monte Carlo aggregation without correcting a model
+misspecification or covariance/inference approximation. Few independent groups,
+large differences between response draws and near-boundary fits can all make
+inference difficult. Choose the model and scale distribution for the study,
+and examine sensitivity when the scientific conclusion depends on marginal
+results. Full fitting also uses approximate finite-sample inference.
+
+The development inputs and detailed reports are not distributed with this
+package. The source includes mathematical details and regression tests; the
+historical results below are labelled separately from the current method.
+
+## Technical details of adaptive inference
+
+This section specifies the calculation behind the workflow. It can be skipped
+when fitting and reading results. The alternative shared-anchor calculation is
+at the end of the vignette.
+
+### Centering and covariance fitting
+
+Fix one feature. Draw $s$ supplies $y_s$ with $N$ observations, and $X$ is the
+$N\times p$ full-rank fixed-effect design. Define $d=N-p>0$. QR projection gives
+coefficients $a_s$ and centered responses
+
+\[
+z_s=y_s-Xa_s,\qquad a_s=(X^TX)^{-1}X^Ty_s.
+\]
+
+The expression for $a_s$ describes the projection; the implementation uses QR,
+not explicit normal-equation inversion. For any fixed covariance parameters,
+shifting a response by $Xa_s$ shifts its generalized least-squares (GLS)
+coefficients by $a_s$. REML residual
+calculations, the covariance objective and within-fit SEs are invariant in exact
+arithmetic. Thus the conditional mixed-model solution on $z_s$ gives
+
+\[
+\widehat\beta_s=\widehat\beta(z_s;\phi_s^*)+a_s.
+\]
+
+The shape vector $\phi$ parameterizes covariance relative to residual variance.
+Adaptive fitting uses natural relative Cholesky entries, with nonnegative
+diagonals and free off-diagonal entries. Let $R(\phi)$ be the relative marginal
+covariance and define
+
+\[
+M(\phi)=X^TR(\phi)^{-1}X,\qquad
 r_s(\phi)=\mathrm{PWRSS}_s(\phi).
 \]
 
-Here $T$ denotes transpose and PWRSS is the penalized weighted residual sum of
-squares after solving for fixed and random effects. Let $f_s(\phi)$ be the
-profiled REML negative log likelihood. The shared anchor and information are
+PWRSS is the penalized weighted residual sum of squares after solving for fixed
+and random effects. If $f_s(\phi)$ is the profiled restricted maximum likelihood
+(REML) negative log likelihood,
+the anchor minimizes the **mean** $S^{-1}\sum_s f_s(\phi)$ over feasible covariance
+parameters. It does not stack the draws as independent observations. The anchor
+has a separate limit of 500 covariance iterations.
 
-\[
-\bar\phi=\arg\min_\phi\frac1S\sum_s f_s(\phi),\qquad
-\bar H=\left.\nabla_\phi^2\left(\frac1S\sum_s f_s(\phi)\right)
-\right|_{\bar\phi}.
-\]
+Starting at that anchor, each draw refines its own $f_s$. Search curvature can
+be damped to find a descent direction; inference uses validated **raw observed
+curvature**, not the damped search matrix. The accepted point $\phi_s^*$ must
+pass the fitting and inference checks within eight refinement updates. This
+budget does not count every objective evaluation or the additional evaluations
+used in validation.
 
-The objective is a **mean**, not a sum: repeating identical draws does not add
-information. The Hessian is for negative log likelihood, not deviance.
-Writing $\bar f=S^{-1}\sum_s f_s$, the proposed local Newton update is
+### Local standard errors and degrees of freedom
 
-\[
-\widetilde\phi_s=\bar\phi+\bar H^{-1}
-\{\nabla_\phi\bar f(\bar\phi)-\nabla_\phi f_s(\bar\phi)\}.
-\]
-
-After validation, the estimate $\widehat\beta_s$ is calculated by GLS at
-$\widetilde\phi_s$. For a contrast column vector $c$, the estimate and squared
+For a contrast vector $c$ and accepted point $\phi_s^*$, the estimate and squared
 SE are
 
 \[
-\widehat\theta_{s,c}=c^T\widehat\beta_s,\qquad
-v_{s,c}(\widetilde\phi_s)=\frac{r_s(\widetilde\phi_s)}d\,
-c^T M(\widetilde\phi_s)^{-1}c.
+\widehat\delta_{s,c}=c^T\widehat\beta_s,\qquad
+v_{s,c}=\frac{r_s(\phi_s^*)}{d}\,c^TM(\phi_s^*)^{-1}c.
 \]
 
-This uses the full covariance, including off-diagonal entries. For a coefficient,
-$c$ is its unit vector; each user-supplied contrast row supplies another $c^T$.
-Adding tests changes neither $p$ nor the residual-variance divisor $d$.
+For a coefficient, $c$ is its unit vector; a contrast row supplies $c^T$.
+Contrasts do not add fitted coefficients or change $d$. Let
 
-The shared-anchor df approximation is
+\[
+\begin{aligned}
+H_s &= \left.\nabla_\phi^2 f_s(\phi)\right|_{\phi_s^*},\\
+u_s &= \left.\nabla_\phi\log r_s(\phi)\right|_{\phi_s^*},\\
+b_{s,c} &= \left.\nabla_\phi\log\{c^TM(\phi)^{-1}c\}\right|_{\phi_s^*}.
+\end{aligned}
+\]
+
+Here $u_s$ and $b_{s,c}$ describe sensitivity to covariance parameters, rather
+than variation between Monte Carlo draws. At a regular accepted point the
+first-order observed-information Satterthwaite approximation is
 
 \[
 \boxed{\displaystyle
-\nu_{s,c}=\frac{2}{2/d+h_{s,c}^T\bar H^{-1}h_{s,c}}},\qquad
-h_{s,c}=u_s+b_c,
-\]
-\[
-u_s=\left.\nabla_\phi\log r_s(\phi)\right|_{\bar\phi},\qquad
-b_c=\left.\nabla_\phi\log\{c^T M(\phi)^{-1}c\}\right|_{\bar\phi}.
+\nu_{s,c}=\frac{2}{2/d+(u_s+b_{s,c})^TH_s^{-1}(u_s+b_{s,c})}}.
 \]
 
-Sensitivities and information are evaluated at the anchor; estimates and SEs
-use the updated draw-specific parameters. The $2/d$ term preserves residual-scale
-uncertainty after profiling. Without covariance-shape uncertainty, df reduce to $d$.
+Adaptive inference uses the **draw's own** curvature and sensitivities here.
+The $2/d$ term retains residual-scale uncertainty after profiling. The Hessian
+is of negative log likelihood, not deviance; there is no extra factor of two
+or multiplication by the number of draws. Gradients of residual and
+contrast-variance reports use symmetric perturbations of the fitted parameters.
+Native calculations and factorizations are reused across coefficients and
+contrasts; a contrast does not require its own covariance optimization.
 
-The implementation reuses positive and negative anchor perturbations for the
-uncentered residual derivatives and contrast-variance derivatives. If $L_X$ is
-the lower Cholesky factor of $M$, then
-$c^T M^{-1}c=\lVert L_X^{-1}c\rVert^2$. With $U=\operatorname{chol}(\bar H)$
-upper triangular, the information quadratic is
-$h_{s,c}^T\bar H^{-1}h_{s,c}=\lVert U^{-T}h_{s,c}\rVert^2$.
-The same factorization serves the Newton update. No new optimization is needed
-per contrast, and no deviance factor of two or multiplication by $S$ is introduced.
-The t statistic uses direct lower and upper t-distribution tails with $\nu_{s,c}$ df.
-
-Nonfinite sensitivities or nonpositive/nonfinite df reject the affected draw.
-Invalid shared perturbation factors or an unusable raw Hessian reject the
-feature. These checks do not use ridge regularization, df clipping, or silent
-substitution of residual df.
-
-This adds an anchor approximation to observed-information Satterthwaite inference;
-it is not identical to per-draw `lmerTest`. The derivation below connects it to
-full information in covariance shape and residual scale.
+The t statistic is $\widehat\delta_{s,c}/\sqrt{v_{s,c}}$. Both directional tails
+are calculated directly from the t distribution with $\nu_{s,c}$ df, before
+the per-draw adjustment and Monte Carlo aggregation described above. Nonfinite
+sensitivities, unusable information or nonpositive/nonfinite df reject the
+approximation. Valid positive df are not clipped or replaced silently by
+residual df.
 
 ### Derivation from full observed information
 
@@ -560,12 +502,11 @@ The Satterthwaite moment match therefore yields
 \]
 
 At a regular stationary point, observed information transforms consistently
-under smooth parameter changes. This is an observed-information calculation;
-it does not replace the Hessian by expected information. BLMM adds a further
-approximation by using the shared $\bar H$ and anchor sensitivities for
-nonidentical draws, while calculating each estimate and SE at its updated
-covariance parameters. With positive-definite information, the additional
-quadratic term is nonnegative, so the df cannot exceed $d$.
+under smooth parameter changes. Adaptive BLMM evaluates this approximation at
+each draw's accepted point, using its own curvature and sensitivities. It uses
+observed information, rather than expected information. With positive-definite
+information, the additional quadratic term is nonnegative, so the df cannot
+exceed $d$. A boundary requires the separate first-order treatment below.
 
 Tests compare this identity with the full observed information, including the
 contrast $c=(1,-0.7)^T$. They also check duplicated draws, fixed-effect shifts,
@@ -573,3 +514,212 @@ regular single draws, serial/parallel ordering, aggregation, and exact refits.
 These checks validate the implemented identity and associated behavior; they
 do not establish calibration, finite-sample coverage, or false-discovery-rate
 control across mixed-model designs.
+
+### Boundary inference and stopping checks
+
+For an interior point, write $g_s=\nabla f_s(\phi_s^*)$ and let
+$q_s=H_s^{-1}g_s$ be the remaining Newton correction. Stationarity requires
+$\sqrt{g_s^TH_s^{-1}g_s}\leq10^{-4}$ and
+$\max_j|q_{s,j}|\leq10^{-3}$. A forward probe at $\phi_s^*-q_s$ must be feasible,
+pass objective validation and change inference by at most:
+
+| Quantity | Maximum absolute change |
+|:--|--:|
+| Log SE and log df | $10^{-3}$ |
+| Lower-tail probability | $10^{-5}$ |
+| t statistic | $10^{-4}$ |
+
+The check covers all coefficients and requested contrasts. The probe is a
+validation calculation, not an additional accepted refinement step. Unsettled
+inference may refine further within the budget; unusable curvature, unresolved
+stalls or budget exhaustion lead to full rescue. These are numerical criteria,
+not bounds on discrepancy from an independently optimized fit.
+
+At a boundary, stationarity is checked in feasible directions, with additional
+objective probes and raw-curvature checks. A fully zero covariance factor
+has zero first-order shape sensitivities and gives the local limit $\nu=d$;
+its coefficients and SEs come from the cached QR calculation. At a partial
+boundary, only complete, exactly zero Cholesky columns can be omitted. The
+implementation checks that their derivatives and information cross-blocks
+decouple, validates retained information, and applies stationarity and forward
+inference checks to the remaining coordinates. A zero diagonal with nonzero
+entries below it does not qualify. Unsupported cases are rescued.
+
+This is a first-order calculation at the selected covariance, not a derivation
+of repeated-sampling calibration at a data-selected boundary. It neither assumes
+zero variance before fitting nor rounds small positive estimates to zero.
+
+## Other inference options and engines
+
+Adaptive BLMM is the default for new `method = "blmm"` analyses. The following
+options remain available for specific computational needs or legacy analyses.
+Selectors are case-sensitive and engine-specific.
+
+| `method` | Default when `test` is omitted | Other supported `test` values |
+|:--|:--|:--|
+| `"blmm"` | `"t.satterthwaite.adaptive"` | `"t.satterthwaite"`, `"t.residual"` (deprecated) |
+| `"lme4"` | `"t"` (`lmerTest` Satterthwaite) | None |
+| `"nlme"` | `"t"` (native `nlme` inference) | None |
+| `"lm"` | `"t.HC3"` | `"t"`, `"t.HC0"` |
+
+### Shared-anchor inference
+
+Explicit `test = "t.satterthwaite"` retains the shared-anchor approximation used
+by default in 1.5.0–1.6.2. It can reduce computation and memory by using one local
+covariance proposal and anchor-based df rather than adaptive per-draw refinement.
+It is useful for legacy reproduction or when that approximation is an acceptable
+resource tradeoff. The matched results above illustrate that the methods can
+differ materially; shared-anchor is not an alias for adaptive.
+
+```{r shared-anchor-example, eval=FALSE}
+fit_anchor <- aldex(
+  Y, ~ age * genotype + (1 | mouse),
+  data = metadata, method = "blmm", test = "t.satterthwaite", contrasts = C,
+  scale = supplied_scale_model, nsample = S, n.cores = 1
+)
+```
+
+Using the notation above, let $\bar\phi$ minimize
+$\bar f=S^{-1}\sum_s f_s$, and let $\bar H=\nabla^2\bar f(\bar\phi)$ in this
+selector's covariance coordinates. Its proposal is
+
+\[
+\widetilde\phi_s=\bar\phi+\bar H^{-1}
+\{\nabla\bar f(\bar\phi)-\nabla f_s(\bar\phi)\}.
+\]
+
+Estimates and SEs use the validated proposal. Degrees of freedom instead use
+$\bar H$ and sensitivities evaluated at $\bar\phi$:
+
+\[
+\nu_{s,c}^{\mathrm{anchor}}=
+\frac{2}{2/d+(\bar u_s+\bar b_c)^T\bar H^{-1}(\bar u_s+\bar b_c)}.
+\]
+
+This adds an anchor approximation to the local observed-information calculation.
+It retains the existing covariance parameterization; it does not use adaptive
+centering or the bounded per-draw solver. Invalid anchors or draws still receive
+full `lmerTest` refits.
+
+### Deprecated residual degrees of freedom
+
+`test = "t.residual"` is retained for legacy analyses and diagnostic comparisons.
+It is deprecated, warns once per `aldex()` call even when streaming, and has no
+scheduled removal version. Accepted approximate draws use $N-p$ df for every
+coefficient and contrast; rescued draws use `lmerTest` Satterthwaite inference.
+It is therefore not a uniform residual-df procedure. We do not recommend it for
+new mixed-model analyses with many observations but few independent groups.
+
+```{r residual-example, eval=FALSE}
+fit_residual <- aldex(
+  Y, ~ age * genotype + (1 | mouse),
+  data = metadata, method = "blmm", test = "t.residual", contrasts = C,
+  scale = supplied_scale_model, nsample = S, n.cores = 1
+)
+```
+
+For either legacy selector, reproducing an earlier analysis also requires its
+inputs, package environment, random draws and anchor batches.
+
+### Fully fitted engines
+
+`method = "lme4"` fits every draw through `lmerTest`, rather than first trying a
+BLMM approximation. It is useful when full fitting is affordable or as a
+comparison on matched responses. Its public selector is `test = "t"`, but its
+internal inference uses Satterthwaite df. Full optimization does not make
+finite-sample inference exact, and optimizer warnings still need attention.
+
+`method = "nlme"` supports its own residual correlation structures and native
+inference. A BLMM random-effects formula is not a substitute for an AR(1)
+residual model. For `nlme` contrasts, all nonzero weights must refer to
+coefficients with the same denominator df; unsupported combinations produce
+an error. Only `test = "t"` is supported. BLMM selectors cannot be passed to
+these engines.
+
+All contrasts in this interface are scalar zero-null tests. Models require a
+full-rank fixed-effect design. Omnibus tests, nonzero nulls and arbitrary new
+post-fit contrasts are outside this interface.
+
+### Historical comparison: shared-anchor versus residual df
+
+The target comparison is agreement with fully fitted `lmerTest` on identical
+response draws, especially after ALDEx aggregation. In an eight-group example
+with five observations per group and one draw, residual inference used 38 df;
+the shared-anchor method and the reference used approximately six. Estimates
+and SEs nearly matched, and the draw passed BLMM's checks without refitting.
+This isolates the inference problem from covariance fitting.
+
+In a focused count-data comparison (three datasets, 48 features in total), the
+maximum adjusted-p error at 256 draws was 0.227 for residual inference versus
+0.00145 for the shared-anchor method. That method identified the same discoveries
+as the reference at 0.05, without refitting any draws. This was a focused
+agreement study, not broad FDR validation.
+
+The completed oral application used 59 taxa, 12 coefficients, and 2,000 draws:
+
+| Difference from fully fitted reference | Residual | Anchor |
+|:--|--:|--:|
+| Median absolute adjusted-p error | 0.002673 | 0.001082 |
+| 95th percentile | 0.007501 | 0.002425 |
+| Maximum | 0.016516 | 0.004531 |
+| Discovery gains / losses at 0.05 | 0 / 0 | 0 / 0 |
+
+Only seven of the 118,000 combinations of feature and draw required refitting
+with `lmerTest`. Almost all fits therefore used BLMM's approximation.
+
+There were regressions too. In the one completed six-participant dataset from
+the publication's simulation generator, the shared-anchor method improved
+median and 95th-percentile adjusted-p errors and reduced disease-discovery disagreements from six to two.
+The maximum error worsened from 0.216 to 0.368. The largest regression was far
+from 0.05, but two discrepancies near the threshold remained. One dataset cannot
+establish general FDR calibration. The full publication benchmark was not
+completed; there is no completed IBD aggregate validation.
+
+The maintainer adopted the shared-anchor method on this evidence. These numbers
+summarize maintainer development studies; the underlying benchmark inputs and
+reports are not distributed with this release. The mathematical derivation
+and implementation tests are included in the source package.
+
+### Historical computation benchmarks
+
+The following measurements used the **1.6.0 shared-anchor implementation**,
+not the adaptive default. They reused saved inputs from the publication
+investigation, with automatic sparse computation in both pilots.
+
+| Workload | Automatic BLMM | Fresh `lmerTest` reference | Observed speedup |
+|:--|--:|--:|--:|
+| IBDMDB: 3 taxa, 8 draws each, 1,297 observations | 0.100 s | 1.203 s | 12 times |
+| Large simulation: 1 taxon, 300 draws, 6,000 observations, 300 groups | 0.680 s | 17.790 s | 26 times |
+
+These are fitting times on Linux with an Intel Core Ultra 7 165U, R 4.6.1,
+one worker, and one BLAS thread. Input loading, design parsing, and compilation
+are excluded; time spent refitting rejected draws is included. BLMM times and
+the IBDMDB reference time are medians of three repetitions with varied engine
+order. The large-simulation
+reference was fitted once. On that large design, forced dense and sparse BLMM
+medians were 1.949 s and 0.601 s: cached products improve both paths, with a
+further gain from sparse factorization.
+The IBD reference emitted convergence and Hessian warnings for Bacteroides;
+the timing comparison does not establish the reliability of those reference
+fits. Their warnings are retained in the benchmark records.
+
+Across the three taxa and eight draws in the IBDMDB pilot, all BLMM versions
+refitted the same single draw for one taxon with `lmerTest` (one of 24 fits).
+The large-simulation pilot required no refitting. Dense, sparse, and archived
+original results agree closely, and regression tests compare objective values,
+gradients, Hessians, and final outputs. This supports computational equivalence
+to the existing method, not a new claim of statistical calibration.
+
+These pilots do not establish the runtime of a full IBDMDB reanalysis or
+universal speedups. The earlier 1,000-draw IBDMDB run completed only 14 of 44
+taxa; all draws for seven of those taxa had to be fitted with `lmerTest`.
+Those caching and backend changes left the shared-anchor refit criteria
+unchanged, so frequent refits could still limit the speedup. Crossed effects can also produce much denser
+factors, reducing the advantage of a sparse input design. Small problems may
+favor dense computation. Increasing `n.cores` adds worker memory; neither
+`streamsize` nor the backend's working-memory estimate is a hard process-memory
+limit. These measurements do not demonstrate reduced total process memory.
+
+Development benchmark inputs and reports are not distributed with this release.
+Historical timings in the 1.5.0 investigation predate these changes
+and should not be used as controlled old-versus-new speed ratios.

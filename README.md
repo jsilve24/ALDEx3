@@ -76,29 +76,7 @@ head(aldex.gut.summary)
 
 ## Mixed-Effects Models: BLMM, `lme4`, and `nlme`
 
-ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models) through three engines. With `method = "blmm"`, each feature has a shared covariance fit across its Monte Carlo draws, followed by a local adjustment for each draw. This shared fit is called the **anchor**. Reusing it reduces the amount of optimization needed.
-
-BLMM approximates both covariance fitting and inference. If the shared fit fails or its curvature cannot be used, BLMM fits every draw for that feature separately with `lmerTest`. If only an individual draw's adjustment or inference fails the checks, only that draw is refitted. A warning reports these refits. You can also choose `method = "lme4"` to fit every draw with `lmerTest`, or use the `nlme` engine.
-
-Since 1.7.0, BLMM defaults to adaptive Satterthwaite inference (`test = "t.satterthwaite.adaptive"`). It refines each draw's covariance fit from the anchor, checks local inference, and refits unresolved draws with `lmerTest`. Existing calls that omit `test` can return different estimates, SEs, degrees of freedom and probabilities. Explicit `test = "t.satterthwaite"` retains the shared-anchor approximation used by default in 1.5.0–1.6.2, with potentially lower time and memory costs. `test = "t.residual"` is deprecated and warns once per call; it remains available with unchanged behavior for legacy analyses. Accepted residual-mode draws use `N-p` df, while rescued draws use `lmerTest` Satterthwaite inference. These selectors are exclusive to BLMM. Agreement with a full fit does not establish statistical calibration.
-
-In 1.6.0, BLMM reuses matrix calculations and automatically chooses sparse or dense computation. Existing calls use these improvements without an extra argument, and the inference method is unchanged. Small tests using saved IBDMDB and large-simulation inputs ran about 12 and 26 times faster than fresh `lmerTest` fitting, respectively. The large reference was timed once, and the IBD reference had convergence warnings; the vignette describes the workloads and timing procedure. Speedups depend on the model and on how often draws need refitting. Sparse input matrices can also become much denser during factorization, limiting the benefit.
-
-Use `contrasts = C` during fitting to test named linear combinations of fixed effects. Supply one row per hypothesis and a named column for every fixed-effect coefficient, including explicit zeros. Results are stored in `fit$contrasts`. `summary(fit)` includes both coefficients and requested comparisons; use `summary(fit, component = "contrasts")` to show only the comparisons. By default, each coefficient and contrast has its own adjustment across features. The supplied scale model and original design remain unchanged.
-
-Version 1.6.1 adds grouped adjustment on an existing fit, without refitting:
-
-```r
-# Pool all features of two fitted coefficients into one adjustment family.
-fit <- aldex.p.adjust(fit, groups = c("age", "genotype"))
-# Or group stored contrasts; a list specifies several separate families.
-fit <- aldex.p.adjust(fit, groups = list(c("comparison_1", "comparison_2")))
-summary(fit)
-```
-
-Replace these names with the exact coefficient or stored-contrast names in your fit. Groups may mix both components; use `"coefficient:age"` and `"contrast:age"` when names overlap. Unlisted rows keep separate families. The helper reconstructs directional p-values from the default per-draw estimates, SEs, and df, then adjusts each family within each draw and direction before averaging. It also works on streaming fits. For fits made before 1.6.1, explicitly pass `method` and `onesided` if they differed from BH and two-sided inference. Separate families do not provide a joint adjustment for a combined discovery list. See `?aldex.p.adjust` for details.
-
-See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations behind the new default.
+ALDEx3 supports the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x) (Scale Reliant Mixed Effects Models). For a mixed-effects analysis, use `method = "blmm"` with its default adaptive Satterthwaite inference:
 
 ``` r
 library(ALDEx3)
@@ -119,7 +97,7 @@ X <- oral_mouthwash_data$metadata
 aldex.mouthwash.raw <- aldex(Y,
                              ~treat*timec+(1|participant_id),
                              X,
-                             method="blmm",   # Fast approximate engine
+                             method="blmm",   # Approximate mixed-effects engine
                              n.cores=4,        # Parallelize across features
                              nsample=250,
                              scale=clr.sm,    # CLR assumption
@@ -128,7 +106,45 @@ aldex.mouthwash.summary <- summary(aldex.mouthwash.raw)
 head(aldex.mouthwash.summary)
 ```
 
-To run the same model with exact variance-component optimization, replace `method = "blmm"` with `method = "lme4"`.
+The default first centers each response draw in the fixed-effect design. For each feature, BLMM then fits a shared covariance starting point across those centered draws, called the **anchor**. It refines each draw's covariance parameters from the anchor using up to eight safeguarded steps and restores the coefficient shifts. It uses local Satterthwaite inference for each coefficient and requested contrast. If an anchor cannot be obtained, BLMM refits every draw for that feature with `lmerTest`; if an individual draw remains unresolved after the checks, it refits that draw. A warning reports these refits. The checks are numerical heuristics, not a guarantee of statistical calibration.
+
+Use `contrasts = C` during fitting to test named linear combinations of fixed effects. Supply one row per hypothesis and a named column for every fixed-effect coefficient, including explicit zeros. Results are stored in `fit$contrasts`. `summary(fit)` includes both coefficients and requested comparisons; use `summary(fit, component = "contrasts")` to show only the comparisons. By default, each coefficient and contrast has its own adjustment across features. The supplied scale model and original design remain unchanged.
+
+Use grouped adjustment on an existing fit without refitting:
+
+```r
+# Pool all features of two fitted coefficients into one adjustment family.
+fit <- aldex.p.adjust(fit, groups = c("age", "genotype"))
+# Or group stored contrasts; a list specifies several separate families.
+fit <- aldex.p.adjust(fit, groups = list(c("comparison_1", "comparison_2")))
+summary(fit)
+```
+
+Replace these names with the exact coefficient or stored-contrast names in your fit. Groups may mix both components; use `"coefficient:age"` and `"contrast:age"` when names overlap. Unlisted rows keep separate families. The helper reconstructs directional p-values from the default per-draw estimates, SEs, and df, then adjusts each family within each draw and direction before averaging. It also works on streaming fits. For fits made before 1.6.1, explicitly pass `method` and `onesided` if they differed from BH and two-sided inference. Separate families do not provide a joint adjustment for a combined discovery list. See `?aldex.p.adjust` for details.
+
+See the **[mixed-effects vignette](vignettes/ALDEx3-mixed-effects.Rmd)** for a runnable contrast example, interpretation, mathematical details, and the evidence and limitations of the adaptive method.
+
+### Other inference options and engines
+
+Adaptive BLMM is the default. Explicit alternatives remain available:
+
+| Selection | Use |
+|:--|:--|
+| `test = "t.satterthwaite"` | Shared-anchor approximation, for legacy reproduction or a potentially less expensive fit. |
+| `test = "t.residual"` | Deprecated legacy inference; warns once per call. Accepted draws use `N-p` df, while rescued draws use `lmerTest` Satterthwaite inference. |
+| `method = "lme4"` | Fit every draw with `lmerTest`, including its Satterthwaite inference. |
+| `method = "nlme"` | Use native `nlme` fitting, including its supported residual correlation structures. |
+
+BLMM selectors cannot be passed to the other engines. Adaptive fitting can
+cost more than shared-anchor fitting; actual time and memory depend on the
+model, draw batches, workers and refits. BLMM automatically selects dense or
+sparse computation for either selector.
+
+Historical 1.6.0 shared-anchor pilots on saved IBDMDB and large-simulation inputs
+ran about 12 and 26 times faster than fresh `lmerTest` fitting. The large
+reference was timed once and the IBD reference had convergence warnings.
+These are not adaptive-default timings. The vignette separates the historical
+benchmarks from current adaptive measurements and explains their limitations.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 

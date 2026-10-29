@@ -100,13 +100,12 @@ head(aldex.gut.summary)
 ## Mixed Effects Models
 
 ALDEx3 implements the published [SR-MEM method](https://link.springer.com/article/10.1186/s40168-026-02377-x)
-(Scale Reliant Mixed Effects Models) through the exact `lme4` and `nlme`
-engines and the approximate `blmm` engine. The quickstart no longer walks
-through those models inline. See the dedicated mixed-effects vignette
-`vignettes/ALDEx3-mixed-effects.Rmd` for a runnable age-by-genotype contrast
-example, adaptive Satterthwaite inference (the default since 1.7.0), explicit
-shared-anchor inference and deprecated residual df. The vignette describes
-the evidence, computational tradeoffs and limitations of these choices.
+(Scale Reliant Mixed Effects Models). With `method = "blmm"`, the default
+adaptive Satterthwaite method starts from a shared covariance fit, refines each
+Monte Carlo draw, and refits unresolved draws with `lmerTest`. See the
+[mixed-effects vignette](ALDEx3-mixed-effects.html) for a runnable model and
+contrast example, interpretation, and the evidence and limitations of this
+method. The vignette also describes alternative inference options and engines.
 
 ## Inference with Absolute Abundances: Defining Scale Models 
 

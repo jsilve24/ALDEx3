@@ -91,7 +91,7 @@ correction. See \code{p.adjust} for all available methods.}
 \item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
 \code{"lm"}, \code{"t.satterthwaite.adaptive"} for \code{"blmm"}, and native \code{"t"} inference for
 \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, or \code{"t.HC3"};
-for \code{blmm}, choose \code{"t.satterthwaite"}, \code{"t.satterthwaite.adaptive"},
+for \code{blmm}, choose \code{"t.satterthwaite.adaptive"}, \code{"t.satterthwaite"},
 or \code{"t.residual"}; for \code{lme4} and
 \code{nlme}, only \code{"t"} is supported.}
 
@@ -105,8 +105,9 @@ coefficient set and are reordered to the fitted design. Contrast rows
 have unique nonempty names, are finite and nonzero, and need not sum to
 zero or be independent. Contrasts require a full-rank fixed-effect design
 with positive residual degrees of freedom. They do not change composition
-or scale sampling or adjustment families. Coefficient results are
-unchanged unless checks on an added contrast cause a draw to be refitted.}
+or scale sampling or adjustment families. Checks on an added contrast
+can require further adaptive refinement or a full refit, which can also
+change coefficient results.}
 
 \item{...}{Additional scale-model arguments, such as \code{gamma},
 \code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
@@ -164,23 +165,20 @@ and \code{N x nsample} output.
 For \code{method = "lm"}, \code{"t"} uses ordinary residual
 variance, \code{"t.HC0"} uses the White sandwich covariance, and
 \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
-\code{"t.satterthwaite"} uses the shared-anchor approximation and
-deprecated \code{"t.residual"} uses residual degrees of freedom. It warns
-once per call; its behavior is retained with no scheduled removal version.
-Draws that fail
-BLMM's checks are refitted with \code{lmerTest} and use its Satterthwaite
-inference. This also applies when \code{test = "t.residual"}: draws that
-pass the checks use residual df, but refitted draws use Satterthwaite df.
-The default \code{"t.satterthwaite.adaptive"} centers each response draw
-in the fixed-effect design, restores its coefficient shifts, and uses
-up to eight safeguarded covariance updates in bounded Cholesky
-coordinates with refreshed curvature. Validated zero and partial
-covariance boundaries can use local Satterthwaite inference without a
-refit. Stationarity, curvature and inference-stability checks govern
-acceptance; unsupported or unresolved draws are refitted exactly. These
-checks are numerical heuristics, not error bounds or a
-guarantee of statistical calibration. Adaptive fitting can cost more
-than shared-anchor fitting, which remains available explicitly.
+the default \code{"t.satterthwaite.adaptive"} centers each response
+draw in the fixed-effect design, refines its covariance parameters from
+the shared anchor with up to eight safeguarded steps, and restores its
+coefficient shifts. It uses local Satterthwaite inference for coefficients
+and contrasts. Validated zero and partial covariance boundaries can use
+local inference without a refit. Stationarity, curvature and
+inference-stability checks govern acceptance; unsupported or unresolved
+draws are refitted with \code{lmerTest}. These checks are numerical
+heuristics, not error bounds or a guarantee of statistical calibration.
+Explicit \code{"t.satterthwaite"} uses the shared-anchor approximation;
+adaptive fitting can cost more. Deprecated \code{"t.residual"} uses
+residual degrees of freedom for accepted draws and \code{lmerTest}
+Satterthwaite inference for refitted draws. It warns once per public call;
+its behavior is retained with no scheduled removal version.
 The \code{lme4}
 engine uses per-draw lmerTest Satterthwaite inference internally;
 \code{nlme} uses its native denominator df. Their public selector is

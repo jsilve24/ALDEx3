@@ -18,12 +18,22 @@ was introduced by promotion.
   flags. The package Makevars specifies only C++17.
 - HTML Tidy 5.8.0 and V8 8.2.1 were provided from temporary check locations.
   These are validation tools, not package dependencies.
-- Archive: `ALDEx3_1.7.0.tar.gz` (294,260 bytes).
-- SHA256: `a700bfd6b5c237d55effb7c33e2f074d22a0e1d6224224dd16026b812bd90aba`.
+- Archive: `ALDEx3_1.7.0.tar.gz` (302,970 bytes).
+- SHA256: `8fc59bf1c1c1f81d2f4efc0942a17dd23369cf74bdccf4787f6b8a802ef130c2`.
 - Pre-promotion archive/logs are retained in
   `release/1.7.0-pre-adaptive-default-20261028/`.
 - Archive inspection found no private investigation inputs, diagnostics,
   working libraries or compiled object files.
+
+## Documentation review
+
+The mixed-model vignette now presents the adaptive analysis first, then its
+algorithm, local inference, warnings and resource guidance. Alternative selectors,
+engines and historical comparisons are at the end. README, Quickstart and help
+were reviewed together; mathematical definitions and stopping/boundary details
+were checked against source. All runtime R expressions are unchanged from
+`b2c93e7`. The previous checked archive is preserved in
+`release/1.7.0-pre-docs-20261029/`.
 
 ## Check results
 

@@ -20,6 +20,9 @@
 - `test = "t.residual"` is deprecated. It remains available for legacy analyses
   with unchanged fitting/inference behavior and warns once per `aldex()` call.
   Use the adaptive default for new analyses; no removal version is scheduled.
+- Reorganize the mixed-model vignette around the adaptive workflow, with a
+  runnable contrast analysis, local-inference derivation, warnings and resource
+  guidance. Alternative selectors, engines and historical comparisons appear last.
 
 # ALDEx3 1.6.2
 

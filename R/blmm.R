@@ -885,52 +885,56 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' @details
 #' Internal engine called by \code{\link{aldex}} when \code{method = "blmm"}.
 #'
-#' Uses an \code{lme4}-style profiled Gaussian LMM formulation. One batched
-#' anchor REML problem is fit per feature across all S MC draws. The
-#' shared-anchor and residual modes use one Newton covariance step per draw, while
-#' adaptive mode refines each draw within its iteration budget. Conditional GLS
-#' fixed-effect solves are run per draw. Fixed effects and
-#' standard errors are exact conditional on the updated covariance parameters;
-#' this does not imply exact finite-sample inference. Shared-anchor
-#' Satterthwaite inference is the internal default; public \code{aldex()} uses
-#' adaptive inference by default. Residual degrees of freedom remain available
-#' internally for reproducible scripts. The anchor degrees of freedom
-#' are
-#' \deqn{2 / \{2/d + (u_s+b_c)^T H^{-1}(u_s+b_c)\}.}
-#' Here \code{d = N - p}, with N observations and fitted fixed-effect dimension
-#' p; H is the Hessian of the mean negative profiled REML log likelihood at the
-#' shared anchor. At that anchor, u_s is the gradient of log PWRSS for draw s,
-#' and b_c is the gradient of log(c' M^-1 c), where c is a fixed-effect
-#' coefficient vector or user-supplied contrast,
-#' M = X' R^-1 X, X is the fixed-effect design, and R is the marginal covariance
-#' relative to residual variance. Gradients use the covariance-shape parameters.
-#' This additional approximation is not identical to per-draw \code{lmerTest}
-#' inference. P-values can differ even when estimates and SEs agree.
+#' Uses an \code{lme4}-style profiled Gaussian LMM formulation. Public
+#' \code{aldex(method = "blmm")} selects adaptive Satterthwaite inference by
+#' default. Responses are centered in the fixed-effect design, one covariance
+#' anchor is fitted per feature and batch of draws, and each draw is refined
+#' from that anchor using at most eight safeguarded steps. Removed coefficient
+#' shifts are restored after mixed-model fitting. The model and its random
+#' effects are unchanged by centering.
 #'
-#' Draw-specific updates that fail a profiled-objective check are refitted with
-#' \code{lmerTest}, which uses \code{lme4} for model fitting. If the shared
-#' anchor optimisation fails or its Hessian cannot be used, every draw for the
-#' feature is fitted separately with \code{lmerTest}. A warning reports how
-#' many features or individual draws needed refitting and gives example reasons.
-#' Invalid anchor inference sensitivities, contrast variances, or contrast
-#' estimates also cause the affected draws to be refitted. Native
+#' Adaptive inference uses the accepted draw's own observed curvature and
+#' sensitivities. For a coefficient or contrast vector c, the first-order df are
+#' \deqn{2 / \{2/d + (u_s+b_c)^T H_s^{-1}(u_s+b_c)\}.}
+#' Here \code{d = N - p}, with N observations and p fixed-effect coefficients;
+#' H_s is the Hessian of the draw's profiled REML negative log likelihood at
+#' its accepted covariance parameters. At that same point, u_s is the gradient
+#' of log PWRSS and b_c is the gradient of log(c' M^-1 c), where
+#' M = X' R^-1 X and R is marginal covariance relative to residual variance.
+#' Gradients use the covariance-shape parameters. Supported singular covariance
+#' fits have additional first-order boundary checks, described in
+#' \code{vignette("ALDEx3-mixed-effects", package = "ALDEx3")}.
+#'
+#' Conditional GLS solves give each draw's coefficients and SEs. Their numerical
+#' validation and Satterthwaite approximation do not establish finite-sample
+#' calibration. Draws with unresolved fitting or inference checks are fitted
+#' fully with \code{lmerTest}; an unavailable anchor causes all draws for that
+#' feature to be fitted fully. A warning reports affected features/draws and
+#' representative reasons. Replacement-fit warnings remain visible; invalid
+#' numerical contrast inference retains valid fitted quantities with a warning
+#' and \code{NA} contrast p-values. Fitting errors stop the analysis, and failed
+#' draw refits are not retried as whole-feature fallbacks.
+#'
+#' This unexported function retains \code{inference = "anchor"} as its internal
+#' default; \code{aldex()} always passes its resolved selector explicitly.
+#' Shared-anchor inference uses one covariance proposal per draw and evaluates
+#' the df formula with anchor curvature and sensitivities. It remains available
+#' publicly as \code{test = "t.satterthwaite"}. Deprecated public
+#' \code{test = "t.residual"} uses N-p df for accepted draws. Both alternatives
+#' still use \code{lmerTest} Satterthwaite inference for rescued draws. Native
 #' \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
-#' If lmerTest returns invalid numerical contrast inference, valid fitted
-#' quantities are retained with a warning and \code{NA} contrast p-values.
-#' Model-fitting errors still stop the analysis; a failed exact draw refit
-#' is not retried as a whole-feature fallback. The derivation appears at the
-#' end of \code{vignette("ALDEx3-mixed-effects", package = "ALDEx3")}.
 #'
 #' @param logW numeric array (N x D x S)
 #' @param formula lme4 mixed-effects formula
 #' @param data data.frame for formula evaluation
-#' @param inference Internal inference selector; \code{adaptive} uses per-draw
-#'   centering and up to eight safeguarded covariance iterations with refreshed
-#'   curvature and forward validation. The default is shared-anchor
-#'   Satterthwaite inference internally. Public \code{aldex()} defaults to
-#'   adaptive inference; its deprecated \code{test = "t.residual"} maps
-#'   to residual degrees of freedom for accepted draws, while refitted draws
-#'   use Satterthwaite degrees of freedom.
+#' @param inference Internal inference selector. Public \code{aldex()} defaults
+#'   to adaptive inference: it centers each draw, refines covariance parameters
+#'   from the shared anchor with up to eight safeguarded steps, and uses local
+#'   Satterthwaite inference for coefficients and contrasts. Unresolved draws
+#'   are refitted with \code{lmerTest}. This internal function instead defaults
+#'   to shared-anchor Satterthwaite inference. Public deprecated
+#'   \code{test = "t.residual"} uses residual degrees of freedom for accepted
+#'   draws and Satterthwaite degrees of freedom for refitted draws.
 #' @param contrasts optional validated contrast matrix with one row per
 #'   contrast and columns matching the fixed-effect design.
 #' @param n.cores number of worker processes for feature-level parallelism.
