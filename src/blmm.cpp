@@ -254,6 +254,5 @@ Type objective_function<Type>::operator()() {
   REPORT(LX);
   REPORT(ldL2);
   REPORT(ldRX2);
-  REPORT(mean_log_PWRSS);
   return nll;
 }

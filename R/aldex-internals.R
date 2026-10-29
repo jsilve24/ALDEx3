@@ -81,6 +81,7 @@ aldex.sampler <- function(Y, X, nsample, scale=NULL, scale.args, return.pars) {
 ##'   "Incorporating scale uncertainty in microbiome and gene expression analysis as an extension of normalization".
 ##'   Genome Biology. \doi{10.1186/s13059-025-03609-3}
 ##' @author Justin Silverman, Kyle McGovern
+##' @keywords internal
 aldex.pvals <- function(p.lower, p.upper, p.adjust.method, onesided=FALSE,
                         groups=NULL) {
   #### p-value calculations, accounting for sign changes ####

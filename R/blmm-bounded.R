@@ -1,5 +1,21 @@
+# Coordinates within a relative 1e-10 of a finite lower bound count as on it.
+blmm_near_bound <- function(x, lower) {
+  is.finite(lower) & x <= lower + 1e-10 * (1 + abs(replace(lower, !is.finite(lower), 0)))
+}
+
+# Snap near-bound coordinates exactly onto the bound so that downstream
+# boundary checks, which test for exact zeros, see the same active set.
+blmm_snap_to_bound <- function(x, lower) {
+  near <- blmm_near_bound(x, lower)
+  x[near] <- lower[near]
+  x
+}
+
 # Natural relative Cholesky coordinates: lower bounds apply to the diagonal
 # entries. Search curvature may be damped; returned/inference curvature is raw.
+# Every evaluated location is snapped, so "active" means location == lower and
+# the stored objective value always belongs to the snapped point. A run that
+# ends in an error is flagged as failed; other unresolved runs are not.
 blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
                                   validate_interior = NULL,
                                   validate_boundary = NULL) {
@@ -9,15 +25,16 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
       any(!is.finite(location)) || anyNA(lower) || any(lower == Inf) ||
       length(max_steps) != 1L || !is.finite(max_steps) || max_steps < 0)
     stop("blmm: invalid bounded optimisation inputs")
-  location <- pmax(location, lower)
+  location <- blmm_snap_to_bound(pmax(location, lower), lower)
   max_steps <- as.integer(max_steps)
   iterations <- evaluations <- hessians <- gradient_calls <- checks <- 0L
   value <- NA_real_
   H <- matrix(NA_real_, length(location), length(location))
   diagnostics <- list()
-  finish <- function(status, reason, inference = NULL) {
+  finish <- function(status, reason, inference = NULL, failed = FALSE) {
     list(par = location, objective = value, H = H, status = status,
       iterations = iterations, reason = reason, inference = inference,
+      failed = failed,
       diagnostics = c(list(evaluations = evaluations, hessians = hessians,
         gradient_calls = gradient_calls, checks = checks), diagnostics))
   }
@@ -38,8 +55,7 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
           any(!is.finite(H)) || length(gradient) != length(location) ||
           any(!is.finite(gradient))) stop("nonfinite derivatives")
       H <- (H + t(H)) / 2
-      active <- is.finite(lower) & location <= lower +
-        1e-10 * (1 + abs(replace(lower, !is.finite(lower), 0)))
+      active <- is.finite(lower) & location == lower
       projected_gradient <- gradient
       projected_gradient[active & gradient >= 0] <- 0
       eigenH <- eigen(H, symmetric = TRUE)
@@ -68,7 +84,8 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
         probe_scale <- 1e-3 * (1 + max(abs(location)))
         best <- value
         for (j in seq_len(ncol(directions))) {
-          candidate <- pmax(lower, location + probe_scale * directions[, j])
+          candidate <- blmm_snap_to_bound(
+            pmax(lower, location + probe_scale * directions[, j]), lower)
           if (!any(candidate != location)) next
           proposed <- value_at(candidate)
           if (length(proposed) != 1L || !is.finite(proposed))
@@ -160,7 +177,8 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
       }
       accepted <- FALSE
       for (halving in 0:12) {
-        candidate <- pmax(lower, location + direction * 2^(-halving))
+        candidate <- blmm_snap_to_bound(
+          pmax(lower, location + direction * 2^(-halving)), lower)
         if (!any(candidate != location)) next
         proposed <- value_at(candidate)
         if (is.finite(proposed) && proposed <= value) {
@@ -172,6 +190,6 @@ blmm_bounded_optimize <- function(obj, start, lower, max_steps = 8L,
       location <- candidate
       value <- proposed
     }
-  }, error = function(e) finish("unresolved", conditionMessage(e)))
+  }, error = function(e) finish("unresolved", conditionMessage(e), failed = TRUE))
   run
 }

@@ -81,6 +81,62 @@ blmm_random_effect_vector <- function(theta, sigma2, reTrms,
   stats::setNames(values, metadata$names)
 }
 
+# Cache the random-effect blocks and lme4-compatible packaging order once.
+blmm_random_effect_metadata <- function(reTrms) {
+  blocks <- vector("list", length(reTrms$cnms))
+  names_out <- character(0)
+  theta_offset <- output_offset <- 0L
+  for (g in seq_along(reTrms$cnms)) {
+    terms <- reTrms$cnms[[g]]
+    size <- length(terms)
+    group <- names(reTrms$cnms)[g] %||% paste0("grp", g)
+    template <- matrix(seq_len(size * size), size, size)
+    lower <- which(lower.tri(template, diag = TRUE))
+    covariance <- c(diag(template), template[lower.tri(template)])
+    block_names <- paste(group, terms, sep = ".")
+    if (size > 1L) for (j in seq_len(size - 1L)) for (i in seq.int(j + 1L, size))
+      block_names <- c(block_names, paste(group, terms[j], terms[i], sep = "."))
+    blocks[[g]] <- list(size = size, lower = lower,
+      theta = theta_offset + seq_along(lower), covariance = covariance,
+      output = output_offset + seq_along(covariance))
+    names_out <- c(names_out, block_names)
+    theta_offset <- theta_offset + length(lower)
+    output_offset <- output_offset + length(covariance)
+  }
+  list(blocks = blocks, names = c(names_out, "Residual"))
+}
+
+# ---------------------------------------------------------------------------
+# Output arrays
+# ---------------------------------------------------------------------------
+
+# Per-coefficient inference fields. Contrast arrays repeat them with a
+# "contrast." prefix; random-effect variances are stored in "random.eff".
+.blmm_fields <- c("estimate", "std.error", "df", "p.lower", "p.upper")
+
+blmm_output_fields <- function(contrasts = NULL) {
+  c(.blmm_fields, "random.eff",
+    if (!is.null(contrasts)) paste0("contrast.", .blmm_fields))
+}
+
+# NA-filled (rows x D x S) output arrays in blmm_output_fields() order. Row
+# names are attached only when supplied; contrast rows use rownames(contrasts).
+blmm_output_arrays <- function(p, random_rows, D, S, contrasts = NULL,
+                               names = NULL, random_names = NULL) {
+  allocate <- function(rows, row_names) {
+    array(NA_real_, c(rows, D, S),
+          dimnames = if (!is.null(row_names)) list(row_names, NULL, NULL))
+  }
+  out <- stats::setNames(lapply(.blmm_fields, function(field)
+    allocate(p, names)), .blmm_fields)
+  out$random.eff <- allocate(random_rows, random_names)
+  if (!is.null(contrasts)) for (field in .blmm_fields) {
+    out[[paste0("contrast.", field)]] <- allocate(nrow(contrasts),
+                                                  rownames(contrasts))
+  }
+  out
+}
+
 # ---------------------------------------------------------------------------
 # Formula parsing
 # ---------------------------------------------------------------------------
@@ -170,19 +226,6 @@ blmm_profiled_objectives <- function(report, n, p) {
   np <- n - p
   common <- 0.5 * (report$ldL2 + report$ldRX2)
   common + np / 2 * log(report$PWRSS_s / np)
-}
-
-#' Average profiled REML objective over all MC draws.
-#'
-#' @details
-#' This is the quantity the TMB kernel minimises and what
-#' \code{blmm_fit_anchor()} optimises.
-#'
-#' @inheritParams blmm_profiled_objectives
-#' @return scalar: mean of per-draw profiled REML objectives
-#' @noRd
-blmm_anchor_objective_from_report <- function(report, n, p) {
-  mean(blmm_profiled_objectives(report, n, p))
 }
 
 # ---------------------------------------------------------------------------
@@ -552,22 +595,9 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
     contrasts = contrasts
   )
 
-  out <- list(
-    estimate = exact$estimate[, 1, , drop = FALSE],
-    std.error = exact$std.error[, 1, , drop = FALSE],
-    df = exact$df[, 1, , drop = FALSE],
-    p.lower = exact$p.lower[, 1, , drop = FALSE],
-    p.upper = exact$p.upper[, 1, , drop = FALSE],
-    random.eff = exact$random.eff[, 1, , drop = FALSE]
-  )
-  if (!is.null(contrasts)) {
-    out$contrast.estimate <- exact$contrast.estimate[, 1, , drop = FALSE]
-    out$contrast.std.error <- exact$contrast.std.error[, 1, , drop = FALSE]
-    out$contrast.df <- exact$contrast.df[, 1, , drop = FALSE]
-    out$contrast.p.lower <- exact$contrast.p.lower[, 1, , drop = FALSE]
-    out$contrast.p.upper <- exact$contrast.p.upper[, 1, , drop = FALSE]
-  }
-  out
+  fields <- blmm_output_fields(contrasts)
+  stats::setNames(lapply(fields, function(field)
+    exact[[field]][, 1, , drop = FALSE]), fields)
 }
 
 #' Approximate BLMM fit for one feature across all S MC draws.
@@ -581,7 +611,7 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' run an exact GLS solve for fixed effects.
 #'
 #' Failure of the shared anchor optimisation, or an unusable anchor Hessian,
-#' causes the entire feature to fall back to exact \code{lme4}. Once an anchor
+#' causes the entire feature to be refit with \code{lmerTest}. Once an anchor
 #' is available, each proposed draw-specific update must leave that draw's
 #' profiled REML objective unchanged within numerical tolerance or improve it.
 #' Rejected draws are re-fit exactly and spliced into the feature result;
@@ -598,9 +628,9 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' @param formula lme4 formula
 #' @param data data.frame
 #' @param forced_fallback integer vector of feature indices to force onto the
-#'   exact lme4 path; a testing hook, not used in normal operation
-#' @param inference internal selector for shared-anchor or residual degrees of
-#'   freedom.
+#'   lmerTest refit path; a testing hook, not used in normal operation
+#' @param inference internal selector: \code{"adaptive"} (default),
+#'   \code{"anchor"}, or deprecated \code{"residual"}.
 #' @param contrasts optional validated contrast matrix with one row per
 #'   contrast and columns matching \code{X}.
 #' @return list with \code{fit} (arrays), fallback status and counts, and a
@@ -608,7 +638,7 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' @noRd
 blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
                              reTrms, formula, data, forced_fallback = integer(0),
-                             inference = c("anchor", "residual", "adaptive"),
+                             inference = c("adaptive", "anchor", "residual"),
                              contrasts = NULL, strict = blmm_strict(),
                              .design_context = NULL) {
   inference <- match.arg(inference)
@@ -642,7 +672,7 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 
   if (inference == "adaptive") {
     return(blmm_fit_feature_adaptive(
-      d, Y_d, X, basis, is_log, phi_init, lower, reTrms, formula, data,
+      d, Y_d, X, basis, lower, reTrms, formula, data,
       contrasts, strict, .design_context
     ))
   }
@@ -671,20 +701,8 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     if (inference == "anchor") g_mat <- g_mat$scores
     phi_tilde <- blmm_phi_updates(anchor$phi_bar, anchor$H_d, g_mat, cholH)
 
-    feature_estimate <- matrix(NA_real_, nrow = p, ncol = S)
-    feature_std.error <- matrix(NA_real_, nrow = p, ncol = S)
-    feature_df <- matrix(NA_real_, nrow = p, ncol = S)
-    feature_p.lower <- matrix(NA_real_, nrow = p, ncol = S)
-    feature_p.upper <- matrix(NA_real_, nrow = p, ncol = S)
-    feature_random <- matrix(NA_real_, nrow = feature_random_rows, ncol = S)
-    if (!is.null(contrasts)) {
-      K <- nrow(contrasts)
-      feature_contrast.estimate <- matrix(NA_real_, nrow = K, ncol = S)
-      feature_contrast.std.error <- matrix(NA_real_, nrow = K, ncol = S)
-      feature_contrast.df <- matrix(NA_real_, nrow = K, ncol = S)
-      feature_contrast.p.lower <- matrix(NA_real_, nrow = K, ncol = S)
-      feature_contrast.p.upper <- matrix(NA_real_, nrow = K, ncol = S)
-    }
+    fit <- blmm_output_arrays(p, feature_random_rows, 1L, S, contrasts)
+    K <- if (is.null(contrasts)) 0L else nrow(contrasts)
     rejected <- rep(FALSE, S)
     rejection_messages <- rep("", S)
 
@@ -778,23 +796,21 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
       }
 
       fe <- draw_result$fe
-      feature_estimate[, s] <- fe$beta
-      feature_std.error[, s] <- fe$se
-      feature_df[, s] <- fe$df
-
-      t_stat <- fe$beta / fe$se
-      feature_p.lower[, s] <- pt(t_stat, df = fe$df, lower.tail = TRUE)
-      feature_p.upper[, s] <- pt(t_stat, df = fe$df, lower.tail = FALSE)
-      feature_random[, s] <- draw_result$random
-      if (!is.null(contrasts)) {
-        contrast_fit <- draw_result$contrast
-        feature_contrast.estimate[, s] <- contrast_fit$estimate
-        feature_contrast.std.error[, s] <- contrast_fit$std.error
-        feature_contrast.df[, s] <- contrast_fit$df
-        contrast_t <- contrast_fit$estimate / contrast_fit$std.error
-        feature_contrast.p.lower[, s] <- pt(contrast_t, df = contrast_fit$df, lower.tail = TRUE)
-        feature_contrast.p.upper[, s] <- pt(contrast_t, df = contrast_fit$df, lower.tail = FALSE)
+      contrast_fit <- draw_result$contrast
+      values <- list(
+        estimate = c(fe$beta, contrast_fit$estimate),
+        std.error = c(fe$se, contrast_fit$std.error),
+        df = c(rep_len(fe$df, p), contrast_fit$df)
+      )
+      t_stat <- values$estimate / values$std.error
+      values$p.lower <- pt(t_stat, df = values$df, lower.tail = TRUE)
+      values$p.upper <- pt(t_stat, df = values$df, lower.tail = FALSE)
+      for (field in .blmm_fields) {
+        fit[[field]][, 1, s] <- values[[field]][seq_len(p)]
+        if (K) fit[[paste0("contrast.", field)]][, 1, s] <-
+          values[[field]][p + seq_len(K)]
       }
+      fit$random.eff[, 1, s] <- draw_result$random
     }
 
     rejected_idx <- which(rejected)
@@ -812,30 +828,11 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     }
 
     list(
-      fit = c(list(
-        estimate = array(feature_estimate, c(p, 1L, S)),
-        std.error = array(feature_std.error, c(p, 1L, S)),
-        df = array(feature_df, c(p, 1L, S)),
-        p.lower = array(feature_p.lower, c(p, 1L, S)),
-        p.upper = array(feature_p.upper, c(p, 1L, S)),
-        random.eff = array(feature_random, c(feature_random_rows, 1L, S))
-      ), if (!is.null(contrasts)) list(
-        contrast.estimate = array(feature_contrast.estimate, c(nrow(contrasts), 1L, S),
-          dimnames = list(rownames(contrasts), NULL, NULL)),
-        contrast.std.error = array(feature_contrast.std.error, c(nrow(contrasts), 1L, S),
-          dimnames = list(rownames(contrasts), NULL, NULL)),
-        contrast.df = array(feature_contrast.df, c(nrow(contrasts), 1L, S),
-          dimnames = list(rownames(contrasts), NULL, NULL)),
-        contrast.p.lower = array(feature_contrast.p.lower, c(nrow(contrasts), 1L, S),
-          dimnames = list(rownames(contrasts), NULL, NULL)),
-        contrast.p.upper = array(feature_contrast.p.upper, c(nrow(contrasts), 1L, S),
-          dimnames = list(rownames(contrasts), NULL, NULL))
-      )),
+      fit = fit,
       fallback = length(rejected_idx) > 0L,
       fallback_message = fallback_message,
       fallback_draws = length(rejected_idx),
       rejected_draws = rejected_idx,
-      anchor_distance = colSums((cholH %*% (phi_tilde - anchor$phi_bar))^2),
       full_fallback = FALSE
     )
   }, error = function(e) {
@@ -908,15 +905,15 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' Conditional GLS solves give each draw's coefficients and SEs. Their numerical
 #' validation and Satterthwaite approximation do not establish finite-sample
 #' calibration. Draws with unresolved fitting or inference checks are fitted
-#' fully with \code{lmerTest}; an unavailable anchor causes all draws for that
-#' feature to be fitted fully. A warning reports affected features/draws and
+#' fully with \code{lmerTest}; for the shared-anchor selector, an unavailable
+#' anchor causes all draws for that feature to be fitted fully. A warning reports affected features/draws and
 #' representative reasons. Replacement-fit warnings remain visible; invalid
 #' numerical contrast inference retains valid fitted quantities with a warning
 #' and \code{NA} contrast p-values. Fitting errors stop the analysis, and failed
 #' draw refits are not retried as whole-feature fallbacks.
 #'
-#' This unexported function retains \code{inference = "anchor"} as its internal
-#' default; \code{aldex()} always passes its resolved selector explicitly.
+#' This unexported function defaults to \code{inference = "adaptive"}, matching
+#' \code{aldex()}, which always passes its resolved selector explicitly.
 #' Shared-anchor inference uses one covariance proposal per draw and evaluates
 #' the df formula with anchor curvature and sensitivities. It remains available
 #' publicly as \code{test = "t.satterthwaite"}. Deprecated public
@@ -931,8 +928,8 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #'   to adaptive inference: it centers each draw, refines covariance parameters
 #'   from the shared anchor with up to eight safeguarded steps, and uses local
 #'   Satterthwaite inference for coefficients and contrasts. Unresolved draws
-#'   are refitted with \code{lmerTest}. This internal function instead defaults
-#'   to shared-anchor Satterthwaite inference. Public deprecated
+#'   are refitted with \code{lmerTest}. \code{"anchor"} selects shared-anchor
+#'   Satterthwaite inference (public \code{test = "t.satterthwaite"}). Public deprecated
 #'   \code{test = "t.residual"} uses residual degrees of freedom for accepted
 #'   draws and Satterthwaite degrees of freedom for refitted draws.
 #' @param contrasts optional validated contrast matrix with one row per
@@ -947,8 +944,9 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
 #' @importFrom lme4 lFormula lmerControl
 #' @importFrom TMB MakeADFun
 #' @useDynLib ALDEx3, .registration = TRUE
+#' @keywords internal
 blmm <- function(logW, formula, data, n.cores = 1L,
-                 inference = c("anchor", "residual", "adaptive"), contrasts = NULL) {
+                 inference = c("adaptive", "anchor", "residual"), contrasts = NULL) {
   inference <- match.arg(inference)
   N <- dim(logW)[1]
   D <- dim(logW)[2]
@@ -983,24 +981,10 @@ blmm <- function(logW, formula, data, n.cores = 1L,
     forced_fallback <- forced_fallback[forced_fallback >= 1L & forced_fallback <= D]
   }
 
-  estimate <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
-  std.error <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
-  df_arr <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
-  p.lower <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
-  p.upper <- array(NA_real_, c(p, D, S), dimnames = list(fnames, NULL, NULL))
-  random.eff <- array(NA_real_, c(Pr, D, S), dimnames = list(rnames, NULL, NULL))
   .design_context <- blmm_inference_context(X, contrasts, reTrms)
   contrasts <- .design_context$contrasts
   if (!is.null(contrasts) && .design_context$qr$rank < p) {
     stop("blmm: contrasts require a full-rank fixed-effect design")
-  }
-  if (!is.null(contrasts)) {
-    K <- nrow(contrasts)
-    contrast.estimate <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
-    contrast.std.error <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
-    contrast.df <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
-    contrast.p.lower <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
-    contrast.p.upper <- array(NA_real_, c(K, D, S), dimnames = list(rownames(contrasts), NULL, NULL))
   }
 
   # Closure over the shared parsed objects so parallel dispatch only passes
@@ -1088,15 +1072,15 @@ blmm <- function(logW, formula, data, n.cores = 1L,
     warning_text <- if (length(partial_idx) == 0L) {
       sprintf(
         paste0(
-          "blmm: %d feature(s) fell back to exact lme4 because the ",
-          "approximate path failed."
+          "blmm: %d feature(s) were refit with lmerTest for all draws because ",
+          "the approximate path failed."
         ),
         length(full_idx)
       )
     } else if (length(full_idx) == 0L) {
       sprintf(
         paste0(
-          "blmm: %d draw(s) across %d feature(s) fell back to exact lme4 ",
+          "blmm: %d draw(s) across %d feature(s) were refit with lmerTest ",
           "because their local covariance updates or inference failed validation."
         ),
         partial_draws,
@@ -1105,8 +1089,8 @@ blmm <- function(logW, formula, data, n.cores = 1L,
     } else {
       sprintf(
         paste0(
-          "blmm: %d feature(s) fell back to exact lme4 for all draws, and ",
-          "%d draw(s) across %d additional feature(s) used exact lme4 ",
+          "blmm: %d feature(s) were refit with lmerTest for all draws, and ",
+          "%d draw(s) across %d additional feature(s) were refit ",
           "because their local covariance updates or inference failed validation."
         ),
         length(full_idx),
@@ -1122,37 +1106,13 @@ blmm <- function(logW, formula, data, n.cores = 1L,
 
   # Each blmm_fit_feature() result has a singleton feature dimension (D = 1);
   # drop it when writing into the D-wide output arrays.
+  output <- blmm_output_arrays(p, Pr, D, S, contrasts,
+                               names = fnames, random_names = rnames)
   for (d in seq_len(D)) {
     feature_fit <- feature_results[[d]]$fit
-    estimate[, d, ] <- feature_fit$estimate[, 1, ]
-    std.error[, d, ] <- feature_fit$std.error[, 1, ]
-    df_arr[, d, ] <- feature_fit$df[, 1, ]
-    p.lower[, d, ] <- feature_fit$p.lower[, 1, ]
-    p.upper[, d, ] <- feature_fit$p.upper[, 1, ]
-    random.eff[, d, ] <- feature_fit$random.eff[, 1, ]
-    if (!is.null(contrasts)) {
-      contrast.estimate[, d, ] <- feature_fit$contrast.estimate[, 1, ]
-      contrast.std.error[, d, ] <- feature_fit$contrast.std.error[, 1, ]
-      contrast.df[, d, ] <- feature_fit$contrast.df[, 1, ]
-      contrast.p.lower[, d, ] <- feature_fit$contrast.p.lower[, 1, ]
-      contrast.p.upper[, d, ] <- feature_fit$contrast.p.upper[, 1, ]
-    }
+    for (field in names(output))
+      output[[field]][, d, ] <- feature_fit[[field]][, 1, ]
   }
-
-  output <- c(list(
-    estimate = estimate,
-    std.error = std.error,
-    df = df_arr,
-    p.lower = p.lower,
-    p.upper = p.upper,
-    random.eff = random.eff
-  ), if (!is.null(contrasts)) list(
-    contrast.estimate = contrast.estimate,
-    contrast.std.error = contrast.std.error,
-    contrast.df = contrast.df,
-    contrast.p.lower = contrast.p.lower,
-    contrast.p.upper = contrast.p.upper
-  ))
   hook <- getOption("ALDEx3.blmm.adaptive.diagnostics")
   if (isTRUE(hook) || is.function(hook)) {
     diagnostics <- lapply(feature_results, function(result) {

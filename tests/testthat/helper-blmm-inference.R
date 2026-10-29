@@ -31,3 +31,32 @@ feature_fit <- function(z, ...) {
     X = p$X, basis = p$basis, is_log = p$is_log, phi_init = p$phi_init,
     lower = p$lower, reTrms = p$reTrms, formula = z$formula, data = z$data), list(...)))
 }
+
+# Test oracle: the average per-draw profiled REML objective, which the batched
+# TMB kernel minimises for the shared anchor.
+blmm_anchor_objective_from_report <- function(report, n, p) {
+  mean(ALDEx3:::blmm_profiled_objectives(report, n, p))
+}
+
+# aldex.mem.sim() fixtures: true log scales, sampled logW (N x D x S), and
+# a BLMM/exact-lme4 pair fitted to the same draws.
+blmm_true_scale <- function(sim, nsample) {
+  matrix(rep(log2(colSums(sim$W)), nsample), nrow = ncol(sim$Y))
+}
+
+blmm_sample_logW <- function(Y, formula, data, nsample, scale, scale.args = list()) {
+  X <- t(model.matrix(reformulas::nobars(formula), data))
+  draws <- ALDEx3:::aldex.sampler(
+    Y, X, nsample, scale, scale.args, return.pars = "logW"
+  )
+  aperm(draws$logW, c(2, 1, 3))
+}
+
+blmm_fit_pair <- function(logW, formula, data, inference = "adaptive") {
+  list(
+    blmm = ALDEx3:::blmm(logW, formula, data, n.cores = 1L,
+                         inference = inference),
+    lme4 = ALDEx3:::sr.mem(logW, formula, data, n.cores = 1L,
+                           method = "lme4", mem.args = list())
+  )
+}

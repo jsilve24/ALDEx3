@@ -6,7 +6,7 @@
 ##' @param l a list, where every element is itself a list of 3D arrays.
 ##' @return a list of 3D arrays
 ##' @author Justin Silverman
-##' @import purrr
+##' @keywords internal
 combine.streams <- function(l) {
    fields <- names(l[[1]])
    stats::setNames(lapply(fields, function(field) {
@@ -21,6 +21,7 @@ combine.streams <- function(l) {
 ##' @param obj object (list type) 
 ##' @param names names of elements required to be in the list 
 ##' @author Justin Silverman
+##' @keywords internal
 req <- function(obj, names){
   present <- sapply(obj[names], is.null)
   if(any(present)){

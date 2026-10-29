@@ -66,3 +66,4 @@ objects, which accepts names and automatically handles unlisted rows.
 \author{
 Justin Silverman, Kyle McGovern
 }
+\keyword{internal}

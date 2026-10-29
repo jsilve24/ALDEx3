@@ -31,8 +31,7 @@ blmm_partial_information <- function(theta, lower, metadata, H, gradient) {
   keep <- indices$keep
   if (!length(dropped) || !length(keep))
     stop("blmm: partial boundary requires zero and retained coordinates")
-  active <- is.finite(lower) & theta <= lower +
-    1e-10 * (1 + abs(replace(lower, !is.finite(lower), 0)))
+  active <- blmm_near_bound(theta, lower)
   if (any(active[keep])) stop("blmm: unsupported active partial boundary")
   if (any(gradient[dropped] != 0) || any(H[dropped, keep, drop = FALSE] != 0))
     stop("blmm: partial boundary derivatives do not decouple")

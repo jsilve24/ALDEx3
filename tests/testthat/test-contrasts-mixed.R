@@ -116,7 +116,7 @@ test_that("BLMM contrast rescue replaces every contrast field consistently", {
   whole <- z$logW
   attr(whole, "blmm.force_fail_features") <- 1L
   expect_warning(rescued <- ALDEx3:::blmm(whole, z$lme4_formula, z$data,
-                                          contrasts = C), "fell back")
+                                          contrasts = C), "refit with lmerTest")
   for (nm in names(exact)) {
     expect_equal(unname(rescued[[nm]][, 1, , drop = FALSE]), unname(exact[[nm]]),
                  info = nm)

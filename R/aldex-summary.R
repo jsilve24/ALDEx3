@@ -19,6 +19,7 @@
 ##' @return A (D x nsample)-matrix of Cohen's d statistics for the variable of
 ##'   interest.
 ##' @author Justin Silverman
+##' @keywords internal
 cohensd <- function(m, var) {
   idx <- .aldex_resolve_contrast(m, substitute(var))
   pooled <- .aldex_pooled_var(m, idx)

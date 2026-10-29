@@ -23,8 +23,9 @@
 ##' @import nlme
 ##' @importFrom lmerTest lmer
 ##' @importFrom lme4 VarCorr
-##' @importFrom parallel parLapply makeCluster stopCluster clusterExport clusterEvalQ
+##' @importFrom parallel parLapply makeCluster stopCluster clusterEvalQ
 ##' @author Kyle McGovern
+##' @keywords internal
 sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
                    contrasts = NULL) {
   N <- dim(logW)[1]

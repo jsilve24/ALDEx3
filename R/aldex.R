@@ -1,9 +1,66 @@
-##' ALDEx3 Linear Models
+##' @title ALDEx3 Linear Models
+##' @description Fit linear or linear mixed models to sequence count data
+##' while accounting for uncertainty in both composition and scale (total
+##' abundance).
 ##'
-##' Sequence counts determine the relative composition of each sample, but not
+##' For each of \code{nsample} Monte Carlo draws, \code{aldex} samples each
+##' sample's composition from a Dirichlet-multinomial posterior, samples its
+##' log2 scale from the scale model, and adds the two to obtain log2
+##' abundances. It then fits the chosen model to every feature, adjusts the
+##' p-values across features within the draw, and averages estimates, standard
+##' errors and adjusted p-values over draws.
+##'
+##' @param Y a D x N matrix of sequence counts, where D is the number of taxa or
+##'   genes and N the number of samples.
+##' @param X a one-sided model formula (no response), used with \code{data},
+##'   or for \code{method = "lm"} a P x N numeric model matrix (P is the number
+##'   of coefficients). For \code{"blmm"} and \code{"lme4"}, the formula
+##'   includes random effects in \code{lme4} syntax, e.g.
+##'   \code{~ treat + (1 | subject)}. For \code{"nlme"}, give the fixed-effects
+##'   formula here and the random effects through \code{random} in \code{...}.
+##' @param data a data frame with N rows, required when \code{X} is a formula.
+##' @param method (default \code{"lm"}) the regression engine:
+##'   \describe{
+##'     \item{\code{"lm"}}{fast ordinary linear regression.}
+##'     \item{\code{"blmm"}}{ALDEx3's approximate linear mixed model, with
+##'       \code{lmerTest} refits for draws that fail its checks (see Details).}
+##'     \item{\code{"lme4"}}{a full \code{lmerTest} (\code{lme4}) mixed model fit
+##'       to every draw.}
+##'     \item{\code{"nlme"}}{an \code{nlme} mixed model; requires \code{random}
+##'       and optionally accepts \code{correlation} (see \code{\link[nlme]{lme}}).}
+##'   }
+##' @param nsample number of Monte Carlo draws.
+##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
+##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
+##'   nsample} matrix of log2-scale draws. Additional arguments for a
+##'   scale-model function are passed through \code{...}. See
+##'   "Writing a custom scale model" in the Examples section for the required
+##'   interface.
+##' @param streamsize (default 8000) size threshold for processing draws in
+##'   chunks. Streaming occurs when \code{D*N*nsample*8/100000 > streamsize}, so
+##'   the default corresponds to about 800 MB of response draws. Each chunk
+##'   contains at most \code{floor(streamsize*100000/(D*N*8))} draws. This is a
+##'   heuristic, not a hard memory limit. Composition and scale draws are not
+##'   returned when streaming. Set \code{streamsize=Inf} to disable streaming.
+##'   BLMM fits a separate anchor per chunk, so changing this threshold can
+##'   change its results slightly.
+##' @param n.cores (default detectCores()-1) Number of workers for mixed models.
+##'   \code{"lme4"} and \code{"nlme"} distribute feature-draw fits across
+##'   workers; \code{"blmm"} distributes features.
+##' @param return.pars what results should be returned, see return section
+##'   below.
+##' @param p.adjust.method (default BH) The method for multiple hypothesis test
+##'   correction. See `p.adjust` for all available methods.
+##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
+##'   `"lm"`, `"t.satterthwaite.adaptive"` for `"blmm"`, and `"t"` for
+##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
+##'   for `blmm`, choose `"t.satterthwaite.adaptive"`, `"t.satterthwaite"`,
+##'   or the deprecated `"t.residual"`; for `lme4` and `nlme`, only `"t"` is
+##'   supported. Names are case-sensitive.
+##' @details
+##' \strong{Scale models.} Sequence counts determine the relative composition of each sample, but not
 ##' its total abundance or scale. The \code{scale} argument tells ALDEx3 what is
 ##' known about that missing quantity and how uncertain that knowledge is.
-##'
 ##' Choose a scale model based on the information available:
 ##' \itemize{
 ##'   \item Use \code{\link{sample.sm}} for external measurements such as flow
@@ -20,119 +77,56 @@
 ##'     and \code{N x nsample} output.
 ##' }
 ##'
-##' @title ALDEx3 Linear Models
-##' @param Y an (D x N) matrix of sequence count, N is number of samples, D is
-##'   number of taxa or genes
-##' @param X either a formula (in which case DATA must be non-null) or a model
-##'   matrix of dimension P x N (P is number of linear model covariates). If a
-##'   formula is passed it should not include the target Y, e.g., should simply
-##'   be "~condition-1" (note the lack of the left hand side). If using lme4,
-##'   this should be the formula including random effects.
-##' @param data a data frame for use with formula, must have N rows
-##' @param method (default lm) The regression method; "lm": linear regression,
-##'   "lme4": linear mixed effects regression with lme4; "nlme": linear mixed
-##'   effects models with nlme, REQUIRES "random" argument representing random
-##'   effects be passed into `aldex` function, can also pass "correlation" as
-##'   argument (see nlme documentation for how to use "correlation" argument);
-##'   or "blmm": an ALDEx3-specific approximate mixed-effects engine. For each
-##'   feature, BLMM estimates covariance parameters jointly across Monte Carlo
-##'   draws, then makes a local adjustment for each draw. This shared fit is
-##'   called the anchor. Fixed effects and standard errors are calculated
-##'   using each draw's adjusted covariance parameters; p-values use the
-##'   approximation selected by \code{test}. If the shared fit fails or its
-##'   curvature cannot be used, BLMM fits every draw for that feature separately
-##'   with \code{lmerTest} (which uses \code{lme4} for fitting). If only a
-##'   draw's local update or inference fails validation, only that draw is
-##'   refitted. A warning reports these refits. BLMM reuses matrix calculations
-##'   and automatically chooses sparse or dense computation; no extra argument
-##'   is needed. See the mixed-effects vignette for details and timing examples.
-##'   If a fitted \code{lmerTest} contrast has invalid numerical inference,
-##'   a warning is issued and its p-values are \code{NA}; valid fitted
-##'   quantities are retained. Missing p-values propagate through Monte Carlo
-##'   aggregation. Errors in model fitting still stop the analysis. A failed
-##'   exact refit of rejected BLMM draws is not retried for the whole feature.
-##' @param nsample number of monte carlo replicates
-##' @param scale A scale-model function, such as \code{clr.sm}, \code{tss.sm},
-##'   \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
-##'   nsample} matrix of log2-scale draws. Additional arguments for a
-##'   scale-model function are passed through \code{...}. See
-##'   "Writing a custom scale model" in the Examples section for the required
-##'   interface.
-##' @param streamsize (default 8000) working-size threshold for streaming. The
-##'   existing heuristic uses ten times the raw response-array size in decimal
-##'   MB: streaming occurs when \code{D*N*nsample*8/100000 > streamsize}. Thus
-##'   the default corresponds to about 800 MB of raw response draws, not an 8 GB
-##'   array. Each chunk contains at most \code{floor(streamsize*100000/(D*N*8))}
-##'   draws. This is a size heuristic, not a hard process-memory limit. To
-##'   conserve memory, Dirichlet and scale samples are not returned when
-##'   streaming is used. Set \code{streamsize=Inf} to disable streaming. BLMM
-##'   fits a separate anchor per chunk, so changing this threshold can change
-##'   its approximate results.
-##' @param n.cores (default detectCores()-1) Number of workers for mixed models.
-##'   The fully fitted engines distribute feature-draw fits across workers. For
-##'   \code{method = "blmm"}, parallelism is across features, not across Monte
-##'   Carlo draws within a feature.
-##' @param return.pars what results should be returned, see return section
-##'   below.
-##' @param p.adjust.method (default BH) The method for multiple hypothesis test
-##'   correction. See `p.adjust` for all available methods.
-##' @param test inference selector. Defaults depend on `method`: `"t.HC3"` for
-##'   `"lm"`, `"t.satterthwaite.adaptive"` for `"blmm"`, and native `"t"` inference for
-##'   `"lme4"` and `"nlme"`. For `lm`, choose `"t"`, `"t.HC0"`, or `"t.HC3"`;
-##'   for `blmm`, choose `"t.satterthwaite.adaptive"`, `"t.satterthwaite"`,
-##'   or `"t.residual"`; for `lme4` and
-##'   `nlme`, only `"t"` is supported.
-##' @details For \code{method = "lm"}, \code{"t"} uses ordinary residual
-##'   variance, \code{"t.HC0"} uses the White sandwich covariance, and
-##'   \code{"t.HC3"} applies its leverage correction. For \code{"blmm"},
-##'   the default \code{"t.satterthwaite.adaptive"} centers each response
-##'   draw in the fixed-effect design, refines its covariance parameters from
-##'   the shared anchor with up to eight safeguarded steps, and restores its
-##'   coefficient shifts. It uses local Satterthwaite inference for coefficients
-##'   and contrasts. Validated zero and partial covariance boundaries can use
-##'   local inference without a refit. Stationarity, curvature and
-##'   inference-stability checks govern acceptance; unsupported or unresolved
-##'   draws are refitted with \code{lmerTest}. These checks are numerical
-##'   heuristics, not error bounds or a guarantee of statistical calibration.
-##'   Explicit \code{"t.satterthwaite"} uses the shared-anchor approximation;
-##'   adaptive fitting can cost more. Deprecated \code{"t.residual"} uses
-##'   residual degrees of freedom for accepted draws and \code{lmerTest}
-##'   Satterthwaite inference for refitted draws. It warns once per public call;
-##'   its behavior is retained with no scheduled removal version.
-##'   The \code{lme4}
-##'   engine uses per-draw lmerTest Satterthwaite inference internally;
-##'   \code{nlme} uses its native denominator df. Their public selector is
-##'   \code{"t"}; neither accepts the BLMM selectors. Names are
-##'   case-sensitive.
+##'   \strong{Linear models.} For \code{method = "lm"}, \code{"t"} uses the
+##'   ordinary residual variance, \code{"t.HC0"} the White sandwich covariance,
+##'   and \code{"t.HC3"} its leverage-corrected version.
 ##'
-##'   Each contrast row tests \eqn{H_0: c^T\beta=0}. Its SE uses the full
-##'   fitted coefficient covariance, including off-diagonal entries. This
-##'   argument specifies linear hypotheses, not R's factor-coding contrasts.
-##'   For \code{nlme}, a contrast may involve only coefficients with the same
-##'   native denominator df; unsupported combinations produce an error.
+##'   \strong{BLMM.} For each feature, BLMM fits one set of covariance
+##'   parameters shared by all draws (the anchor). With the default
+##'   \code{"t.satterthwaite.adaptive"}, each draw then refines its own
+##'   covariance fit from the anchor with at most eight steps, and its
+##'   estimates, standard errors and Satterthwaite degrees of freedom are
+##'   computed at that fit. A draw is accepted only if it passes numerical
+##'   checks of convergence, curvature and stability of its inference; draws
+##'   that fail are refit with \code{lmerTest}, and a warning reports how many.
+##'   Fits with all covariance parameters at zero, or with whole zero columns of
+##'   the covariance Cholesky factor, get local inference without a refit. The
+##'   checks are numerical; they do not guarantee calibrated p-values.
+##'   \code{"t.satterthwaite"} is the cheaper shared-anchor approximation used
+##'   by default in ALDEx3 1.5.0-1.6.2. The deprecated \code{"t.residual"} uses
+##'   residual degrees of freedom for accepted draws and warns once per call.
+##'   If \code{lmerTest} cannot produce valid inference for a refit draw's
+##'   contrast, that draw's p-values are \code{NA} with a warning; errors during
+##'   fitting stop the analysis. BLMM chooses dense or sparse computation
+##'   automatically. See \code{vignette("ALDEx3-mixed-effects")} for details.
 ##'
-##'   Each coefficient and contrast forms a separate adjustment family across
-##'   features. For two-sided tests, directional probabilities are doubled and
-##'   capped at one, then adjusted within each draw and direction. ALDEx3
-##'   averages over draws and selects the smaller directional aggregate.
-##'   Combining discovery lists across coefficients or contrasts carries no
-##'   joint FDR guarantee. Use \code{\link{aldex.p.adjust}} on the fitted
-##'   object to group coefficients or stored contrasts into shared adjustment
-##'   families without refitting. The supplied scale model and original design are
-##'   unchanged. Streaming may change BLMM results because each chunk has its
-##'   own shared anchor; contrasts use the same fits within each chunk.
+##'   \strong{Other mixed models.} \code{"lme4"} uses \code{lmerTest}
+##'   Satterthwaite inference for every draw; \code{"nlme"} uses its native
+##'   denominator degrees of freedom.
+##'
+##'   \strong{Contrasts.} Each contrast row tests \eqn{H_0: c^T\beta=0}, using
+##'   the full fitted coefficient covariance. These are linear hypotheses, not
+##'   R's factor-coding contrasts. For \code{nlme}, a contrast may involve only
+##'   coefficients with the same denominator degrees of freedom.
+##'
+##'   \strong{Multiple testing.} Each coefficient and contrast is a separate
+##'   adjustment family across features. Within each draw, p-values are
+##'   adjusted with \code{p.adjust.method} and then averaged over draws; for
+##'   two-sided tests this is done for each direction and the smaller result
+##'   is reported. Use \code{\link{aldex.p.adjust}} on the fitted object to
+##'   adjust several coefficients or contrasts as one family without refitting.
 ##' @param contrasts optional numeric K x P matrix with one fixed-effect
 ##'   contrast per row. Its uniquely named columns must be the complete
 ##'   coefficient set and are reordered to the fitted design. Contrast rows
 ##'   have unique nonempty names, are finite and nonzero, and need not sum to
 ##'   zero or be independent. Contrasts require a full-rank fixed-effect design
 ##'   with positive residual degrees of freedom. They do not change composition
-##'   or scale sampling or adjustment families. Checks on an added contrast
-##'   can require further adaptive refinement or a full refit, which can also
-##'   change coefficient results.
-##' @param onesided (default: FALSE) if sided return p-values for two-sided
-##'   test. Otherwise if "lower" or "upper" return one-sided test corresponding
-##'   to test that estimate is negative or positive respectively.
+##'   or scale sampling or adjustment families. For BLMM, checks on an added
+##'   contrast can cause further refinement or a refit, which can also change
+##'   coefficient results slightly.
+##' @param onesided (default \code{FALSE}) \code{FALSE} gives two-sided
+##'   p-values; \code{"lower"} or \code{"upper"} gives one-sided p-values for
+##'   the alternative that the estimate is negative or positive, respectively.
 ##' @param ... Additional scale-model arguments, such as \code{gamma},
 ##'   \code{s.mu}, or \code{c.mu}. For \code{method = "nlme"}, this may also
 ##'   include \code{random} or \code{correlation}.
@@ -360,11 +354,14 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   } else {
     entity.names <- rownames(Y)
   }
-  if (is.null(rownames(X))) {
-    parameter.names <- paste0("parameter_", 1:nrow(X))
-  } else {
-    parameter.names <- rownames(X)
+  parameter.names <- rownames(X)
+  label <- function(x, row.names) {
+    rownames(x) <- row.names
+    colnames(x) <- entity.names
+    x
   }
+  fitted.fields <- c("estimate", "std.error", "df")
+  pval.fields <- c(p.val = "p.res", p.val.adj = "p.adj.res")
 
   res <- list()
   res$streaming <- stream
@@ -373,63 +370,22 @@ aldex <- function(Y, X, data=NULL, method="lm", nsample=2000,  scale=NULL,
   res$test <- test
   res$p.adjust.method <- p.adjust.method
   res$onesided <- onesided
-  if ("estimate" %in% return.pars) {
-    res$estimate <- out$estimate
-    rownames(res$estimate) <- parameter.names
-    colnames(res$estimate) <- entity.names
+  ## Drop each array from out/pval.l once copied to keep peak memory down.
+  for (field in fitted.fields) {
+    if (field %in% return.pars) res[[field]] <- label(out[[field]], parameter.names)
+    out[[field]] <- NULL
   }
-  out$estimate <- NULL
-  if ("std.error" %in% return.pars) {
-    res$std.error <- out$std.error
-    rownames(res$std.error) <- parameter.names
-    colnames(res$std.error) <- entity.names
+  for (field in names(pval.fields)) {
+    if (field %in% return.pars)
+      res[[field]] <- label(pval.l[[pval.fields[[field]]]], parameter.names)
+    pval.l[[pval.fields[[field]]]] <- NULL
   }
-  out$std.error <- NULL
-  if ("df" %in% return.pars) {
-    res$df <- out$df
-    rownames(res$df) <- parameter.names
-    colnames(res$df) <- entity.names
-  }
-  out$df <- NULL
-  if ("p.val" %in% return.pars) {
-    res$p.val <- pval.l$p.res
-    rownames(res$p.val) <- parameter.names
-    colnames(res$p.val) <- entity.names
-  }
-  pval.l$p.res <- NULL
-  if ("p.val.adj" %in% return.pars) {
-    res$p.val.adj <- pval.l$p.adj.res
-    rownames(res$p.val.adj) <- parameter.names
-    colnames(res$p.val.adj) <- entity.names
-  }
-  pval.l$p.adj.res <- NULL
   if (!is.null(contrasts)) {
     cres <- list(matrix=contrasts)
-    if ("estimate" %in% return.pars) {
-      cres$estimate <- out$contrast.estimate
-      rownames(cres$estimate) <- rownames(contrasts)
-      colnames(cres$estimate) <- entity.names
-    }
-    if ("std.error" %in% return.pars) {
-      cres$std.error <- out$contrast.std.error
-      rownames(cres$std.error) <- rownames(contrasts)
-      colnames(cres$std.error) <- entity.names
-    }
-    if ("df" %in% return.pars) {
-      cres$df <- out$contrast.df
-      rownames(cres$df) <- rownames(contrasts)
-      colnames(cres$df) <- entity.names
-    }
-    if ("p.val" %in% return.pars) {
-      cres$p.val <- contrast.pval$p.res
-      rownames(cres$p.val) <- rownames(contrasts)
-      colnames(cres$p.val) <- entity.names
-    }
-    if ("p.val.adj" %in% return.pars) {
-      cres$p.val.adj <- contrast.pval$p.adj.res
-      rownames(cres$p.val.adj) <- rownames(contrasts)
-      colnames(cres$p.val.adj) <- entity.names
-    }
+    for (field in intersect(fitted.fields, return.pars))
+      cres[[field]] <- label(out[[paste0("contrast.", field)]], rownames(contrasts))
+    for (field in intersect(names(pval.fields), return.pars))
+      cres[[field]] <- label(contrast.pval[[pval.fields[[field]]]], rownames(contrasts))
     res$contrasts <- cres
   }
   if ("logScale" %in% return.pars) {

@@ -33,3 +33,4 @@ documentation fully.
 \author{
 Justin Silverman
 }
+\keyword{internal}

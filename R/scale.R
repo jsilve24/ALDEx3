@@ -150,11 +150,6 @@
   args
 }
 
-center.sm <- function(logComp) {
-  g <- apply(logComp, c(2,3), FUN=`mean`)
-  return(sweep(logComp, c(2,3), g, FUN=`-`))
- }
-
 ##' CLR-based scale model
 ##'
 ##' Use this model when centered log-ratio (CLR) normalization is a reasonable

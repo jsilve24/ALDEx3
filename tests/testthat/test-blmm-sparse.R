@@ -123,42 +123,13 @@ test_that("BLMM AD derivatives agree with central differences without numDeriv",
 
   obj$fn(phi)
   report <- obj$report()
-  expected <- ALDEx3:::blmm_anchor_objective_from_report(
+  expected <- blmm_anchor_objective_from_report(
     report, nrow(p$X), ncol(p$X)
   )
   expect_equal(obj$fn(phi), expected, tolerance = 1e-8)
 })
 
-test_that("BLMM factor and conditional draw solves agree across backends", {
-  z <- blmm_sparse_ad_fixture(S = 3L)
-  dense <- blmm_sparse_ad_objects(z, "dense")
-  sparse <- blmm_sparse_ad_objects(z, "sparse")
-  phi <- dense$parsed$phi_init
-  idx <- which(!is.finite(dense$parsed$lower))
-  phi[idx] <- 0.15
-  pieces_dense <- ALDEx3:::blmm_common_pieces(
-    phi, dense$parsed$X, dense$parsed$basis, dense$parsed$lower
-  )
-  pieces_sparse <- ALDEx3:::blmm_common_pieces(
-    phi, sparse$parsed$X, sparse$parsed$basis, sparse$parsed$lower
-  )
-  expect_equal(pieces_sparse$BX, pieces_dense$BX, tolerance = 1e-8)
-  expect_equal(pieces_sparse$LX, pieces_dense$LX, tolerance = 1e-8)
-  expect_equal(pieces_sparse$ldL2, pieces_dense$ldL2, tolerance = 1e-8)
-  for (s in seq_len(ncol(z$Y))) {
-    fit_dense <- ALDEx3:::blmm_fixed_effects_draw(
-      pieces_dense, dense$parsed$X, z$Y[, s]
-    )
-    fit_sparse <- ALDEx3:::blmm_fixed_effects_draw(
-      pieces_sparse, sparse$parsed$X, z$Y[, s]
-    )
-    for (field in c("beta", "se", "df", "sigma2"))
-      expect_equal(fit_sparse[[field]], fit_dense[[field]], tolerance = 1e-8,
-                   info = paste(field, s))
-  }
-})
-
-test_that("BLMM sparse and dense paths agree for slope, nested, and crossed designs",
+test_that("anchor sparse and dense paths agree for slope, nested, and crossed designs",
           {
   old <- options(ALDEx3.blmm.backend = "dense",
                  ALDEx3.blmm.strict = TRUE)
@@ -169,35 +140,20 @@ test_that("BLMM sparse and dense paths agree for slope, nested, and crossed desi
     C <- blmm_sparse_contrast(z$formula, z$data)
     fits <- vector("list", 2L)
     names(fits) <- c("dense", "sparse")
-    residual_fits <- vector("list", 2L)
-    names(residual_fits) <- names(fits)
     for (backend in names(fits)) {
       options(ALDEx3.blmm.backend = backend)
       fits[[backend]] <- ALDEx3:::blmm(
         z$logW, z$formula, z$data, n.cores = 1L,
         inference = "anchor", contrasts = C
       )
-      options(ALDEx3.blmm.backend = backend)
-      residual_fits[[backend]] <- ALDEx3:::blmm(
-        z$logW, z$formula, z$data, n.cores = 1L,
-        inference = "residual", contrasts = C
-      )
-      expect_true(all(is.finite(residual_fits[[backend]]$estimate)),
-                  info = paste(design, backend))
-      expect_true(all(is.finite(residual_fits[[backend]]$contrast.estimate)),
-                  info = paste(design, backend, "contrast"))
     }
-    for (field in c("estimate", "std.error", "df", "p.lower", "p.upper",
-                    "random.eff", "contrast.estimate", "contrast.std.error",
-                    "contrast.df", "contrast.p.lower", "contrast.p.upper")) {
+    for (field in names(fits$dense))
       expect_equal(fits$sparse[[field]], fits$dense[[field]], tolerance = 1e-5,
                    info = paste(design, field))
-      expect_equal(residual_fits$sparse[[field]], residual_fits$dense[[field]],
-                   tolerance = 1e-5, info = paste(design, "residual", field))
-    }
   }
 })
 
+# Only the anchor path performs R-level sparse factor solves.
 test_that("strict sparse backend failures are exposed instead of rescued", {
   z <- blmm_sparse_ad_fixture(S = 2L)
   old <- options(ALDEx3.blmm.backend = "sparse", ALDEx3.blmm.strict = TRUE)
@@ -207,7 +163,7 @@ test_that("strict sparse backend failures are exposed instead of rescued", {
     .package = "ALDEx3"
   )
   expect_error(
-    ALDEx3:::blmm(z$logW, z$formula, z$data, n.cores = 1L),
+    ALDEx3:::blmm(z$logW, z$formula, z$data, n.cores = 1L, inference = "anchor"),
     "injected sparse backend failure"
   )
 })
@@ -235,7 +191,7 @@ test_that("strict forked backend failures rethrow the original condition", {
   old <- options(ALDEx3.blmm.backend = "sparse", ALDEx3.blmm.strict = TRUE)
   on.exit(options(old), add = TRUE)
   testthat::local_mocked_bindings(
-    blmm_factor_solve = function(...) stop("injected fork backend failure"),
+    blmm_make_adfun = function(...) stop("injected fork backend failure"),
     .package = "ALDEx3"
   )
 
@@ -256,11 +212,9 @@ test_that("strict forked backend failures rethrow the original condition", {
     expect_true(any(grepl("fork|core|worker|scheduled", warns, ignore.case = TRUE)))
 })
 
-test_that("sparse backend preserves whole and partial rescue identities", {
+test_that("both backends preserve whole-feature rescue identities", {
   whole_z <- inference_fixture(seed = 731, groups = 12, design = "between",
                                noise = .01, S = 2, effect = .6)
-  z <- inference_fixture(seed = 105002, groups = 12, design = "slope",
-                         noise = .02, S = 8, effect = 0)
   old <- options(ALDEx3.blmm.backend = "dense", ALDEx3.blmm.strict = FALSE)
   on.exit(options(old), add = TRUE)
 
@@ -280,24 +234,10 @@ test_that("sparse backend preserves whole and partial rescue identities", {
       }
     )
     expect_length(warns, 1L)
-    expect_match(warns[[1L]], "fell back")
+    expect_match(warns[[1L]], "refit with lmerTest")
     for (field in names(exact))
       expect_equal(results[[backend]][[field]][, 1, , drop = FALSE],
                    exact[[field]], tolerance = 1e-10,
                    info = paste("whole", backend, field))
   }
-
-  partial <- vector("list", 2L)
-  names(partial) <- names(results)
-  for (backend in names(partial)) {
-    options(ALDEx3.blmm.backend = backend)
-    partial[[backend]] <- feature_fit(z, inference = "anchor")
-    expect_false(partial[[backend]]$full_fallback, info = backend)
-    expect_true(partial[[backend]]$fallback_draws > 0L, info = backend)
-    expect_true(partial[[backend]]$fallback_draws < ncol(z$Y), info = backend)
-  }
-  expect_identical(partial$sparse$rejected_draws, partial$dense$rejected_draws)
-  for (field in names(partial$dense$fit))
-    expect_equal(partial$sparse$fit[[field]], partial$dense$fit[[field]],
-                 tolerance = 1e-5, info = paste("partial", field))
 })

@@ -20,3 +20,4 @@ Function for sampling Dirichlet random variables (base-2 normalized via log-sum-
 \author{
 Justin Silverman
 }
+\keyword{internal}

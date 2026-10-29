@@ -4,6 +4,7 @@
 ##' @param alpha D-vector of Dirichlet parameters
 ##' @return a D x n matrix of samples 
 ##' @author Justin Silverman
+##' @keywords internal
 rLogDirichlet <- function(n, alpha) {
   D <- length(alpha)
   out <- matrix(NA, D, n)

@@ -17,3 +17,4 @@ Test object contains elements
 \author{
 Justin Silverman
 }
+\keyword{internal}

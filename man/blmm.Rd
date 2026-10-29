@@ -9,7 +9,7 @@ blmm(
   formula,
   data,
   n.cores = 1L,
-  inference = c("anchor", "residual", "adaptive"),
+  inference = c("adaptive", "anchor", "residual"),
   contrasts = NULL
 )
 }
@@ -28,8 +28,8 @@ per-feature draw loop remains serial.}
 to adaptive inference: it centers each draw, refines covariance parameters
 from the shared anchor with up to eight safeguarded steps, and uses local
 Satterthwaite inference for coefficients and contrasts. Unresolved draws
-are refitted with \code{lmerTest}. This internal function instead defaults
-to shared-anchor Satterthwaite inference. Public deprecated
+are refitted with \code{lmerTest}. \code{"anchor"} selects shared-anchor
+Satterthwaite inference (public \code{test = "t.satterthwaite"}). Public deprecated
 \code{test = "t.residual"} uses residual degrees of freedom for accepted
 draws and Satterthwaite degrees of freedom for refitted draws.}
 
@@ -71,15 +71,15 @@ fits have additional first-order boundary checks, described in
 Conditional GLS solves give each draw's coefficients and SEs. Their numerical
 validation and Satterthwaite approximation do not establish finite-sample
 calibration. Draws with unresolved fitting or inference checks are fitted
-fully with \code{lmerTest}; an unavailable anchor causes all draws for that
-feature to be fitted fully. A warning reports affected features/draws and
+fully with \code{lmerTest}; for the shared-anchor selector, an unavailable
+anchor causes all draws for that feature to be fitted fully. A warning reports affected features/draws and
 representative reasons. Replacement-fit warnings remain visible; invalid
 numerical contrast inference retains valid fitted quantities with a warning
 and \code{NA} contrast p-values. Fitting errors stop the analysis, and failed
 draw refits are not retried as whole-feature fallbacks.
 
-This unexported function retains \code{inference = "anchor"} as its internal
-default; \code{aldex()} always passes its resolved selector explicitly.
+This unexported function defaults to \code{inference = "adaptive"}, matching
+\code{aldex()}, which always passes its resolved selector explicitly.
 Shared-anchor inference uses one covariance proposal per draw and evaluates
 the df formula with anchor curvature and sensitivities. It remains available
 publicly as \code{test = "t.satterthwaite"}. Deprecated public
@@ -87,3 +87,4 @@ publicly as \code{test = "t.satterthwaite"}. Deprecated public
 still use \code{lmerTest} Satterthwaite inference for rescued draws. Native
 \code{sr.mem()} fits use their own lmerTest or nlme inference directly.
 }
+\keyword{internal}

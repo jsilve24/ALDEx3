@@ -24,6 +24,7 @@
 ##'   errors, degrees of freedom, and tail probabilities. If requested,
 ##'   contrast arrays have dimensions K x D x S.
 ##' @author Justin Silverman
+##' @keywords internal
 fflm <- function(Y, X, test="t.HC3", contrasts=NULL) {
    N <- dim(Y)[1]
    D <- dim(Y)[2]

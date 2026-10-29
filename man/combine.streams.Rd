@@ -20,3 +20,4 @@ combines those arrays along the third dimension.
 \author{
 Justin Silverman
 }
+\keyword{internal}
