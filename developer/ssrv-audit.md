@@ -47,7 +47,7 @@ Unavailable coefficient arrays/summaries are NA for the whole requested sequence
 no failed draws are deleted to summarize a shorter sequence. `summary()` adds a
 status column, diagnostics name unavailable coefficients/contrasts, and
 `available.draws` records zero for affected coefficients. Unaffected coefficients
-and contrasts that do not involve unavailable coefficients remain available.
+and contrasts that do not involve unavailable coefficients remain available. Keep temporary files in the ignored .build/ directory. Do not rerun scientific processing just to package existing data or test downloads.
 The warning suggests explicitly requesting bootstrap or reconsidering the sparse
 model. This is failure reporting, not a replacement inferential procedure.
 
