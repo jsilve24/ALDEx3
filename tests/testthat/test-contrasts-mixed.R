@@ -110,6 +110,10 @@ test_that("BLMM contrast rescue replaces every contrast field consistently", {
   C <- mixed_contrast_matrix(colnames(model.matrix(~ x, z$data)))
   exact <- ALDEx3:::blmm_exact_feature(z$logW[, 1, ], z$lme4_formula, z$data,
                                        contrasts = C)
+  # Partial rescue fits only the rejected draws. Match its singleton batch:
+  # a different batch can use different covariance starts and rounding.
+  exact_partial <- ALDEx3:::blmm_exact_feature(
+    matrix(z$logW[, 1L, 2L], ncol = 1L), z$lme4_formula, z$data, contrasts = C)
   baseline <- feature_fit_with_contrasts(z, C)
   expect_identical(baseline$fallback_draws, 0L)
 
@@ -134,7 +138,7 @@ test_that("BLMM contrast rescue replaces every contrast field consistently", {
   expect_identical(partial$rejected_draws, 2L)
   for (nm in names(exact)) {
     expect_equal(unname(partial$fit[[nm]][, , 2, drop = FALSE]),
-                 unname(exact[[nm]][, , 2, drop = FALSE]), info = nm)
+                 unname(exact_partial[[nm]]), info = nm)
     expect_equal(partial$fit[[nm]][, , 1, drop = FALSE],
                  baseline$fit[[nm]][, , 1, drop = FALSE], info = paste("retained", nm))
   }

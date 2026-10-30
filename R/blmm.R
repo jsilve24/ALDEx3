@@ -191,16 +191,24 @@ blmm_parse_formula <- function(formula, data,
 #' @param basis cached design from \code{blmm_design()}
 #' @param is_log integer vector flagging which phi entries are log-transformed
 #' @param phi_init starting values for the optimisation
+#' @param reusable whether response cross-products can change without retaping
+#' @param object existing reusable objective for the same design and dimensions
 #' @return TMB autodiff object with \code{$fn}, \code{$gr}, \code{$he},
 #'   and \code{$report()} methods
 #' @noRd
 blmm_make_adfun <- function(X, Y_d, basis, is_log, phi_init,
-                            response = blmm_response_cache(basis, X, Y_d)) {
+                            response = blmm_response_cache(basis, X, Y_d),
+                            reusable = FALSE, object = NULL) {
+  if (!is.null(object)) {
+    blmm_update_response(object, response)
+    return(object)
+  }
   TMB::MakeADFun(
     data = list(
       Lambdat = basis$Lambdat, Lind = as.integer(basis$Lind - 1L),
       G = basis$G, ZX = basis$ZX, XX = basis$XX,
       ZY = response$ZY, XY = response$XY, yy = response$yy,
+      update_response = as.integer(reusable),
       n = nrow(X), is_log = is_log,
       sparse_backend = as.integer(basis$backend == "sparse")
     ),
@@ -208,6 +216,25 @@ blmm_make_adfun <- function(X, Y_d, basis, is_log, phi_init,
     DLL = "ALDEx3",
     silent = TRUE
   )
+}
+
+# Dynamic response data are local to one feature/worker. Validate the complete
+# replacement before assigning it: TMB requires unchanged dimensions and types.
+blmm_update_response <- function(objective, response) {
+  data <- objective$env$data
+  if (!isTRUE(data$update_response == 1L))
+    stop("blmm: objective does not support response updates")
+  for (field in c("ZY", "XY", "yy")) {
+    value <- response[[field]]
+    if (is.null(value) || !identical(dim(value), dim(data[[field]])) ||
+        length(value) != length(data[[field]]) ||
+        !identical(typeof(value), typeof(data[[field]])) ||
+        any(!is.finite(value)))
+      stop("blmm: response update must preserve dimensions, storage and finite values")
+    data[[field]] <- value
+  }
+  objective$env$data <- data
+  invisible(objective)
 }
 
 #' Per-draw profiled REML objective values.
@@ -328,7 +355,7 @@ blmm_fit_anchor <- function(obj, phi_init) {
 #' the anchor optimisation tolerance): the direction in which that draw wants
 #' to move away from the shared anchor.
 #'
-#' Scores are computed via centred finite differences of log(PWRSS_s). The
+#' Scores use native analytic derivatives of log(PWRSS_s). The
 #' ldL2/ldRX2 log-determinant terms are identical for all draws at any fixed
 #' phi, so their derivative cancels out of the per-draw correction:
 #' \deqn{score_s[j] = \frac{n-p}{2}
@@ -343,12 +370,13 @@ blmm_fit_anchor <- function(obj, phi_init) {
 #' @param p number of fixed-effect columns
 #' @param contrasts Matrix with contrast vectors in columns; defaults to identity.
 #' @param inference Retain uncentered residual and contrast-variance derivatives.
-#' @param eps relative step size for centred finite differences
+#' @param report Native report at phi_bar; reuse an existing report when available.
 #' @return matrix of dimension \code{(length(phi_bar), S)}: column s is the
 #'   score vector for draw s; with inference, a list of scores, u, and b.
 #' @noRd
-blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4,
-                              contrasts = NULL, inference = FALSE) {
+blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p,
+                              contrasts = NULL, inference = FALSE,
+                              report = obj$report(phi_bar)) {
   if (any(!is.finite(PWRSS_s)) || any(PWRSS_s <= 0)) {
     stop("blmm: invalid profiled residual sum of squares at the anchor")
   }
@@ -356,47 +384,25 @@ blmm_scores_batch <- function(obj, phi_bar, PWRSS_s, n, p, eps = 1e-4,
   S <- length(PWRSS_s)
   np <- n - p
   q_phi <- length(phi_bar)
-  scores <- matrix(0, nrow = q_phi, ncol = S)
-  if (inference) {
-    u <- scores
-    if (is.null(contrasts)) contrasts <- diag(p)
-    b <- matrix(0, q_phi, ncol(contrasts))
-  }
+  u <- report$dlogPWRSS
+  if (!is.matrix(u) || !identical(dim(u), c(q_phi, S)) || any(!is.finite(u)))
+    stop("blmm: invalid native residual-variance sensitivity")
+  scores <- np / 2 * (rowMeans(u) - u)
+  if (!inference) return(scores)
 
-  for (j in seq_len(q_phi)) {
-    step <- eps * max(1, abs(phi_bar[j]))
-    phi_p <- phi_bar
-    phi_m <- phi_bar
-    phi_p[j] <- phi_p[j] + step
-    phi_m[j] <- phi_m[j] - step
-
-    rp <- obj$report(phi_p)
-    rm <- obj$report(phi_m)
-
-    PWRSS_p <- rp$PWRSS_s
-    PWRSS_m <- rm$PWRSS_s
-    if (any(!is.finite(PWRSS_p)) || any(!is.finite(PWRSS_m)) ||
-        any(PWRSS_p <= 0) || any(PWRSS_m <= 0)) {
-      stop("blmm: score perturbation produced an invalid profiled residual sum of squares")
-    }
-
-    # Relative step in the profiled parameter scale; centred finite differences
-    # are stable here because the variance-component dimension is small.
-    dlogPWRSS_s <- (log(PWRSS_p) - log(PWRSS_m)) / (2 * step)
-    scores[j, ] <- np / 2 * (mean(dlogPWRSS_s) - dlogPWRSS_s)
-    if (inference) {
-      u[j, ] <- dlogPWRSS_s
-      # LX is lower triangular: c' M^-1 c = ||LX^-1 c||^2.
-      vp <- colSums(forwardsolve(rp$LX, contrasts)^2)
-      vm <- colSums(forwardsolve(rm$LX, contrasts)^2)
-      if (any(!is.finite(c(vp, vm))) || any(c(vp, vm) <= 0))
-        stop("blmm: invalid anchor contrast variance")
-      b[j, ] <- (log(vp) - log(vm)) / (2 * step)
-    }
-  }
-
-  if (inference) return(list(scores = scores, u = u, b = b))
-  scores
+  if (is.null(contrasts)) contrasts <- diag(p)
+  if (!is.matrix(report$dMinv) || !identical(dim(report$dMinv), c(q_phi, p * p)) ||
+      any(!is.finite(report$dMinv)))
+    stop("blmm: invalid native contrast-variance sensitivity")
+  variance <- colSums(forwardsolve(report$LX, contrasts)^2)
+  if (any(!is.finite(variance)) || any(variance <= 0))
+    stop("blmm: invalid anchor contrast variance")
+  # Contract d M^-1 with c c' for each contrast, retaining singleton dimensions.
+  index <- seq_len(p)
+  weights <- contrasts[rep(index, p), , drop = FALSE] *
+    contrasts[rep(index, each = p), , drop = FALSE]
+  b <- sweep(report$dMinv %*% weights, 2L, variance, "/")
+  list(scores = scores, u = u, b = b)
 }
 
 # Shared-anchor Satterthwaite df; see the derivation at the end of
@@ -605,7 +611,7 @@ blmm_exact_feature <- function(Y_d, formula, data, contrasts = NULL) {
 #' @details
 #' Runs the full approximate pipeline: (1) optimise the average-over-draws
 #' profiled REML objective to get the shared anchor and its Hessian;
-#' (2) compute per-draw score corrections via centred finite differences and
+#' (2) compute per-draw score corrections via analytic derivatives and
 #' apply a Newton step to get draw-specific covariance parameters phi_tilde;
 #' (3) for each draw, recompute the Cholesky pieces from \code{phi_tilde[, s]} and
 #' run an exact GLS solve for fixed effects.
@@ -694,7 +700,8 @@ blmm_fit_feature <- function(d, logW, X, basis, is_log, phi_init, lower,
     inference_vectors <- .design_context$vectors
     g_mat <- blmm_scores_batch(
       obj_full, anchor$phi_bar, anchor_report$PWRSS_s, N, p,
-      contrasts = inference_vectors, inference = inference == "anchor"
+      contrasts = inference_vectors, inference = inference == "anchor",
+      report = anchor_report
     )
     cholH <- chol(anchor$H_d)
     sensitivity <- if (inference == "anchor") g_mat else NULL

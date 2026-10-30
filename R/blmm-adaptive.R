@@ -43,6 +43,7 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, lower, reTrms, formula,
                  "statistic_change", "probe_objective_change"))
     diagnostics[[field]] <- rep(NA_real_, S)
   rescue_seconds <- 0
+  objective <- NULL
   initial <- tryCatch({
     if (context$qr$rank < p)
       stop("blmm: adaptive centering requires a full-rank fixed-effect design")
@@ -76,7 +77,8 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, lower, reTrms, formula,
         XY = initial$response$XY[, s, drop = FALSE], yy = initial$response$yy[s])
       residual_s <- initial$residual[, s, drop = FALSE]
       objective <- blmm_make_adfun(X, residual_s, basis, integer(q),
-                                   reTrms$theta, response_s)
+                                   reTrms$theta, response_s,
+                                   reusable = TRUE, object = objective)
       last_value <- last_gradient <- last_raw_H <- last_information <- last_inference <- NULL
       value_at <- function(location) {
         if (!is.null(last_value) && identical(location, last_value$location))
@@ -125,9 +127,8 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, lower, reTrms, formula,
             any(!is.finite(report$LX)) || length(report$PWRSS_s) != 1L ||
             !is.finite(report$PWRSS_s) || report$PWRSS_s <= 0)
           stop("blmm: invalid native inference report")
-        if (is.null(report$beta)) {
-          error <- simpleError("blmm: native report lacks beta; reinstall the package to update its compiled kernel")
-          class(error) <- c("blmm_missing_report_beta", class(error))
+        if (any(vapply(report[c("beta", "dlogPWRSS", "dMinv")], is.null, logical(1)))) {
+          error <- simpleError("blmm: native report lacks required inference quantities; reinstall the package to update its compiled kernel")
           stale_report_error <<- error
           stop(error)
         }
@@ -135,7 +136,7 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, lower, reTrms, formula,
             any(!is.finite(report$beta)))
           stop("blmm: invalid native inference report")
         sensitivity <- blmm_scores_batch(objective, location, report$PWRSS_s,
-          N, p, contrasts = vectors, inference = TRUE)
+          N, p, contrasts = vectors, inference = TRUE, report = report)
         dropped <- setdiff(seq_along(location), indices)
         if (length(dropped) && (any(sensitivity$u[dropped, , drop = FALSE] != 0) ||
                                 any(sensitivity$b[dropped, , drop = FALSE] != 0)))
@@ -250,6 +251,8 @@ blmm_fit_feature_adaptive <- function(d, Y_d, X, basis, lower, reTrms, formula,
                     "tail_change", "statistic_change", "probe_objective_change"))
       diagnostics[[field]][s] <- get(field)
     if (inherits(attempted, "error")) {
+      # A failed recording/evaluation must not contaminate later draws.
+      objective <- NULL
       if (strict) stop(attempted)
       diagnostics$rescued[s] <- TRUE
       diagnostics$reason[s] <- conditionMessage(attempted)

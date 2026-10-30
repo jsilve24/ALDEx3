@@ -4,6 +4,11 @@
 ##'   a warning and produces \code{NA} p-values. Valid estimates, standard
 ##'   errors, and degrees of freedom are retained; invalid entries become
 ##'   \code{NA}. Model-fitting errors still stop the analysis.
+##'   The lme4 engine reuses the first fitted model's design and covariance
+##'   starting values with \code{lme4::refit()}. Every response is optimized
+##'   separately and receives freshly computed lmerTest inference.
+##'   Singular starting fits, singular refits, and refits that raise a warning
+##'   or error use a fresh lmerTest fit instead.
 ##'
 ##' @param logW a numeric array (N x D X S) where D is the number of taxa,
 ##'   N is the number of samples, and S is the number of posterior samples
@@ -59,6 +64,19 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
     stop("contrasts require a full-rank fixed-effect design")
   }
 
+  # Keep one common starting fit so serial and parallel calls use the same
+  # covariance start. This is only a numerical starting value, not a shared
+  # covariance estimate across features or draws.
+  template <- NULL
+  if (method == "lme4") {
+    data_temp <- data
+    data_temp$y <- logWm[, 1L]
+    template <- suppressMessages(
+      lmerTest::lmer(update(formula, y ~ .), data = data_temp)
+    )
+  }
+  reuse_template <- method == "lme4" && !lme4::isSingular(template)
+
   ## Only start cluster if n.cores > 1
   if(n.cores>1) {
     cl <- makeCluster(n.cores)
@@ -77,13 +95,28 @@ sr.mem <- function(logW, formula, data, n.cores, method, mem.args,
 
   ## Process Cols (i.e., per-taxa)
   logWm_list <- split(logWm, col(logWm))
-  results <- lapply_func(logWm_list, function(y) {
+  results <- lapply_func(seq_along(logWm_list), function(i) {
     data_temp <- data
-    data_temp$y <- y
+    data_temp$y <- logWm_list[[i]]
     if(method=="lme4") {
-      fit <- suppressMessages(
-        lmerTest::lmer(update(formula, y~.), data=data_temp)
-      )
+      if (i == 1L) {
+        fit <- template
+      } else {
+        fit <- if (reuse_template) tryCatch({
+          candidate <- suppressMessages(lme4::refit(template, newresp = data_temp$y))
+          # refit() omits lmer()'s boundary restart. A singular warm start or
+          # result can therefore miss a better solution; use the fresh path.
+          if (lme4::isSingular(candidate)) NULL else {
+            # Conversion reconstructs the deviance function from the call.
+            # It must use this response to recompute Satterthwaite derivatives.
+            candidate@call$data <- quote(data_temp)
+            lmerTest::as_lmerModLmerTest(candidate)
+          }
+        }, warning = function(w) NULL, error = function(e) NULL) else NULL
+        if (is.null(fit)) fit <- suppressMessages(
+          lmerTest::lmer(update(formula, y ~ .), data = data_temp)
+        )
+      }
     } else if(method=="nlme") {
        fit <- suppressMessages(
         nlme::lme(update(formula, y~.), data=data_temp,

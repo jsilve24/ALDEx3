@@ -124,19 +124,18 @@ test_that("blmm E: parallel fallback aggregates warnings and remains exact", {
       invokeRestart("muffleWarning")
     }
   )
-  res_exact <- ALDEx3:::sr.mem(logW, formula, sim$meta, n.cores = 1L,
-                               method = "lme4", mem.args = list())
-
   expect_length(warns, 1)
   expect_match(warns[[1]], "2 feature\\(s\\) were refit with lmerTest")
-  expect_equal(res_parallel$estimate[, 1:2, ], res_exact$estimate[, 1:2, ],
-               tolerance = 1e-10)
-  expect_equal(res_parallel$std.error[, 1:2, ], res_exact$std.error[, 1:2, ],
-               tolerance = 1e-10)
-  expect_equal(res_parallel$df[, 1:2, ], res_exact$df[, 1:2, ],
-               tolerance = 1e-10)
-  expect_equal(res_parallel$random.eff[, 1:2, ], res_exact$random.eff[, 1:2, ],
-               tolerance = 1e-10)
+  # Rescue fits one feature's draws at a time. Match that batch because the
+  # full engine's covariance starting fit can affect numerical rounding.
+  for (d in 1:2) {
+    res_exact <- ALDEx3:::sr.mem(logW[, d, , drop = FALSE], formula, sim$meta,
+      n.cores = 1L, method = "lme4", mem.args = list())
+    for (field in names(res_exact)) {
+      expect_equal(res_parallel[[field]][, d, , drop = FALSE], res_exact[[field]],
+                   tolerance = 1e-10, info = paste("feature", d, field))
+    }
+  }
 })
 
 test_that("blmm D/E/F: correlated random-slope output remains compatible", {

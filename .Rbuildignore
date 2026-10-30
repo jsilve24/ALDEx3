@@ -1,6 +1,7 @@
 ^LICENSE\.md$
 ^CLAUDE\.md$
 ^\.agent-shell$
+^R/\.agent-shell$
 ^\.agents$
 ^\.claude$
 ^\.codex$

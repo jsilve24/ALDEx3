@@ -147,7 +147,11 @@ does the following for each feature.
    is shortened if it would increase the objective, and respects the bounds on
    \(\theta\). Because draws of the
    same feature are usually similar, the anchor is close to each draw's
-   optimum and a few steps suffice.
+   optimum and a few steps suffice. The derivative tape is recorded once for
+   the first draw and reused by updating its response cross-products through
+   TMB's `DATA_UPDATE` mechanism. Each draw still has its own objective,
+   gradient, Hessian and covariance estimate. A failed draw discards the object
+   before the next draw is attempted.
 4. **Check and compute inference.** Accept the draw only when the refinement
    has converged and its standard errors and degrees of freedom have settled
    (see [Stopping and boundary checks](#stopping-and-boundary-checks)).
@@ -198,10 +202,10 @@ Each term has a direct reading. The \(2/d\) term is the uncertainty in
 \(\hat\sigma^2\) alone; with no random effects it gives the ordinary
 least-squares df \(d = N - p\). The quadratic term is the extra uncertainty
 from estimating the covariance parameters: \(u_s + b_s\) measures how sensitive
-the log standard error is to \(\theta\), and \(H_s^{-1}\) is the approximate
+the log variance is to \(\theta\), and \(H_s^{-1}\) is the approximate
 sampling covariance of \(\hat\theta_s\). Because \(H_s\) is positive definite at
-a minimum, \(\nu_s \le d\). BLMM computes \(u_s\) and \(b_s\) by symmetric
-finite differences and uses the undamped Hessian at the accepted point. A
+a minimum, \(\nu_s \le d\). BLMM computes \(u_s\) and \(b_s\) analytically
+from the conditional solves and uses the undamped Hessian at the accepted point. A
 nonfinite or nonpositive df causes a refit; small positive df are not clipped.
 
 <details>
@@ -234,6 +238,23 @@ The delta method with \(J^{-1}\) as the parameter covariance gives
 \(\nu = 2v^2/\operatorname{Var}(v)\) yields the boxed formula. Because \(\ell\)
 is half the REML deviance, \(H\) is the Hessian of a negative log likelihood and
 no extra factor of two appears.
+
+The sensitivities \(u\) and \(b\) have analytic expressions. For the profiled
+residual \(e = y - X\hat\beta\), set \(z = V_\theta^{-1}e\) and
+\(w = V_\theta^{-1}X M_\theta^{-1}c\). Differentiating with respect to a
+covariance coordinate \(\theta_j\) gives
+\[
+\frac{\partial r}{\partial\theta_j}
+= -z^T\frac{\partial V_\theta}{\partial\theta_j}z,
+\qquad
+\frac{\partial a}{\partial\theta_j}
+= w^T\frac{\partial V_\theta}{\partial\theta_j}w.
+\]
+Dividing by \(r\) and \(a\) gives \(u_j\) and \(b_j\), respectively.
+The native kernel evaluates these contractions from the cached cross-products
+and conditional solves; it does not construct the observation covariance
+\(V_\theta\) or perturb the parameters. Log coordinates use the usual chain
+rule. The observed REML Hessian and the df formula above are unchanged.
 
 </details>
 
@@ -490,7 +511,7 @@ posterior-mean coefficients was `r format(signif(max(cmp$abs_est_diff), 2), scie
 maximum absolute difference in standard errors was
 `r format(signif(max(cmp$abs_se_diff), 2), scientific = TRUE)`. `blmm` was approximately
 `r round(mean(time_lme4) / mean(time_blmm), 1)` times as fast as `lme4` on
-this subset. The next section gives timings for the full dataset.
+this subset. These timings include per-draw inference for both engines.
 
 ## Runtime scaling
 
@@ -506,8 +527,12 @@ model fit.
 
 `lme4` performs a full variance-component optimization for every feature and
 every draw, so its expensive nonlinear step scales roughly like
-`D * S * cost(full_REML_fit(N, random_effect_structure))`. Each full fit
-starts from a generic starting value and runs to convergence.
+`D * S * cost(full_REML_fit(N, random_effect_structure))`. It fits the first
+response, then uses `lme4::refit()` to reuse that model's design and covariance
+starting values. Every response still gets its own optimized covariance and
+freshly computed Satterthwaite inference. A singular starting fit, a singular
+refit, or a warning or error during refitting causes a fresh `lmerTest` fit;
+`refit()` alone does not perform all of `lmer()`'s boundary checks.
 
 `blmm` replaces those repeated optimizations with one anchor fit per feature,
 which handles all draws in a single batched computation, followed by a few
@@ -516,23 +541,10 @@ Newton steps per draw that start close to the answer. Its cost is closer to
 `lmerTest` fit for each draw that is refit. The savings are largest when the
 repeated full optimization is the dominant cost.
 
-The table below gives measured times for the full model above on all 62
-features of `oral_mouthwash_data` (81 samples), and for a simulated design
-with 2,000 samples in 200 groups (6 features, random intercept). Runs used one
-core on a laptop (Intel Core Ultra 7 165U, R 4.6.1) with identical draws for
-every engine.
-
-| Data | Draws | `lme4` | Adaptive BLMM (default) | Shared-anchor BLMM |
-|:--|--:|--:|--:|--:|
-| `oral_mouthwash_data` | 32 | 54.6 s | 25.3 s | 4.1 s |
-| `oral_mouthwash_data` | 128 | 221.6 s | 105.2 s | 16.2 s |
-| Simulated, \(N = 2000\) | 32 | 6.6 s | 2.5 s | 0.7 s |
-
-On these data the adaptive default is two to three times faster than `lme4`
-and reproduces its results to numerical precision: on `oral_mouthwash_data`
-the largest difference in any estimate, standard error or adjusted p-value was
-below \(5\times10^{-6}\). Shared-anchor inference is several times faster
-again, but its adjusted p-values differed from `lme4` by up to 0.025. Times will differ with hardware, model and data.
+The example above measures both engines on identical draws with the current
+implementation. Timings depend on the design, hardware, draw count and number
+of full refits. Comparisons must include the degrees-of-freedom calculations;
+timing covariance fitting alone does not measure the complete analysis.
 
 In practice, BLMM is most valuable when:
 

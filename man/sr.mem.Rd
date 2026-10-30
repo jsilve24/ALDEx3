@@ -39,6 +39,11 @@ Invalid numerical contrast inference returned by lmerTest emits
 a warning and produces \code{NA} p-values. Valid estimates, standard
 errors, and degrees of freedom are retained; invalid entries become
 \code{NA}. Model-fitting errors still stop the analysis.
+The lme4 engine reuses the first fitted model's design and covariance
+starting values with \code{lme4::refit()}. Every response is optimized
+separately and receives freshly computed lmerTest inference.
+Singular starting fits, singular refits, and refits that raise a warning
+or error use a fresh lmerTest fit instead.
 }
 \author{
 Kyle McGovern

@@ -1,3 +1,21 @@
+# ALDEx3 1.8.1
+
+* Adaptive BLMM reuses one response-updatable TMB objective across accepted
+  draws of a feature instead of recording a new derivative tape for every
+  draw. Covariance refinement, observed REML curvature, inference checks and
+  exact-fit rescues are unchanged. Failed draws discard the reusable object.
+
+* BLMM now computes residual and contrast-variance sensitivities analytically
+  from the native conditional solves, replacing repeated finite differences.
+  The observed REML Hessian, degrees-of-freedom formula and exact-fit rescue
+  checks are unchanged.
+
+* The `lme4` engine now reuses a fitted model with `lme4::refit()` for subsequent
+  response draws. Covariance parameters are still optimized separately, and
+  Satterthwaite inference is recomputed for every draw and requested contrast.
+  Singular starts or results, and refits that raise warnings or errors, use
+  fresh fits to retain the full engine's boundary handling.
+
 # ALDEx3 1.8.0
 
 * Add `aldex(test="ssrv.bootstrap", method="lm")`: subject bootstrap Scale Simulation Random Variables (SSRVs), final absolute coefficient draws, posterior means and

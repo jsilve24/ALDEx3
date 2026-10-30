@@ -133,6 +133,14 @@ Type objective_function<Type>::operator()() {
   DATA_MATRIX(ZY);
   DATA_MATRIX(XY);
   DATA_VECTOR(yy);
+  DATA_INTEGER(update_response);
+  // Reuse one draw-sized derivative tape as response cross-products change.
+  // Their dimensions/storage stay fixed; they never determine sparse structure.
+  if (update_response) {
+    DATA_UPDATE(ZY);
+    DATA_UPDATE(XY);
+    DATA_UPDATE(yy);
+  }
   DATA_INTEGER(n);
   DATA_IVECTOR(is_log);
   DATA_INTEGER(sparse_backend);
@@ -248,7 +256,47 @@ Type objective_function<Type>::operator()() {
 
   if (isDouble<Type>::value) {
     matrix<Type> beta = solve_upper_from_lower(LX, Cbeta);
+    // Reporting-only analytic derivatives leave the objective's AD tape,
+    // gradient and Hessian intact. For the stored T=Lambda', relative
+    // V=I+Z T' T Z'. RX=Z'V^-1 X and RY=Z'V^-1(Y-X beta).
+    // The existing solves obey T RX=AX and T RY=U.
+    matrix<Type> U = AY - AX * beta;
+    matrix<Type> RX = ZX - G * (T.transpose() * AX);
+    matrix<Type> RY = ZY - ZX * beta - G * (T.transpose() * U);
+    matrix<Type> identity(p, p);
+    identity.setIdentity();
+    matrix<Type> Minv = solve_spd_from_chol(LX, identity);
+    matrix<Type> RXMinv = RX * Minv;
+    matrix<Type> AXMinv = AX * Minv;
+    matrix<Type> dlogPWRSS(phi.size(), S);
+    // Row j contains column-major vec(d M^-1 / d phi_j), allowing arbitrary
+    // contrasts without rebuilding an objective or perturbing its parameters.
+    matrix<Type> dMinv(phi.size(), p * p);
+    dlogPWRSS.setZero();
+    dMinv.setZero();
+    int slot = 0;
+    for (int col = 0; col < T.outerSize(); ++col) {
+      for (typename Eigen::SparseMatrix<Type>::InnerIterator it(T, col);
+           it; ++it, ++slot) {
+        const int j = Lind(slot);
+        const int row = it.row();
+        const Type chain = is_log(j) ? theta(j) : Type(1.0);
+        for (int s = 0; s < S; ++s) {
+          dlogPWRSS(j, s) -= Type(2.0) * chain * U(row, s) *
+            RY(col, s) / PWRSS_s(s);
+        }
+        for (int b = 0; b < p; ++b) {
+          for (int a = 0; a < p; ++a) {
+            dMinv(j, a + p * b) += chain *
+              (AXMinv(row, a) * RXMinv(col, b) +
+               RXMinv(col, a) * AXMinv(row, b));
+          }
+        }
+      }
+    }
     REPORT(beta);
+    REPORT(dlogPWRSS);
+    REPORT(dMinv);
   }
   REPORT(PWRSS_s);
   REPORT(LX);

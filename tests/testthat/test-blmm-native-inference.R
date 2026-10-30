@@ -64,7 +64,7 @@ test_that("invalid reports rescue while a stale native kernel reports its error"
           report_calls <<- report_calls + 1L
           if (mode == "invalid") return(list())
           value <- report(...)
-          value$beta <- NULL
+          value[[mode]] <- NULL
           value
         }
       }
@@ -79,9 +79,11 @@ test_that("invalid reports rescue while a stale native kernel reports its error"
   expect_identical(fit$rejected_draws, seq_len(ncol(z$Y)))
   expect_identical(exact_calls, 1L)
   expect_match(fit$adaptive_diagnostics$diagnostics$reason[1], "invalid native inference report")
-  mode <- "stale"
-  report_calls <- exact_calls <- 0L
-  expect_error(feature_fit(z, inference = "adaptive"), "reinstall.*compiled kernel")
-  expect_gt(report_calls, 0L)
-  expect_identical(exact_calls, 0L)
+  for (field in c("beta", "dlogPWRSS", "dMinv")) {
+    mode <- field
+    report_calls <- exact_calls <- 0L
+    expect_error(feature_fit(z, inference = "adaptive"), "reinstall.*compiled kernel")
+    expect_gt(report_calls, 0L)
+    expect_identical(exact_calls, 0L)
+  }
 })

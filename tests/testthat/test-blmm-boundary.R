@@ -479,8 +479,16 @@ test_that("partial boundary inference preserves shifts and worker ordering", {
   environment(socket_blmm) <- new.env(parent = environment(socket_blmm))
   environment(socket_blmm)$.Platform <- list(OS.type = "windows")
   workers <- socket_blmm(responses, z$formula, z$data, inference = "adaptive", n.cores = 2L)
-  expect_equal(workers, serial)
   expect_true("status" %in% names(attr(workers, "blmm.adaptive.diagnostics")[[1]]$diagnostics))
+  # Probe changes subtract nearly equal statistics. Compare diagnostics on an
+  # absolute scale so last-bit cancellation across processes is harmless.
+  serial_diagnostics <- attr(serial, "blmm.adaptive.diagnostics")
+  expect_true(isTRUE(all.equal(attr(workers, "blmm.adaptive.diagnostics"),
+    serial_diagnostics, tolerance = 1e-10, scale = 1)))
+  expected_fit <- serial
+  attr(expected_fit, "blmm.adaptive.diagnostics") <- NULL
+  attr(workers, "blmm.adaptive.diagnostics") <- NULL
+  expect_equal(workers, expected_fit)
 
   # A function hook requests the same worker diagnostics and runs once, here.
   callback_diagnostics <- NULL
@@ -490,9 +498,8 @@ test_that("partial boundary inference preserves shifts and worker ordering", {
   callback_fit <- socket_blmm(responses, z$formula, z$data,
                             inference = "adaptive", n.cores = 2L)
   expect_null(attr(callback_fit, "blmm.adaptive.diagnostics"))
-  expect_equal(callback_diagnostics, attr(serial, "blmm.adaptive.diagnostics"))
-  expected_fit <- serial
-  attr(expected_fit, "blmm.adaptive.diagnostics") <- NULL
+  expect_true(isTRUE(all.equal(callback_diagnostics, serial_diagnostics,
+    tolerance = 1e-10, scale = 1)))
   expect_equal(callback_fit, expected_fit)
   expect_equal(serial$estimate[, 2L, 1L], serial$estimate[, 1L, 1L] + shift,
                tolerance = 1e-6)
