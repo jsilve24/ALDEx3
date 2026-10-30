@@ -48,13 +48,14 @@ to every draw.}
 and optionally accepts \code{correlation} (see \code{\link[nlme]{lme}}).}
 }}
 
-\item{nsample}{number of Monte Carlo draws (at least two for bootstrap SSRVs).}
+\item{nsample}{number of Monte Carlo draws (at least two for bootstrap
+Scale Simulation Random Variables, or SSRVs).}
 
 \item{scale}{A scale-model function, such as \code{clr.sm}, \code{tss.sm},
 \code{sample.sm}, or \code{coefficient.sm}; alternatively, an \code{N x
-  nsample} matrix of log2-scale draws. Additional arguments for a
+nsample} matrix of log2-scale draws. Additional arguments for a
 scale-model function are passed through \code{...}. With
-\code{test="ssrv.bootstrap"}, also accepts named coefficient blocks from
+\code{test="ssrv.bootstrap"}, also accepts named coefficient specifications from
 \code{\link{compose.sm}} or a custom coefficient-scale callback. See
 "Writing a custom scale model" in the Examples section for the required
 interface.}
@@ -78,7 +79,7 @@ below.}
 \item{p.adjust.method}{(default BH) The method for multiple hypothesis test
 correction. See \code{p.adjust} for all available methods.}
 
-\item{test}{inference selector. Defaults depend on \code{method}: \code{"t.HC3"} for
+\item{test}{inference method. Defaults depend on \code{method}: \code{"t.HC3"} for
 \code{"lm"}, \code{"t.satterthwaite.adaptive"} for \code{"blmm"}, and \code{"t"} for
 \code{"lme4"} and \code{"nlme"}. For \code{lm}, choose \code{"t"}, \code{"t.HC0"}, \code{"t.HC3"}, or \code{"ssrv.bootstrap"};
 for \code{blmm}, choose \code{"t.satterthwaite.adaptive"}, \code{"t.satterthwaite"},
@@ -87,7 +88,8 @@ supported. Names are case-sensitive.}
 
 \item{onesided}{(default \code{FALSE}) \code{FALSE} gives two-sided
 p-values; \code{"lower"} or \code{"upper"} gives one-sided p-values for
-the alternative that the estimate is negative or positive, respectively.}
+the alternative that the estimate is negative or positive, respectively.
+Bootstrap SSRVs support only \code{FALSE}.}
 
 \item{contrasts}{optional numeric K x P matrix with one fixed-effect
 contrast per row. Its uniquely named columns must be the complete
@@ -103,8 +105,8 @@ coefficient results slightly.}
 
 \item{bootstrap.strata}{Optional length-N nonmissing vector for independent
 subject resampling within strata in test="ssrv.bootstrap". By default,
-intercept-plus-binary designs resample within groups; other designs use
-paired row resampling. This does not provide cluster inference.}
+all designs use global paired row resampling. Strata affect the bootstrap
+branch only and do not provide cluster inference.}
 
 \item{bootstrap.max.attempts}{Maximum attempts per full-rank bootstrap
 design (default 100); exhaustion stops with rejection diagnostics.}
@@ -116,8 +118,8 @@ include \code{random} or \code{correlation}.}
 \value{
 An \code{aldex} list. \code{X} (P x N), \code{streaming},
 \code{method}, and the resolved \code{test} are always recorded.
-Existing t-based inference also records \code{p.adjust.method} and
-\code{onesided}. Bootstrap SSRVs instead record \code{nsample},
+All inference records \code{p.adjust.method} and \code{onesided}.
+Bootstrap SSRVs also record \code{nsample},
 \code{scale.basis}, and \code{diagnostics}; their posterior outputs and
 defaults are described in Details. Unbounded/undefined Laplace approximations
 warn and record their conditional variance, including infinity. Affected
@@ -127,18 +129,25 @@ Here P is
 the coefficient count, D the feature count, N the observation count, and
 S the Monte Carlo draw count. \code{return.pars} controls:
 \describe{
-\item{estimate, std.error, df}{P x D x S arrays of fitted coefficients,
-within-fit standard errors, and degrees of freedom.}
+\item{estimate}{A P x D x S array of coefficient draws.}
+\item{std.error, df}{For t-based inference, P x D x S arrays of
+within-fit standard errors and degrees of freedom.}
+\item{posterior}{For bootstrap SSRVs, P x D matrices of posterior means
+and equal-tailed 95\% limits (mean, lower, upper), plus level and
+interval metadata. Requesting this also retains p.val and p.val.adj.}
 \item{p.val, p.val.adj}{P x D matrices of final raw and adjusted
 probabilities, respecting \code{onesided} and \code{p.adjust.method}.}
 \item{logComp, logScale}{D x N x S log2-composition draws and N x S
-log2-scale draws. These are not retained during streaming.}
+log2-scale draws for t-based inference. These are not retained during
+streaming or supported for bootstrap SSRVs.}
 \item{random.effects}{Pr x D x S arrays of Pr random-effect variance
 and covariance terms, including residual variance, for mixed models.}
 }
 When contrasts are requested, \code{contrasts$matrix} always records their
-reordered matrix. \code{contrasts$estimate}, \code{contrasts$std.error},
-and \code{contrasts$df} have dimensions K x D x S; \code{contrasts$p.val}
+reordered matrix. \code{contrasts$estimate} has dimensions K x D x S,
+as do \code{contrasts$std.error} and \code{contrasts$df} for t-based
+inference. Bootstrap \code{contrasts$posterior} contains K x D summary
+matrices. \code{contrasts$p.val}
 and \code{contrasts$p.val.adj} have dimensions K x D. K is the number of
 contrast rows. The same \code{return.pars} fields control coefficient and
 contrast results together. Names and singleton dimensions are retained.
@@ -150,7 +159,7 @@ Fit linear or linear mixed models to sequence count data
 while accounting for uncertainty in both composition and scale (total
 abundance).
 
-For each of \code{nsample} Monte Carlo draws, \code{aldex} samples each
+For t-based inference, for each of \code{nsample} Monte Carlo draws, \code{aldex} samples each
 sample's composition from a Dirichlet-multinomial posterior, samples its
 log2 scale from the scale model, and adds the two to obtain log2
 abundances. It then fits the chosen model to every feature, adjusts the
@@ -160,10 +169,16 @@ errors and adjusted p-values over draws.
 \details{
 \strong{Bootstrap SSRVs (1.8.0).} Select \code{test="ssrv.bootstrap"}
 with \code{method="lm"} for independent-subject fixed-effects inference.
-Each draw samples original-subject compositions, resamples subjects and
-design rows together, fits all features with fflm, and adds a single
-coefficient-scale shift across taxa. No residual t errors or p-values
-are computed. Use \code{\link{compose.sm}} for sparse/Gaussian mixtures;
+Each draw samples original-subject compositions. The bootstrap branch
+resamples subjects and design rows together; sparse Laplace uses the
+original subjects. Each fits ordinary least squares for all features and adds a single
+coefficient-scale shift across taxa. Hybrid selects a complete final-effect
+sequence per sparse coefficient by median feature 95\% interval width,
+choosing Laplace on exact ties. When at least one sparse specification is
+present and all use Laplace, no subject or feature bootstrap is drawn;
+Gaussian coefficients also use the original subjects. Gaussian-only, callback, and existing
+scale models use subject bootstrap. No residual t errors or degrees of
+freedom are computed. Use \code{\link{compose.sm}} for sparse/Gaussian mixtures;
 every coefficient including the intercept must be explicitly assigned.
 Composable and custom coefficient models use original log2 proportions,
 without automatic CLR centering. Gaussian shifts describe total-scale
@@ -172,9 +187,11 @@ Existing sample-scale functions and matrices are projected through the
 same resampled fitting operator, preserving sample identity.
 Default \code{return.pars=c("posterior","estimate")} retains final
 absolute coefficient draws plus means and pointwise equal-tailed 95\%
-intervals. \code{return.pars="posterior"} drops draws after computing
+intervals and raw and adjusted sign probabilities. \code{return.pars="posterior"} drops draws after computing
 exact quantiles. Summaries are stored in \code{posterior} (mean, lower,
-upper, level, interval) and \code{contrasts$posterior}. The draw count
+upper, level, interval) and \code{contrasts$posterior}. Probability
+matrices are stored as \code{p.val} and \code{p.val.adj} for each.
+They can also be requested individually via \code{return.pars}. The draw count
 and rank-rejection/scale-selection diagnostics are recorded. Sample arrays
 are processed one draw at a time; coefficient working memory remains
 proportional to P\emph{D}nsample. RNG order is independent of streaming and
@@ -228,16 +245,28 @@ Satterthwaite inference for every draw; \code{"nlme"} uses its native
 denominator degrees of freedom.
 
 \strong{Contrasts.} Each contrast row tests \eqn{H_0: c^T\beta=0}, using
-the full fitted coefficient covariance. These are linear hypotheses, not
+the full fitted coefficient covariance for t-based inference. Bootstrap
+SSRV scores count the signs of each within-draw joint sum of coefficients,
+rather than combining coefficient scores. These are linear hypotheses, not
 R's factor-coding contrasts. For \code{nlme}, a contrast may involve only
 coefficients with the same denominator degrees of freedom.
 
-\strong{Multiple testing.} Each coefficient and contrast is a separate
+\strong{Multiple testing for t-based inference.} Each coefficient and contrast is a separate
 adjustment family across features. Within each draw, p-values are
 adjusted with \code{p.adjust.method} and then averaged over draws; for
 two-sided tests this is done for each direction and the smaller result
 is reported. Use \code{\link{aldex.p.adjust}} on the fitted object to
 adjust several coefficients or contrasts as one family without refitting.
+
+\strong{Multiple testing for bootstrap SSRVs.} Each coefficient and contrast is adjusted separately across all
+D supplied features after computing the raw probability. For final draws
+theta, the raw two-sided score is min(1, 2 * min(mean(theta <= 0),
+mean(theta >= 0))). Zeros count in both tails; all-zero draws give 1.
+A nonfinite draw makes the score unavailable. Scores use S draws without
+smoothing; without zero ties, resolution is 2/S. A zero score means no
+contrary draw was observed, not certainty. Adjusted scores do not give
+the probability of a true null or guarantee frequentist FDR control.
+\code{aldex.p.adjust} does not support bootstrap SSRV fits.
 }
 \examples{
 set.seed(15)

@@ -1,14 +1,18 @@
 # ALDEx3 1.8.0
 
-* Add `aldex(test="ssrv.bootstrap", method="lm")`: draw-major subject
-  bootstrap SSRVs, final absolute coefficient draws, posterior means and
+* Add `aldex(test="ssrv.bootstrap", method="lm")`: subject bootstrap Scale Simulation Random Variables (SSRVs), final absolute coefficient draws, posterior means and
   pointwise equal-tailed 95% intervals, including joint linear contrasts.
+* Bootstrap SSRV summaries include raw two-sided sign scores and adjusted scores
+  across all supplied features per coefficient or contrast (BH by default).
+  Interval columns are `p2.5` and `p97.5`; posterior-only fits retain the scores.
 * Composable and custom coefficient scales use original log2-proportion
   coordinates, consistent with `coefficient.sm`, without automatic CLR centering.
 * Add `sparse.sm`, `gaussian.sm`, and `compose.sm` for exact named coefficient
   assignments. Sparse Gaussian-KDE modes support Laplace, ordinary feature
-  bootstrap, and all-draw larger-variance hybrid uncertainty. Each scale shift
-  is one scalar across taxa. Both hybrid candidates include subject resampling.
+  bootstrap, and hybrid uncertainty selected by median final-effect interval width
+  across features, with Laplace on ties. Each scale shift is one scalar across taxa.
+  Bootstrap uses global paired subject resampling by default; Laplace uses the
+  original subjects.
 * Adapt existing scale callbacks/matrices by the same bootstrap fitting operator;
   preserve correlated Gaussian blocks and all legacy inference/deprecated args.
 * Add explicit strata, bounded rank redraws and numerical/selection diagnostics.

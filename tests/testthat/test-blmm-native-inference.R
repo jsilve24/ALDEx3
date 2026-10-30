@@ -34,8 +34,6 @@ test_that("native inference reports agree with independent conditional solves", 
           sigma2 <- report$PWRSS_s[s] / (nrow(X) - p)
           label <- paste(backend, deparse(formula), s)
           expect_equal(as.vector(report$beta[, s]), reference$beta, tolerance = 1e-9, info = label)
-          expect_equal(report$PWRSS_s[s], reference$sigma2 * (nrow(X) - p),
-            tolerance = 1e-9, info = label)
           expect_equal(sigma2, reference$sigma2, tolerance = 1e-9, info = label)
           expect_equal(sqrt(sigma2 * colSums(forwardsolve(report$LX, vectors)^2)),
             sqrt(reference$sigma2 * colSums(forwardsolve(pieces$LX, vectors)^2)),

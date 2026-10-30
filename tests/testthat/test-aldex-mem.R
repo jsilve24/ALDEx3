@@ -26,7 +26,6 @@ test_that("aldex mem runs parallel", {
   foo <- aldex(Y, formula, data=data, method="lme4",
           nsample=nsample, gamma=0.5, scale=clr.sm,
           n.cores=2)
-  expect_true(TRUE)
   expect_equal(class(foo), "aldex")
   expect_equal(rownames(foo$logComp), paste0("entity_", 1:10))
 })

@@ -5,7 +5,6 @@ test_that("aldex runs", {
   data <- data.frame(condition=condition)
   nsample <- 2000
   foo <- aldex(Y, X, data=data, nsample=nsample, scale=clr.sm, gamma=0.5)
-  expect_true(TRUE)
   expect_equal(class(foo), "aldex")
   expect_equal(rownames(foo$logComp), paste0("entity_", 1:10))
 })

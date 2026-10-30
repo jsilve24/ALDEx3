@@ -231,20 +231,22 @@ aitchison.mean <- function( n, log=FALSE ) {
 
 ##' Summarize an ALDEx3 result object
 ##'
-##' Provides a summary of coefficient and requested-contrast adjusted p-values,
-##' estimates, and standard errors from an ALDEx3 result object.
-##'
-##' This method extracts adjusted p-values from `object$p.val.adj`, along with
-##' posterior estimates and standard errors averaged across Monte Carlo samples.
+##' Summarizes coefficients and requested contrasts from an ALDEx3 result object.
+##' For t-based inference it reports estimates, standard errors and adjusted
+##' p-values averaged across Monte Carlo samples.
 ##' The result is returned as a long-format data.frame suitable for downstream
 ##' analysis or visualization.
 ##' By default, requested contrasts are included alongside coefficients. This
 ##' only combines stored summaries; it does not change adjustment families.
 ##' By default each coefficient and contrast has a separate family. Use
-##' \code{\link{aldex.p.adjust}} first to group selected rows without refitting.
+##' \code{\link{aldex.p.adjust}} first to group selected rows without refitting
+##' for t-based inference; it does not support bootstrap SSRV fits.
 ##' 
 ##' With test="ssrv.bootstrap", reports posterior means and pointwise
-##' equal-tailed 95% intervals as estimate, credible.lower, credible.upper.
+##' equal-tailed 95% intervals as estimate, p2.5, p97.5, plus raw and
+##' adjusted two-sided sign probabilities p.val and p.val.adj. Probabilities
+##' are calculated from complete draws across all features before filtering.
+##' Older compact results without probabilities or draws report NA with a warning.
 ##' Attributes level and interval record interval metadata. Works with summaries
 ##' alone; does not reinterpret legacy Monte Carlo estimates as credible intervals.
 ##' When a requested Laplace sequence cannot be generated, affected results are
@@ -258,7 +260,10 @@ aitchison.mean <- function( n, log=FALSE ) {
 ##'   only that component.
 ##' @param ... Additional arguments (currently ignored).
 ##' @return A \code{data.frame} with columns \code{parameter}, \code{entity},
-##'   \code{p.val.adj}, \code{estimate}, and \code{std.error}. When
+##'   \code{p.val.adj}, \code{estimate}, and \code{std.error} for t-based
+##'   inference. Bootstrap SSRV summaries have \code{parameter}, \code{entity},
+##'   \code{estimate}, \code{p2.5}, \code{p97.5}, \code{p.val}, and
+##'   \code{p.val.adj}. When
 ##'   \code{component = "all"} includes requested contrasts, an additional
 ##'   \code{type} column identifies \code{"coefficient"} or \code{"contrast"}
 ##'   rows. Without requested contrasts, the coefficient-only schema is preserved.

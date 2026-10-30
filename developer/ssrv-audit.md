@@ -1,5 +1,26 @@
 # Statistical-procedure audit: bootstrap SSRVs
 
+Historical implementation audit. On 2026-10-29, the procedure was revised:
+global paired subject bootstrap is the default for all designs, optional strata
+apply only to bootstrap, and Laplace uses original subjects. Hybrid selects per
+coefficient the entire final-effect candidate with the larger median across
+features of all-draw 95% interval widths, with Laplace on exact ties. These
+decisions supersede conflicting descriptions in the historical inventory below
+and the earlier [reference validation report](ssrv-reference-validation.md).
+Native end-to-end validation on three full datasets is recorded in
+[ssrv-native-validation.md](ssrv-native-validation.md); the earlier reference
+report records comparisons with Won's supplied code and locally available
+manuscript and proof sources. Statements below about unavailable reference
+material describe the earlier audit, not the current validation status.
+
+## Future work
+
+- [ ] Audit the full test suite for useful behavioral coverage, redundant
+  assertions, brittle implementation coupling, independent reference calculations,
+  and unnecessary runtime. Consolidate without weakening numerical or statistical
+  checks. The cleanup so far covers SSRV tests and selected redundancies in three
+  pre-existing test files; it is not a comprehensive suite audit.
+
 This report supersedes the earlier audit's recommendation of a curvature cutoff
 and forced bootstrap fallback. Those were changes to the procedure, not merely
 numerical repairs. No consistency claim is made from passing tests. The original

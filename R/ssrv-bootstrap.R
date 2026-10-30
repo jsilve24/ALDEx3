@@ -18,6 +18,18 @@
        level=0.95, interval="equal-tailed")
 }
 
+.ssrv_probabilities <- function(draws, method) {
+  dims <- dim(draws)[1:2]
+  raw <- matrix(apply(draws, 1:2, function(x) {
+    if (any(!is.finite(x))) return(NA_real_)
+    min(1, 2 * min(mean(x <= 0), mean(x >= 0)))
+  }), dims[1], dims[2], dimnames=dimnames(draws)[1:2])
+  adjusted <- raw
+  for (i in seq_len(dims[1]))
+    adjusted[i,] <- p.adjust(raw[i,], method=method, n=dims[2])
+  list(p.val=raw, p.val.adj=adjusted)
+}
+
 .aldex_ssrv_summary <- function(object, ignore.intercept, component) {
   extract <- function(values, coefficient) {
     p <- values$posterior
@@ -25,8 +37,18 @@
     if (is.null(p)) stop("posterior summaries or retained estimate draws are required")
     out <- array_to_df(p$mean)
     names(out) <- c("parameter", "entity", "estimate")
-    out$credible.lower <- as.vector(p$lower)
-    out$credible.upper <- as.vector(p$upper)
+    out$p2.5 <- as.vector(p$lower)
+    out$p97.5 <- as.vector(p$upper)
+    probs <- list(p.val=values$p.val, p.val.adj=values$p.val.adj)
+    if ((is.null(probs$p.val) || is.null(probs$p.val.adj)) && !is.null(values$estimate)) {
+      derived <- .ssrv_probabilities(values$estimate, if (is.null(object$p.adjust.method)) "BH" else object$p.adjust.method)
+      if (is.null(probs$p.val)) probs$p.val <- derived$p.val
+      if (is.null(probs$p.val.adj)) probs$p.val.adj <- derived$p.val.adj
+    }
+    if (is.null(probs$p.val) || is.null(probs$p.val.adj))
+      warning("SSRV probabilities are unavailable: retained draws or stored probabilities are required", call.=FALSE)
+    out$p.val <- if (is.null(probs$p.val)) NA_real_ else as.vector(probs$p.val)
+    out$p.val.adj <- if (is.null(probs$p.val.adj)) NA_real_ else as.vector(probs$p.val.adj)
     if (length(object$diagnostics$unavailable.coefficients))
       out$status <- ifelse(is.finite(out$estimate),"available","unavailable")
     if (coefficient && ignore.intercept) out <- out[out$parameter != "(Intercept)", , drop=FALSE]
@@ -52,7 +74,7 @@
 }
 
 .aldex_ssrv_bootstrap <- function(Y, X, data, nsample, scale, streamsize,
-                                 return.pars, contrasts, strata, max.attempts, args) {
+                                 return.pars, contrasts, strata, max.attempts, p.adjust.method, args) {
   integer.scalar <- function(x) is.numeric(x) && length(x)==1L && is.finite(x) && x==floor(x)
   if (!integer.scalar(nsample) || nsample < 2L) stop("ssrv.bootstrap requires nsample >= 2")
   if (!integer.scalar(max.attempts) || max.attempts < 1L)
@@ -62,8 +84,8 @@
   if (!is.numeric(streamsize) || length(streamsize)!=1L || is.na(streamsize) || streamsize <= 0)
     stop("streamsize must be positive")
   if (!is.character(return.pars) || !length(return.pars) ||
-      any(!return.pars %in% c("posterior", "estimate", "X")))
-    stop("ssrv.bootstrap return.pars supports only 'posterior', 'estimate', and 'X'")
+      any(!return.pars %in% c("posterior", "estimate", "X", "p.val", "p.val.adj")))
+    stop("ssrv.bootstrap return.pars supports only 'posterior', 'estimate', 'X', 'p.val', and 'p.val.adj'")
   N <- ncol(Y); D <- nrow(Y)
   formula <- if (inherits(X, "formula")) X else NULL
   if (!is.null(formula)) {
@@ -80,12 +102,7 @@
   stream <- N*D*nsample*8/100000 > streamsize
   if (stream && floor(streamsize*100000/(N*D*8)) < 1) stop("streamsize too small")
   policy <- "paired rows"
-  if (is.null(strata) && P==2L && any(apply(X, 1, function(x) all(x==1)))) {
-    k <- which(!apply(X, 1, function(x) all(x==1)))
-    if (length(k)==1L && length(unique(X[k, ]))==2L) {
-      strata <- X[k, ]; policy <- "within two groups"
-    }
-  } else if (!is.null(strata)) policy <- "explicit strata"
+  if (!is.null(strata)) policy <- "explicit strata"
   if (!is.null(strata) && (length(strata)!=N || !is.atomic(strata) || !is.null(dim(strata)) || anyNA(strata)))
     stop("bootstrap.strata must be a nonmissing length-N atomic vector")
   groups <- if (is.null(strata)) list(seq_len(N)) else split(seq_len(N), strata, drop=TRUE)
@@ -117,26 +134,47 @@
   rejected <- integer(nsample)
   sparse <- if (composable) unlist(lapply(scale, function(b)
     if (inherits(b,"aldex_sparse_scale")) match(b$coefficients, rownames(X)) else integer()), use.names=FALSE) else integer()
+  laplace.ks <- if (composable) unlist(lapply(scale, function(b)
+    if (inherits(b,"aldex_sparse_scale") && b$uncertainty != "bootstrap")
+      match(b$coefficients, rownames(X)) else integer()), use.names=FALSE) else integer()
+  pure.laplace <- length(sparse)>0L && length(laplace.ks)==length(sparse) &&
+    all(vapply(scale, function(b) !inherits(b,"aldex_sparse_scale") ||
+                 b$uncertainty=="laplace", logical(1)))
+  if (pure.laplace) policy <- "original subjects"
+  original <- array(NA_real_, c(length(laplace.ks),D,nsample))
   for (s in seq_len(nsample)) {
     lc <- array(NA_real_, c(D,N,1L))
     for (i in seq_len(N)) lc[,i,1L] <- rLogDirichlet(1L, Y[,i]+0.5)
-    for (attempt in seq_len(max.attempts)) {
-      idx <- .ssrv_subject_indices(groups)
-      xb <- t(X[,idx,drop=FALSE])
-      if (qr(xb)$rank == P) break
-      rejected[s] <- rejected[s]+1L
+    if (pure.laplace) {
+      idx <- seq_len(N)
+      xb <- t(X)
+    } else {
+      for (attempt in seq_len(max.attempts)) {
+        idx <- .ssrv_subject_indices(groups)
+        xb <- t(X[,idx,drop=FALSE])
+        if (qr(xb)$rank == P) break
+        rejected[s] <- rejected[s]+1L
+      }
+      if (qr(xb)$rank < P)
+        stop("rank-deficient bootstrap design at draw ", s, " after ", max.attempts,
+             " attempts; rejected resamples so far: ", sum(rejected),
+             ". Revise design or specify appropriate bootstrap.strata.")
     }
-    if (qr(xb)$rank < P)
-      stop("rank-deficient bootstrap design at draw ", s, " after ", max.attempts,
-           " attempts; rejected resamples so far: ", sum(rejected),
-           ". Revise design or specify appropriate bootstrap.strata.")
     a <- fflm(aperm(lc[,idx,,drop=FALSE], c(2,1,3)), xb,
               .coefficients.only=TRUE)$estimate[,,1L,drop=FALSE]
     a <- matrix(a, P,D, dimnames=list(rownames(X),entities))
     A[,,s] <- a
+    if (length(laplace.ks)) {
+      a.original <- if (pure.laplace) a else {
+        original.fit <- fflm(aperm(lc, c(2,1,3)), t(X),
+                             .coefficients.only=TRUE)$estimate[,,1L,drop=FALSE]
+        matrix(original.fit, P,D)
+      }
+      original[,,s] <- a.original[laplace.ks,,drop=FALSE]
+    }
     if (composable) {
       # One common feature bootstrap for all sparse coefficients in this draw.
-      fi <- if (length(sparse)) sample.int(D,D,replace=TRUE) else integer()
+      fi <- if (length(sparse) && !pure.laplace) sample.int(D,D,replace=TRUE) else integer()
       for (block in scale) {
         ks <- match(block$coefficients, rownames(X))
         if (inherits(block, "aldex_gaussian_scale")) {
@@ -148,7 +186,7 @@
             boot[k,s] <- -kde$mode
           }
           if (block$uncertainty != "bootstrap") {
-            kde <- .ssrv_kde(a[k,],block$bandwidth)
+            kde <- .ssrv_kde(a.original[k,],block$bandwidth)
             v <- kde$variance
             if (!is.na(v)) laplace.max.variance[k] <-
               if(is.na(laplace.max.variance[k])) v else max(laplace.max.variance[k],v)
@@ -182,11 +220,20 @@
     }
   }
   branches <- setNames(character(length(sparse)),rownames(X)[sparse])
+  width.laplace <- width.boot <- setNames(rep(NA_real_,length(sparse)),rownames(X)[sparse])
   if (composable) for (block in scale) if (inherits(block,"aldex_sparse_scale")) {
     for (k in match(block$coefficients,rownames(X))) {
-      selected <- .ssrv_select(laplace[k,],boot[k,],block$uncertainty)
+      if (block$uncertainty == "hybrid") {
+        l.effect <- sweep(matrix(original[match(k,laplace.ks),,],D,nsample),2L,laplace[k,],`+`)
+        b.effect <- sweep(matrix(A[k,,],D,nsample),2L,boot[k,],`+`)
+        width.laplace[k == sparse] <- .ssrv_interval_width(l.effect)
+        width.boot[k == sparse] <- .ssrv_interval_width(b.effect)
+        selected <- .ssrv_select(l.effect,b.effect,block$uncertainty)
+      } else selected <- block$uncertainty
       shifts[k,] <- if(is.na(selected)) NA_real_ else
         if(selected=="bootstrap") boot[k,] else laplace[k,]
+      if (!is.na(selected) && selected == "laplace")
+        A[k,,] <- original[match(k,laplace.ks),,]
       branches[rownames(X)[k]] <- selected
     }
   }
@@ -202,15 +249,30 @@
   for (s in seq_len(nsample)) A[,,s] <- sweep(matrix(A[,,s],P,D),1L,shifts[,s],`+`)
   res <- list(X=X, method="lm", test="ssrv.bootstrap", streaming=stream,
               nsample=nsample, scale.basis="log2 composition",
+              p.adjust.method=p.adjust.method, onesided=FALSE,
               diagnostics=list(resampling=policy, strata=strata, max.attempts=max.attempts,
+                               laplace.resampling=if(length(laplace.ks)) "original subjects" else NULL,
                                rejected=sum(rejected), rejections.by.draw=rejected,
                                scale.branch=branches, unavailable.coefficients=unavailable,
                                available.draws=setNames(ifelse(rownames(X)%in%unavailable,0L,nsample),rownames(X)),
                                laplace.unbounded.draws=unbounded,
                                laplace.max.conditional.variance=laplace.max.variance,
                                laplace.unavailable.draws=setNames(rowSums(invalid),rownames(X)),
+                               selection.rule="median feature 95% equal-tailed effect interval width; ties select laplace",
+                               laplace.interval.width=width.laplace,
+                               bootstrap.interval.width=width.boot,
                                laplace.variance=if (length(sparse)) apply(laplace[sparse,,drop=FALSE],1,var) else numeric(),
                                bootstrap.variance=if (length(sparse)) apply(boot[sparse,,drop=FALSE],1,var) else numeric()))
+  retain.probabilities <- function(values, draws) {
+    wanted <- intersect(c("p.val", "p.val.adj"), return.pars)
+    if ("posterior" %in% return.pars) wanted <- c("p.val", "p.val.adj")
+    if (length(wanted)) {
+      probs <- .ssrv_probabilities(draws, p.adjust.method)
+      for (nm in wanted) values[[nm]] <- probs[[nm]]
+    }
+    values
+  }
+  res <- retain.probabilities(res, A)
   if ("posterior" %in% return.pars) res$posterior <- .ssrv_posterior(A)
   if ("estimate" %in% return.pars) res$estimate <- A
   if (!is.null(contrasts)) {
@@ -223,7 +285,7 @@
     }
     res$diagnostics$unavailable.contrasts <- rownames(contrasts)[
       apply(contrasts[,unavailable,drop=FALSE]!=0,1,any)]
-    res$contrasts <- list(matrix=contrasts)
+    res$contrasts <- retain.probabilities(list(matrix=contrasts), ca)
     if ("posterior" %in% return.pars) res$contrasts$posterior <- .ssrv_posterior(ca)
     if ("estimate" %in% return.pars) res$contrasts$estimate <- ca
   }

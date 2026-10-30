@@ -1,23 +1,37 @@
-##' Sparse coefficient scale model
+##' Sparse scale model for regression coefficients
 ##'
-##' Assign a shared scalar scale shift to named log2-proportion coefficients. Gaussian KDE
-##' modes use bw.nrd0 without a bandwidth floor, refined local
-##' maxima, and leftmost ties. Feature bootstrap re-estimates bandwidth.
-##' Laplace uses inverse negative log-density curvature, not a LASSO prior.
-##' Hybrid selects one complete candidate sequence by its all-draw variance
-##' (bootstrap on exact ties), without substituting a candidate on numerical failure.
-##' The sparse assumption places the dominant absolute-effect density peak at
-##' zero; the conditional model estimates total-scale coefficients from the
-##' compositional feature profile. Zero log-density curvature gives infinite
-##' Laplace variance. Unbounded or undefined approximations are warned about;
-##' affected posterior results are unavailable rather than replaced by bootstrap.
+##' Estimate a total-abundance coefficient by assuming that the dominant peak
+##' of absolute feature effects is at zero. For each draw, the estimated scale
+##' coefficient is added to the corresponding log2-proportion coefficient
+##' of every feature. Use this assumption only when a dominant cluster of
+##' features with little or no absolute change is biologically plausible.
+##'
+##' Combine this specification with other coefficient models using
+##' \code{compose.sm}, and supply the result as \code{scale} to
+##' \code{aldex(test="ssrv.bootstrap")}. Assign every exact model-matrix
+##' coefficient name, including the intercept.
+##' @details The default \code{"hybrid"} compares bootstrap and Laplace
+##' candidates using the median across features of their 95% final-effect
+##' interval widths, and selects the complete sequence with the larger median;
+##' exact ties select Laplace. Bootstrap resamples subjects and features;
+##' Laplace fits the original subjects and uses inverse negative log-density
+##' curvature for the scale variance, rather than a LASSO prior. When all
+##' sparse specifications use Laplace, accompanying Gaussian coefficients also
+##' use the original subjects, without subject or feature resampling.
+##'
+##' Gaussian kernel density estimation uses \code{bw.nrd0} by default,
+##' re-estimating bandwidth for feature resamples, without a bandwidth floor.
+##' Local maxima are refined and exact density ties choose the leftmost mode.
+##' Zero curvature gives infinite Laplace variance; an unbounded or undefined
+##' approximation warns and makes affected results unavailable, without an
+##' automatic bootstrap substitution.
 ##' @param coefficients Exact model-matrix coefficient names.
-##' @param uncertainty One of hybrid, bootstrap, or laplace.
+##' @param uncertainty \code{"hybrid"} (default), \code{"bootstrap"}, or
+##'   \code{"laplace"}; see Details.
 ##' @param bandwidth Optional finite positive Gaussian kernel SD in log2
-##'   coefficient units. NULL estimates bandwidth separately for each profile.
-##'   Constant profiles require an explicit positive bandwidth; no smoothing
-##'   variance is assigned automatically.
-##' @return A coefficient scale block for compose.sm.
+##'   coefficient units. \code{NULL} estimates bandwidth separately for each
+##'   profile. Constant profiles require an explicit positive bandwidth.
+##' @return A sparse coefficient scale specification for \code{compose.sm}.
 ##' @export
 sparse.sm <- function(coefficients, uncertainty=c("hybrid", "bootstrap", "laplace"),
                       bandwidth=NULL) {
@@ -30,21 +44,26 @@ sparse.sm <- function(coefficients, uncertainty=c("hybrid", "bootstrap", "laplac
                  bandwidth=bandwidth), class="aldex_sparse_scale")
 }
 
-##' Gaussian coefficient scale block
+##' Gaussian prior for total-abundance coefficients
 ##'
-##' A joint Gaussian prior on regression coefficients of log2 absolute total
-##' abundance. Each draw is added to the corresponding log2-proportion coefficient
-##' for every feature. Separate blocks are independent; covariance within a block
-##' is preserved. Assign the intercept explicitly, for example with mean=0, sd=0.
-##' Zero shifts give the log-proportion coefficients without correction: a zero
-##' intercept scale shift fixes reference total abundance at one, not its
-##' geometric mean. These are total-scale coefficients, as in coefficient.sm.
-##' Recoding predictors changes these priors unless transformed consistently.
-##' @param coefficients Exact model-matrix coefficient names in block order.
-##' @param mean Scalar or vector of expected scale shifts.
-##' @param sd Scalar or vector of nonnegative standard deviations.
-##' @param covariance Joint covariance matrix, instead of sd.
-##' @return A coefficient scale block for compose.sm.
+##' Specify a joint Gaussian prior on regression coefficients of log2 total
+##' abundance. Each sampled coefficient is added to the corresponding
+##' log2-proportion coefficient for every feature. For example, a treatment
+##' coefficient with mean -1 represents an expected halving of total abundance.
+##' A zero intercept coefficient fixes the reference total abundance at one in
+##' the chosen units. Predictor recoding changes the prior unless its parameters
+##' are transformed consistently.
+##'
+##' Use exact model-matrix names and combine specifications with \code{compose.sm}.
+##' Coefficients in one call can be correlated through \code{covariance};
+##' separate calls are independent. Covariance rows and columns follow the
+##' order of \code{coefficients}.
+##' @param coefficients Exact model-matrix coefficient names in covariance order.
+##' @param mean Scalar or vector of prior means in log2-total coefficient units.
+##' @param sd Scalar or vector of nonnegative prior standard deviations in the
+##'   same units, supplied instead of \code{covariance}.
+##' @param covariance Joint covariance matrix, supplied instead of \code{sd}.
+##' @return A Gaussian coefficient scale specification for \code{compose.sm}.
 ##' @export
 gaussian.sm <- function(coefficients, mean=0, sd=NULL, covariance=NULL) {
   .ssrv_names(coefficients)
@@ -58,13 +77,15 @@ gaussian.sm <- function(coefficients, mean=0, sd=NULL, covariance=NULL) {
                  covariance=u$covariance), class="aldex_gaussian_scale")
 }
 
-##' Compose named coefficient scale blocks
+##' Combine scale models for regression coefficients
 ##'
-##' Every coefficient, including the intercept, must be assigned exactly once.
-##' Composable models use log2 proportions as baseline; no sample-scale model
-##' is added. Only test="ssrv.bootstrap" supports these specifications.
-##' @param ... Blocks made by sparse.sm or gaussian.sm.
-##' @return A composable coefficient-scale specification for aldex(scale=...).
+##' Assign a sparse model or Gaussian prior to each model-matrix coefficient,
+##' including the intercept, exactly once. Pass the result to \code{aldex} as
+##' \code{scale} with \code{test="ssrv.bootstrap"}. The models describe
+##' log2 total-abundance coefficients added to fitted log2-proportion
+##' coefficients; there is no automatic CLR centering.
+##' @param ... Specifications made by \code{sparse.sm} or \code{gaussian.sm}.
+##' @return A coefficient-scale specification for \code{aldex(scale=...)}.
 ##' @examples
 ##' sc <- compose.sm(gaussian.sm("(Intercept)", sd=0),
 ##'                  sparse.sm("treatment"), gaussian.sm("age", sd=0.1))
@@ -136,12 +157,14 @@ compose.sm <- function(...) {
   list(mode=origin+h*best,variance=variance,bandwidth=h)
 }
 
+.ssrv_interval_width <- function(effects) {
+  if (any(!is.finite(effects))) return(NA_real_)
+  median(apply(effects, 1L, function(x) diff(quantile(x, c(0.025,0.975), names=FALSE))))
+}
+
 .ssrv_select <- function(laplace, bootstrap, mode) {
   if (mode!="hybrid") return(mode)
-  # An unavailable sequence has no sample variance to compare. Never substitute
-  # the other candidate or invent an empirical variance for an unsampled Gaussian.
-  if (any(!is.finite(laplace)) || any(!is.finite(bootstrap))) return(NA_character_)
-  vl <- var(laplace); vb <- var(bootstrap)
+  vl <- .ssrv_interval_width(laplace); vb <- .ssrv_interval_width(bootstrap)
   if(is.na(vl) || is.na(vb)) return(NA_character_)
-  if(vl>vb) "laplace" else "bootstrap"
+  if(vl>=vb) "laplace" else "bootstrap"
 }

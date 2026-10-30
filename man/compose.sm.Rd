@@ -2,20 +2,22 @@
 % Please edit documentation in R/ssrv-scale.R
 \name{compose.sm}
 \alias{compose.sm}
-\title{Compose named coefficient scale blocks}
+\title{Combine scale models for regression coefficients}
 \usage{
 compose.sm(...)
 }
 \arguments{
-\item{...}{Blocks made by sparse.sm or gaussian.sm.}
+\item{...}{Specifications made by \code{sparse.sm} or \code{gaussian.sm}.}
 }
 \value{
-A composable coefficient-scale specification for aldex(scale=...).
+A coefficient-scale specification for \code{aldex(scale=...)}.
 }
 \description{
-Every coefficient, including the intercept, must be assigned exactly once.
-Composable models use log2 proportions as baseline; no sample-scale model
-is added. Only test="ssrv.bootstrap" supports these specifications.
+Assign a sparse model or Gaussian prior to each model-matrix coefficient,
+including the intercept, exactly once. Pass the result to \code{aldex} as
+\code{scale} with \code{test="ssrv.bootstrap"}. The models describe
+log2 total-abundance coefficients added to fitted log2-proportion
+coefficients; there is no automatic CLR centering.
 }
 \examples{
 sc <- compose.sm(gaussian.sm("(Intercept)", sd=0),

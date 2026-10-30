@@ -45,7 +45,8 @@ including unlisted singleton families. Assign the result to keep it.
 }
 \description{
 Recomputes multiple-testing adjustments from an existing ALDEx3 fit,
-without refitting or drawing new samples. Each group pools all features
+without refitting or drawing new samples. Bootstrap SSRV fits are not
+supported. Each group pools all features
 of its named coefficients or stored contrasts into one adjustment family.
 }
 \details{

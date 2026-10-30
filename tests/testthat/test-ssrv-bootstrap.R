@@ -28,16 +28,97 @@ test_that("stratified draws agree with independent resampled group means", {
     setNames(rep(0,nrow(X)),rownames(X))
   }
   set.seed(18)
-  fit <- aldex(f$Y,~treatment,f$data,nsample=12,test="ssrv.bootstrap",scale=capture)
+  fit <- aldex(f$Y,~treatment,f$data,nsample=12,test="ssrv.bootstrap",scale=capture,
+               bootstrap.strata=f$data$treatment)
   x <- f$data$treatment
-  for (s in 1:12) {
-    z <- seen[[s]]; lc <- z$lc[,,1]
-    i <- z$idx
-    expected <- rowMeans(lc[,i[x[i]==1],drop=FALSE])-rowMeans(lc[,i[x[i]==0],drop=FALSE])
-    expect_equal(unname(fit$estimate[2,,s]),unname(expected),tolerance=1e-12)
-    expect_equal(sort(x[i]),sort(x))
+  expected <- vapply(seen,function(z) {
+    lc <- z$lc[,,1]; i <- z$idx
+    rowMeans(lc[,i[x[i]==1],drop=FALSE])-rowMeans(lc[,i[x[i]==0],drop=FALSE])
+  },numeric(15))
+  expect_lt(max(abs(fit$estimate[2,,]-expected)),1e-12)
+  expect_true(all(vapply(seen,function(z) identical(sort(x[z$idx]),sort(x)),logical(1))))
+  expect_equal(fit$diagnostics$resampling,"explicit strata")
+  seen <- list()
+  set.seed(18)
+  fit <- aldex(f$Y,~treatment,f$data,nsample=12,test="ssrv.bootstrap",scale=capture)
+  expect_equal(fit$diagnostics$resampling,"paired rows")
+  expect_true(any(vapply(seen,function(z) sum(x[z$idx]==1)!=6,logical(1))))
+  expected <- simplify2array(lapply(seen,function(z)
+    coef(lm.fit(t(fit$X[,z$idx]),t(z$lc[,z$idx,1])))))
+  expect_lt(max(abs(simplify2array(lapply(seen,`[[`,"A"))-expected)),1e-10)
+})
+
+test_that("Laplace uses original-subject OLS for its mode and final effects", {
+  f <- ssrv_fixture(); comps <- list(); profiles <- list()
+  draw <- rLogDirichlet
+  local_mocked_bindings(rLogDirichlet=function(...) {
+    z <- draw(...); comps[[length(comps)+1L]] <<- z; z
+  }, .ssrv_kde=function(a,bandwidth=NULL) {
+    profiles[[length(profiles)+1L]] <<- a
+    list(mode=mean(a),variance=0.04)
+  }, .package="ALDEx3")
+  set.seed(86)
+  fit <- aldex(f$Y,~treatment,f$data,nsample=5,test="ssrv.bootstrap",
+               scale=ssrv_scale("laplace"))
+  expected <- vapply(1:5,function(s) {
+    lc <- do.call(cbind,comps[((s-1)*12+1):(s*12)])
+    coef(lm.fit(t(fit$X),t(lc)))[2,]
+  },numeric(15))
+  expect_lt(max(abs(do.call(cbind,profiles)-expected)),1e-10)
+  shifts <- fit$estimate[2,,]-expected
+  expect_lt(max(abs(sweep(shifts,2,shifts[1,]))),1e-10)
+})
+
+test_that("Laplace-only sparse models require no resampling", {
+  f <- ssrv_fixture(); comps <- list(); draw <- rLogDirichlet
+  local_mocked_bindings(rLogDirichlet=function(...) {
+    z <- draw(...); comps[[length(comps)+1L]] <<- z; z
+  }, .ssrv_subject_indices=function(...) stop("unexpected subject bootstrap"),
+  .package="ALDEx3")
+  fit <- aldex(f$Y,~treatment,f$data,nsample=3,test="ssrv.bootstrap",
+               scale=ssrv_scale("laplace"),bootstrap.strata=f$data$treatment)
+  expect_identical(fit$diagnostics$resampling,"original subjects")
+  expect_identical(fit$diagnostics$laplace.resampling,"original subjects")
+  expect_identical(fit$diagnostics$rejected,0L)
+  expected <- vapply(1:3,function(s) {
+    lc <- do.call(cbind,comps[((s-1)*12+1):(s*12)])
+    coef(lm.fit(t(fit$X),t(lc)))[1,]
+  },numeric(15))
+  expect_lt(max(abs(fit$estimate[1,,]-expected)),1e-10)
+  expect_error(aldex(f$Y,~treatment,f$data,nsample=3,test="ssrv.bootstrap",
+                     scale=ssrv_scale()),"unexpected subject bootstrap")
+})
+
+test_that("hybrid selects and returns one complete candidate effect sequence", {
+  f <- ssrv_fixture(); select <- .ssrv_select; candidates <- NULL
+  draw <- rLogDirichlet; resample <- .ssrv_subject_indices
+  comps <- list(); indices <- list()
+  local_mocked_bindings(.ssrv_select=function(laplace,bootstrap,mode) {
+    candidates <<- list(laplace=laplace,bootstrap=bootstrap)
+    select(laplace,bootstrap,mode)
+  },rLogDirichlet=function(...) {
+    z <- draw(...); comps[[length(comps)+1L]] <<- z; z
+  },.ssrv_subject_indices=function(groups) {
+    z <- resample(groups); indices[[length(comps) %/% ncol(f$Y)]] <<- z; z
+  },.package="ALDEx3")
+  set.seed(52)
+  fit <- aldex(f$Y,~treatment,f$data,nsample=12,test="ssrv.bootstrap",scale=ssrv_scale())
+  widths <- vapply(candidates,function(z)
+    median(apply(z,1,function(x) diff(quantile(x,c(.025,.975))))),numeric(1))
+  branch <- if (widths["laplace"] >= widths["bootstrap"]) "laplace" else "bootstrap"
+  expect_identical(unname(fit$diagnostics$scale.branch["treatment"]),branch)
+  expect_equal(unname(fit$estimate[2,,]),unname(candidates[[branch]]),tolerance=1e-10)
+  expect_equal(unname(fit$diagnostics$laplace.interval.width["treatment"]),unname(widths["laplace"]))
+  expect_equal(unname(fit$diagnostics$bootstrap.interval.width["treatment"]),unname(widths["bootstrap"]))
+  for (candidate in c("bootstrap","laplace")) {
+    profiles <- vapply(1:12,function(s) {
+      lc <- do.call(cbind,comps[((s-1)*12+1):(s*12)])
+      i <- if (candidate=="bootstrap") indices[[s]] else seq_len(12)
+      coef(lm.fit(t(fit$X[,i]),t(lc[,i])))[2,]
+    },numeric(15))
+    shifts <- candidates[[candidate]]-profiles
+    expect_lt(max(abs(sweep(shifts,2,shifts[1,]))),1e-10)
   }
-  expect_equal(fit$diagnostics$resampling,"within two groups")
 })
 
 test_that("scales are shared scalar shifts and all coefficients retain subject uncertainty", {
@@ -48,11 +129,8 @@ test_that("scales are shared scalar shifts and all coefficients retain subject u
     c(`(Intercept)`=2,treatment=-1,age=0.5)
   }
   fit <- aldex(f$Y,~treatment+age,f$data,nsample=25,scale=scale,test="ssrv.bootstrap")
-  for (s in 1:25) {
-    expect_equal(unname(fit$estimate[,,s]-captured[[s]]),
-                 matrix(c(2,-1,0.5),3,15),tolerance=1e-10)
-    expect_equal(diff(fit$estimate[2,,s]),diff(captured[[s]][2,]),ignore_attr=TRUE)
-  }
+  shifts <- fit$estimate-simplify2array(captured)
+  expect_lt(max(abs(shifts-array(c(2,-1,0.5),dim(shifts)))),1e-10)
   expect_true(all(apply(fit$estimate,c(1,2),sd)>1e-4))
 })
 
@@ -78,15 +156,19 @@ test_that("KDE mode, inverse log curvature, global peaks and translation behave"
   expect_error(.ssrv_kde(rep(0,10)),"explicit positive bandwidth")
 })
 
-test_that("hybrid uses all-draw variances and never substitutes unavailable candidates", {
-  expect_equal(.ssrv_select(c(-2,2),c(-1,1),"hybrid"),"laplace")
-  expect_equal(.ssrv_select(c(-1,1),c(-2,2),"hybrid"),"bootstrap")
-  expect_equal(.ssrv_select(c(-1,1),c(-1,1),"hybrid"),"bootstrap")
-  expect_true(is.na(.ssrv_select(c(NA,100),c(-1,1),"hybrid")))
-  # Draw-dependent reference offsets can reverse scale-variance selection.
-  l <- c(-1,1,-1,1); b <- c(-2,-2,2,2)
+test_that("hybrid uses final-effect widths and never substitutes unavailable candidates", {
+  l <- rbind(c(-1,1,-1,1),c(-1,1,-1,1),c(-1,1,-1,1))
+  b <- rbind(c(-2,-2,2,2),c(-2,-2,2,2),c(-2,-2,2,2))
   expect_equal(.ssrv_select(l,b,"hybrid"),"bootstrap")
   expect_equal(.ssrv_select(l-b,b-b,"hybrid"),"laplace")
+  expect_equal(.ssrv_select(l,l,"hybrid"),"laplace")
+  # A rare extreme makes Laplace variance larger but its central interval narrower.
+  rare <- matrix(c(rep(0,99),10),nrow=1)
+  regular <- matrix(rep(c(-.5,.5),50),nrow=1)
+  expect_gt(var(c(rare)),var(c(regular)))
+  expect_equal(.ssrv_select(rare,regular,"hybrid"),"bootstrap")
+  l[1,1] <- NA
+  expect_true(is.na(.ssrv_select(l,b,"hybrid")))
   f <- ssrv_fixture()
   local_mocked_bindings(.ssrv_kde=function(a,bandwidth=NULL)
     list(mode=mean(a),variance=Inf),.package="ALDEx3")
@@ -135,14 +217,24 @@ test_that("posterior summaries, contrasts, dimensions, retention and streaming a
   expect_equal(a$posterior$mean,apply(a$estimate,1:2,mean))
   expect_equal(a$posterior$lower,apply(a$estimate,1:2,quantile,0.025))
   expect_equal(a$posterior$upper,apply(a$estimate,1:2,quantile,0.975))
-  for (s in 1:20) expect_equal(unname(a$contrasts$estimate[,,s]),
-                               unname(as.vector(C%*%a$estimate[,,s])))
+  expected <- simplify2array(lapply(1:20,function(s) C%*%a$estimate[,,s]))
+  expect_lt(max(abs(a$contrasts$estimate-expected)),1e-10)
   expect_equal(summary(a),summary(compact))
+  expect_equal(summary(a),summary(run(Inf,"estimate")))
+  expect_equal(a$p.val, compact$p.val)
+  expect_equal(a$p.val.adj, compact$p.val.adj)
+  score <- function(z) min(1, 2*min(mean(z <= 0),mean(z >= 0)))
+  expect_equal(a$p.val, apply(a$estimate,1:2,score))
+  expect_equal(a$contrasts$p.val, apply(a$contrasts$estimate,1:2,score))
+  expect_equal(a$contrasts$p.val.adj[1,], p.adjust(a$contrasts$p.val[1,],"BH"))
+  old.compact <- compact; old.compact$p.val <- old.compact$p.val.adj <- NULL
+  expect_warning(old.summary <- summary(old.compact, component="coefficients"), "probabilities are unavailable")
+  expect_true(all(is.na(old.summary$p.val)))
   expect_equal(attr(summary(a),"interval"),"equal-tailed")
   expect_equal(names(summary(a,component="coefficients")),
-               c("parameter","entity","estimate","credible.lower","credible.upper"))
+               c("parameter","entity","estimate","p2.5","p97.5","p.val","p.val.adj"))
   expect_true(all(c("coefficient","contrast") %in% summary(a)$type))
-  expect_equal(summary(a,component="contrasts")$credible.lower,
+  expect_equal(summary(a,component="contrasts")$p2.5,
                as.vector(a$contrasts$posterior$lower))
   single <- aldex(f$Y[1,,drop=FALSE],t(x),nsample=5,test="ssrv.bootstrap",
                   scale=tss.sm,gamma=0,contrasts=C)
@@ -159,10 +251,8 @@ test_that("Gaussian blocks, legacy scales and joint custom scales keep their mea
     z <- base(...); captured[[length(captured)+1L]] <<- z$estimate; z
   },.package="ALDEx3")
   fit <- aldex(f$Y,~treatment+age,f$data,nsample=15,test="ssrv.bootstrap",scale=sc)
-  for (s in 1:15) {
-    shifts <- fit$estimate[,,s]-captured[[s]][,,1]
-    expect_equal(unname(shifts[1,]-2),unname(shifts[3,]-0.5),tolerance=1e-7)
-  }
+  shifts <- fit$estimate-simplify2array(lapply(captured,function(z) z[,,1]))
+  expect_lt(max(abs((shifts[1,,]-2)-(shifts[3,,]-0.5))),1e-7)
   expect_true(sd(fit$estimate[3,1,])>0)
   x <- t(model.matrix(~treatment,f$data)); coeff <- c(1.5,-0.75)
   set.seed(12); prior <- aldex(f$Y,x,nsample=10,test="ssrv.bootstrap",scale=coefficient.sm,
@@ -200,13 +290,11 @@ test_that("scope checks and downstream guards fail early without breaking legacy
   expect_error(aldex(f$Y,~treatment,f$data,nsample=3,test="ssrv.bootstrap",scale=sparse.sm("treatment")),"missing")
   expect_error(aldex(f$Y,~treatment,f$data,nsample=1,test="ssrv.bootstrap",scale=tss.sm),"nsample")
   fit <- aldex(f$Y,~treatment,f$data,nsample=5,test="ssrv.bootstrap",scale=tss.sm)
-  expect_null(fit$p.val); expect_null(fit$std.error); expect_null(fit$df)
+  expect_false(is.null(fit$p.val)); expect_null(fit$std.error); expect_null(fit$df)
   for (fun in list(aldex.plot,aldex.effect,aldex.p.adjust,cohensd))
     expect_error(fun(fit),"not yet available")
   expect_error(aldex(f$Y,~treatment,f$data,nsample=3,test="ssrv.bootstrap",scale=tss.sm,
-                     return.pars="p.val"),"return.pars")
-  expect_error(aldex(f$Y,~treatment,f$data,nsample=3,test="ssrv.bootstrap",scale=tss.sm,
-                     p.adjust.method="BH"),"unavailable")
+                     onesided="upper"),"one-sided")
   old <- aldex(f$Y,~treatment,f$data,nsample=5,scale=tss.sm)
   old$test <- NULL
   expect_s3_class(summary(old),"data.frame")
@@ -224,12 +312,11 @@ test_that("arbitrary sample scales use matched rows and exact projection", {
     matrix(values,12,1)
   }
   fit <- aldex(f$Y,~treatment,f$data,nsample=8,test="ssrv.bootstrap",scale=callback)
-  for (s in 1:8) {
+  expected <- simplify2array(lapply(1:8,function(s) {
     idx <- indices[[s]]
-    expected <- coef(lm.fit(t(fit$X[,idx]),
-                            t(comps[[s]][,idx])+values[idx]))
-    expect_equal(unname(fit$estimate[,,s]),unname(expected),tolerance=1e-10)
-  }
+    coef(lm.fit(t(fit$X[,idx]),t(comps[[s]][,idx])+values[idx]))
+  }))
+  expect_lt(max(abs(fit$estimate-expected)),1e-10)
 })
 
 test_that("shared feature indices preserve relationships between sparse coefficients", {
@@ -253,8 +340,8 @@ test_that("matrix scale draws retain their global draw alignment across streamin
     aldex(f$Y,x,nsample=8,test="ssrv.bootstrap",scale=sc,streamsize=stream)
   }
   a <- run(matrix(0,12,8)); shifted <- run(t(x)%*%b,0.03)
-  for (s in 1:8) expect_equal(unname(shifted$estimate[,,s]-a$estimate[,,s]),
-                               matrix(b[,s],2,15),tolerance=1e-10)
+  expected <- simplify2array(lapply(1:8,function(s) matrix(b[,s],2,15)))
+  expect_lt(max(abs(shifted$estimate-a$estimate-expected)),1e-10)
 })
 
 test_that("rank redraw diagnostics count rejected attempts and realize every draw", {
@@ -294,4 +381,33 @@ test_that("Gaussian blocks and custom coefficient callbacks use original log pro
   zero <- run(matrix(0,ncol(x),12))
   expect_equal(custom$estimate,zero$estimate,tolerance=1e-10)
   expect_lt(max(custom$estimate[1,,]),-1) # Detect accidental CLR centering.
+})
+
+
+test_that("zero-inclusive sign probabilities use all features in each family", {
+  draws <- array(c(0,0,0,0, -1,0,1,1, 1,1,1,1, -1,-1,NA,-1),
+                 c(1,4,4), dimnames=list("x",paste0("f",1:4),NULL))
+  # Arrange four complete feature sequences explicitly.
+  draws[1,,] <- rbind(c(0,0,0,0),c(-1,0,1,1),c(1,1,1,1),c(-1,-1,NA,-1))
+  p <- .ssrv_probabilities(draws,"BH")
+  expect_equal(unname(p$p.val[1,]),c(1,1,0,NA))
+  expect_equal(unname(p$p.val.adj[1,]),p.adjust(c(1,1,0,NA),"BH",n=4))
+  draws[1,2,] <- c(-1,1,1,1)
+  expect_equal(.ssrv_probabilities(draws,"BH")$p.val[1,2],0.5)
+  draws[1,2,1] <- Inf
+  expect_true(is.na(.ssrv_probabilities(draws,"BH")$p.val[1,2]))
+  family <- array(1, c(1,4,8))
+  family[1,1,1] <- -1; family[1,2,1:2] <- -1
+  family[1,3,] <- 0; family[1,4,1] <- NA
+  scores <- .ssrv_probabilities(family,"BH")
+  expect_equal(unname(scores$p.val[1,]), c(.25,.5,1,NA))
+  expect_equal(unname(scores$p.val.adj[1,]), c(1,1,1,NA))
+  f <- ssrv_fixture()
+  set.seed(16)
+  fit <- aldex(f$Y,~treatment,f$data,nsample=8,test="ssrv.bootstrap",scale=tss.sm,
+               p.adjust.method="bonferroni",return.pars=c("estimate","p.val"))
+  expect_identical(fit$p.adjust.method,"bonferroni")
+  expect_null(fit$p.val.adj)
+  expect_equal(summary(fit,ignore.intercept=FALSE)$p.val.adj,
+               as.vector(t(apply(fit$p.val,1,p.adjust,method="bonferroni"))))
 })

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ssrv-scale.R
 \name{sparse.sm}
 \alias{sparse.sm}
-\title{Sparse coefficient scale model}
+\title{Sparse scale model for regression coefficients}
 \usage{
 sparse.sm(
   coefficients,
@@ -13,26 +13,42 @@ sparse.sm(
 \arguments{
 \item{coefficients}{Exact model-matrix coefficient names.}
 
-\item{uncertainty}{One of hybrid, bootstrap, or laplace.}
+\item{uncertainty}{\code{"hybrid"} (default), \code{"bootstrap"}, or
+\code{"laplace"}; see Details.}
 
 \item{bandwidth}{Optional finite positive Gaussian kernel SD in log2
-coefficient units. NULL estimates bandwidth separately for each profile.
-Constant profiles require an explicit positive bandwidth; no smoothing
-variance is assigned automatically.}
+coefficient units. \code{NULL} estimates bandwidth separately for each
+profile. Constant profiles require an explicit positive bandwidth.}
 }
 \value{
-A coefficient scale block for compose.sm.
+A sparse coefficient scale specification for \code{compose.sm}.
 }
 \description{
-Assign a shared scalar scale shift to named log2-proportion coefficients. Gaussian KDE
-modes use bw.nrd0 without a bandwidth floor, refined local
-maxima, and leftmost ties. Feature bootstrap re-estimates bandwidth.
-Laplace uses inverse negative log-density curvature, not a LASSO prior.
-Hybrid selects one complete candidate sequence by its all-draw variance
-(bootstrap on exact ties), without substituting a candidate on numerical failure.
-The sparse assumption places the dominant absolute-effect density peak at
-zero; the conditional model estimates total-scale coefficients from the
-compositional feature profile. Zero log-density curvature gives infinite
-Laplace variance. Unbounded or undefined approximations are warned about;
-affected posterior results are unavailable rather than replaced by bootstrap.
+Estimate a total-abundance coefficient by assuming that the dominant peak
+of absolute feature effects is at zero. For each draw, the estimated scale
+coefficient is added to the corresponding log2-proportion coefficient
+of every feature. Use this assumption only when a dominant cluster of
+features with little or no absolute change is biologically plausible.
+}
+\details{
+Combine this specification with other coefficient models using
+\code{compose.sm}, and supply the result as \code{scale} to
+\code{aldex(test="ssrv.bootstrap")}. Assign every exact model-matrix
+coefficient name, including the intercept.
+
+The default \code{"hybrid"} compares bootstrap and Laplace
+candidates using the median across features of their 95\% final-effect
+interval widths, and selects the complete sequence with the larger median;
+exact ties select Laplace. Bootstrap resamples subjects and features;
+Laplace fits the original subjects and uses inverse negative log-density
+curvature for the scale variance, rather than a LASSO prior. When all
+sparse specifications use Laplace, accompanying Gaussian coefficients also
+use the original subjects, without subject or feature resampling.
+
+Gaussian kernel density estimation uses \code{bw.nrd0} by default,
+re-estimating bandwidth for feature resamples, without a bandwidth floor.
+Local maxima are refined and exact density ties choose the leftmost mode.
+Zero curvature gives infinite Laplace variance; an unbounded or undefined
+approximation warns and makes affected results unavailable, without an
+automatic bootstrap substitution.
 }

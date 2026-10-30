@@ -47,13 +47,21 @@ This article provides the theoretical motivation for scale models, explains why 
 
 ## How it works
 
-For each of `nsample` Monte Carlo draws, `aldex()`:
+For the default t-based inference, for each of `nsample` Monte Carlo draws, `aldex()`:
 
 1. draws each sample's composition from a Dirichlet–multinomial posterior given its counts;
 2. draws each sample's scale from the chosen scale model;
 3. combines the two into log2 abundances (log composition plus log scale);
 4. fits the linear model (`method = "lm"`) or mixed model (`"blmm"`, `"lme4"`, `"nlme"`) to every feature, giving estimates, standard errors and p-values for that draw;
 5. adjusts the p-values across features within the draw. Estimates, standard errors and adjusted p-values are then averaged over draws.
+
+For independent-sample linear models, `test="ssrv.bootstrap"` uses Scale
+Simulation Random Variables (SSRVs) to combine composition and scale uncertainty.
+It summarizes
+final absolute-effect draws and computes sign scores across those draws. Its
+summary has `p2.5` and `p97.5` interval columns, plus `p.val` and `p.val.adj`.
+See the [bootstrap SSRV tutorial](ALDEx3-bootstrap-SSRV.html) for assumptions
+and interpretation.
 
 ## Installation
 

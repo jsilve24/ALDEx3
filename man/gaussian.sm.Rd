@@ -2,29 +2,35 @@
 % Please edit documentation in R/ssrv-scale.R
 \name{gaussian.sm}
 \alias{gaussian.sm}
-\title{Gaussian coefficient scale block}
+\title{Gaussian prior for total-abundance coefficients}
 \usage{
 gaussian.sm(coefficients, mean = 0, sd = NULL, covariance = NULL)
 }
 \arguments{
-\item{coefficients}{Exact model-matrix coefficient names in block order.}
+\item{coefficients}{Exact model-matrix coefficient names in covariance order.}
 
-\item{mean}{Scalar or vector of expected scale shifts.}
+\item{mean}{Scalar or vector of prior means in log2-total coefficient units.}
 
-\item{sd}{Scalar or vector of nonnegative standard deviations.}
+\item{sd}{Scalar or vector of nonnegative prior standard deviations in the
+same units, supplied instead of \code{covariance}.}
 
-\item{covariance}{Joint covariance matrix, instead of sd.}
+\item{covariance}{Joint covariance matrix, supplied instead of \code{sd}.}
 }
 \value{
-A coefficient scale block for compose.sm.
+A Gaussian coefficient scale specification for \code{compose.sm}.
 }
 \description{
-A joint Gaussian prior on regression coefficients of log2 absolute total
-abundance. Each draw is added to the corresponding log2-proportion coefficient
-for every feature. Separate blocks are independent; covariance within a block
-is preserved. Assign the intercept explicitly, for example with mean=0, sd=0.
-Zero shifts give the log-proportion coefficients without correction: a zero
-intercept scale shift fixes reference total abundance at one, not its
-geometric mean. These are total-scale coefficients, as in coefficient.sm.
-Recoding predictors changes these priors unless transformed consistently.
+Specify a joint Gaussian prior on regression coefficients of log2 total
+abundance. Each sampled coefficient is added to the corresponding
+log2-proportion coefficient for every feature. For example, a treatment
+coefficient with mean -1 represents an expected halving of total abundance.
+A zero intercept coefficient fixes the reference total abundance at one in
+the chosen units. Predictor recoding changes the prior unless its parameters
+are transformed consistently.
+}
+\details{
+Use exact model-matrix names and combine specifications with \code{compose.sm}.
+Coefficients in one call can be correlated through \code{covariance};
+separate calls are independent. Covariance rows and columns follow the
+order of \code{coefficients}.
 }

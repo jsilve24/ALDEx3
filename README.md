@@ -31,13 +31,19 @@ This article provides the theoretical motivation for scale models, explains why 
 
 ## How it works
 
-For each of `nsample` Monte Carlo draws, `aldex()`:
+For the default t-based inference, for each of `nsample` Monte Carlo draws, `aldex()`:
 
 1. draws each sample's composition from a Dirichlet–multinomial posterior given its counts;
 2. draws each sample's scale from the chosen scale model;
 3. combines the two into log2 abundances (log composition plus log scale);
 4. fits the linear model (`method = "lm"`) or mixed model (`"blmm"`, `"lme4"`, `"nlme"`) to every feature, giving estimates, standard errors and p-values for that draw;
 5. adjusts the p-values across features within the draw. Estimates, standard errors and adjusted p-values are then averaged over draws.
+
+For independent-sample linear models, `test="ssrv.bootstrap"` uses Scale
+Simulation Random Variables (SSRVs) to combine composition and scale uncertainty.
+It summarizes
+final absolute-effect draws and computes sign scores across those draws. See the
+[bootstrap SSRV tutorial](vignettes/ALDEx3-bootstrap-SSRV.Rmd) for interpretation.
 
 ## Installation
 
@@ -299,21 +305,16 @@ fit <- aldex(Y,~treatment+age,metadata,nsample=100,
 summary(fit,component="contrasts")
 ```
 
-Sparse blocks estimate one scalar correction shared across taxa per coefficient
-and draw. Gaussian blocks can retain a joint covariance. Every coefficient must
-be explicitly assigned, including the intercept; these composable priors use the original
-log2 proportions and total-scale coefficients, as in `coefficient.sm`. There is
-no automatic CLR centering. A zero intercept scale shift fixes reference total
-abundance at one. Separate blocks are independent except
-that sparse blocks share feature-bootstrap indices. Subjects and design rows
-are always resampled together. General regression uses paired row resampling;
-`bootstrap.strata` supplies explicit strata. Rank-deficient resamples have bounded
-redraws and recorded rejection counts.
+The sparse model assumes a dominant cluster of taxa with little or no absolute
+change; sequencing counts alone cannot establish that assumption. The intercept
+above fixes the reference total to one, while the Gaussian age prior describes
+uncertainty in the age coefficient of log2 total abundance. Check sensitivity to
+plausible scale assumptions. The example uses few draws for speed: use more and
+check Monte Carlo stability for analysis.
 
-This path computes completed SSRV credible intervals, without residual t errors
-or p-values. It supports `return.pars="posterior"` and exact joint contrast
-summaries; current plotting, p-adjust and effect diagnostics reject these fits.
-Both hybrid candidates include subject resampling, extending the manuscript's
-original Laplace branch. Mixed-effects bootstrap inference is not supported.
-See [the tutorial](vignettes/ALDEx3-bootstrap-SSRV.Rmd) for bandwidth, hybrid
-selection, unbounded Laplace diagnostics, legacy adapters, and memory limitations.
+`summary()` reports posterior means, pointwise intervals (`p2.5`, `p97.5`),
+and raw and adjusted two-sided sign scores (`p.val`, `p.val.adj`), with a
+separate adjustment across all supplied features for each coefficient or contrast.
+The bootstrap SSRV method supports independent samples, not mixed-effects
+inference. See the [tutorial](vignettes/ALDEx3-bootstrap-SSRV.Rmd) for scale
+choices, subject resampling, interpretation and limitations.

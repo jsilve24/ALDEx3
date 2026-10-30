@@ -1,12 +1,12 @@
 ---
-title: "Absolute abundance inference with bootstrap SSRVs"
+title: "Absolute abundance inference with sparse scale models"
 output:
   rmarkdown::html_vignette:
     toc: true
     mathjax: null
     pandoc_args: ["--mathml"]
 vignette: >
-  %\VignetteIndexEntry{Absolute abundance inference with bootstrap SSRVs}
+  %\VignetteIndexEntry{Absolute abundance inference with sparse scale models}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -39,7 +39,7 @@ be used with Gaussian scale priors or external scale measurements.
 We first describe the model, then fit a two-group example and a regression with a
 covariate. The examples use `test="ssrv.bootstrap"` and ordinary linear models.
 They assume independent biological samples. Repeated measures and mixed-effects
-bootstrap inference are not supported by this selector; see the
+bootstrap inference are not supported by this method; see the
 [mixed-effects vignette](ALDEx3-mixed-effects.html) for existing mixed-model methods.
 
 ## The model: proportions, totals, and absolute effects
@@ -73,9 +73,8 @@ abundance; -1 represents a twofold decrease.
 
 The same scalar \(b_k\) applies to **every taxon** for a given coefficient and
 draw. A scale model shifts the whole profile of feature effects; it does not
-independently perturb or shrink each feature's coefficient. An SSRV combines
-compositional-effect and scale-effect draws to represent uncertainty about the
-absolute effect.
+independently perturb or shrink each feature's coefficient. A Scale Simulation
+Random Variable (SSRV) combines compositional-effect and scale-effect draws to represent uncertainty about the absolute effect.
 
 ### What the sparse assumption adds
 
@@ -186,31 +185,96 @@ results[match(c("taxon1", "taxon2", "taxon26", "taxon27"), results$entity), ]
 ```
 
 `estimate` is the posterior mean absolute log2 treatment effect.
-`credible.lower` and `credible.upper` are the pointwise equal-tailed 95% limits
+`p2.5` and `p97.5` are the pointwise equal-tailed 95% limits
 from the completed effect draws. The first two taxa have simulated effect 1;
 the last two have simulated effect 0. Finite biological sampling and sequencing
 uncertainty mean the estimates need not equal those values exactly.
 
-An interval wholly above zero indicates that the simulated absolute-effect
-distribution lies mostly above zero under the chosen scale model. It is not a
+An interval wholly above zero indicates that the posterior draws of the absolute
+effect lie mostly above zero under the chosen scale model. It is not a
 BH-adjusted significance decision. These are pointwise intervals, with no claim
 that checking many of them controls frequentist false discoveries.
 
+### Sign scores and multiple testing
+
+For each feature and coefficient (or contrast), let \(\theta_1,\ldots,\theta_S\)
+be the final absolute-effect draws after choosing the sparse uncertainty model
+and forming any contrast. ALDEx3 reports the two-sided sign score
+
+\[
+p = \min\!\left(1,\;2\min\!\left\{\frac{1}{S}\sum_s I(\theta_s\leq0),
+\frac{1}{S}\sum_s I(\theta_s\geq0)\right\}\right).
+\]
+
+Zero draws count in both tails, so all-zero draws give 1. A nonfinite draw
+makes the score `NA`; draws are not discarded. The score is twice the smaller
+posterior sign tail, capped at one, under the specified model. It is not the probability that
+the null hypothesis is true. A zero score means no draw was observed in the
+contrary tail, not certainty. Without zero ties, the raw score has resolution
+\(2/S\). Small tails and adjusted decisions can be sensitive to Monte Carlo
+error, so increase `nsample` and compare results across seeds when conclusions
+are near a threshold.
+
+ALDEx3 computes the raw scores from the final joint draws, then applies
+`p.adjust` across all D supplied features separately for each coefficient or
+contrast, using `n=D`. The default is Benjamini–Hochberg (BH); other R
+`p.adjust` methods can be chosen with `p.adjust.method`. Only two-sided scores are supported.
+The `p.val` and
+`p.val.adj` columns contain the raw and adjusted scores. `component="all"`
+combines displayed rows, not their adjustment families; a combined discovery
+list across coefficients or contrasts has no joint correction. `aldex.p.adjust()`
+does not support these fits. BH-adjusted scores are not posterior null
+probabilities and do not by themselves guarantee frequentist FDR control.
+
+For example, suppose 10,000 draws have these counts for four taxa, with no zero
+ties. The first three have more than 97.5% positive draws, so their pointwise
+95% intervals can exclude zero. BH adjustment nevertheless puts the third
+above 0.05:
+
+```{r bh-example}
+S <- 10000
+example <- data.frame(taxon=paste0("taxon", 1:4),
+                      nneg=c(1, 20, 200, 4500),
+                      npos=c(9999, 9980, 9800, 5500))
+example$p.val <- pmin(1, 2 * pmin(example$nneg/S, example$npos/S))
+example$p.val.adj <- p.adjust(example$p.val, method="BH", n=nrow(example))
+example
+```
+
+The raw scores are 0.0002, 0.004, 0.04 and 0.9; the BH values are 0.0008,
+0.008, approximately 0.0533333 and 0.9. BH orders the raw scores, scales the
+score at rank \(j\) by \(D/j\), then takes the cumulative minimum from
+the largest rank back to the smallest and caps the result at one:
+\(q_{(i)}=\min(1, \min_{j\geq i} D p_{(j)}/j)\). Thus an adjusted
+score depends on the entire family, not just that feature’s raw score. In the
+fitted example, a thresholded
+list can be obtained after the full-family adjustment:
+
+```{r discoveries}
+results[!is.na(results$p.val.adj) & results$p.val.adj < 0.05, ]
+```
+
 ### What was resampled?
 
-For each global Monte Carlo draw, ALDEx3:
+For each Monte Carlo draw, ALDEx3:
 
 1. Draws a latent composition for each original sample, using a Dirichlet
    distribution with parameters `Y[, i] + 0.5`.
-2. Resamples subjects and their design rows together, with replacement. A repeated
-   copy of a subject uses the same latent composition drawn in step 1.
-3. Fits all log-proportion responses with the existing `fflm` regression solver.
-4. Draws the scale coefficients and adds each scalar to every original taxon.
+2. Where a subject bootstrap is needed, resamples subjects and their design
+   rows together, with replacement. A repeated subject uses the same latent composition drawn
+   in step 1. The sparse Laplace candidate uses the original subjects instead.
+3. Fits each candidate’s log-proportion responses using ordinary least squares.
+4. Draws scale coefficients and adds each scalar to every original taxon.
 
 With `uncertainty="bootstrap"`, step 4 also resamples the **features** with
 replacement to estimate the compositional-effect peak. Those feature indices
 only estimate the scalar correction: every original feature remains in the
 output. Sparse coefficients share the feature indices within a draw.
+
+When all sparse coefficients request Laplace, no subject or feature bootstrap
+is drawn; any accompanying Gaussian coefficients use the original subjects too.
+Gaussian-only and other supported scale models use subject resampling. Mixed
+sparse modes and hybrid use both resampled and original subjects.
 
 The subject bootstrap represents biological sampling uncertainty; the feature
 bootstrap represents uncertainty in the sparse scale estimate. Neither replaces
@@ -249,8 +313,9 @@ The age prior describes an expected increase of 0.1 log2 units in **total
 abundance per decade**, with SD 0.05. It does not place a separate prior on each
 taxon's age effect. The contrast adds the absolute treatment coefficient and
 one decade's absolute age coefficient. Its intervals come from that sum within
-each joint draw, preserving dependence. They are not differences of marginal
-interval endpoints, and the contrast gets no additional sparse correction.
+each joint draw, preserving dependence. Its sign score counts the signs of the within-draw sums, rather than combining
+coefficient scores. The interval is not a difference of marginal endpoints,
+and the contrast gets no additional sparse correction.
 
 Priors refer to the exact design basis and units. Changing age from decades to
 years requires transforming its mean and SD consistently. Factor recoding can
@@ -258,10 +323,10 @@ also change a coefficient's meaning.
 
 ### Correlated Gaussian coefficients
 
-Separately specified Gaussian blocks draw independently. If scale information
-couples two coefficients, put them in the same Gaussian block. For example,
+Separate calls to `gaussian.sm()` draw independently. If scale information
+couples two coefficients, specify them together in one `gaussian.sm()` call. For example,
 if external information centers the reference total near 30000 units and its
-uncertainty is correlated with uncertainty about the age trend, a block could be:
+uncertainty is correlated with uncertainty about the age trend, use:
 
 ```{r gaussian-block}
 correlated <- compose.sm(
@@ -273,7 +338,7 @@ correlated <- compose.sm(
 
 Rows and columns of the covariance follow the supplied coefficient order. The
 matrix diagonal contains variances, not SDs. A coefficient cannot simultaneously
-belong to this correlated block and another sparse or Gaussian block.
+appear in this correlated specification and another sparse or Gaussian specification.
 
 ## Choosing scale uncertainty
 
@@ -285,31 +350,23 @@ and offers three uncertainty modes:
 * `"laplace"` draws one Gaussian scalar around minus the mode. Its variance is
   the inverse negative curvature of the **log** KDE at that mode. This is a local
   curvature approximation, not a double-exponential or LASSO shrinkage prior.
-* `"hybrid"`, the default, collects both candidate scale sequences over all
-  Monte Carlo draws. For each sparse coefficient, it selects the entire sequence
-  with the larger sample variance. Exact ties choose bootstrap.
+* `"hybrid"`, the default, collects both candidate final-effect sequences over
+  all Monte Carlo draws. For each sparse coefficient, it computes the 95%
+  interval width for each feature, takes the median across features, and selects
+  the entire candidate with the larger median. Exact ties choose Laplace.
 
-Both candidates use the same subject-bootstrap compositional coefficients in
-this regression extension. This deliberately differs from the manuscript's
-original Laplace branch, which did not include subject resampling. The Gaussian
-perturbation is one scalar shared across taxa, following the author correction
-to supplement S5. The larger-variance choice defines the procedure; it is not a
-general theorem guaranteeing conservative intervals or frequentist FDR control.
+The candidates fit log proportions on different samples: bootstrap uses resampled
+subjects, while Laplace uses the original subjects. The Gaussian perturbation is
+one scalar shared across taxa.
+The width rule does not guarantee conservative intervals or frequentist FDR control.
 
 ### The coordinate choice matters
 
-Hybrid selection compares **scale-coefficient** variances in the original
-log-proportion coordinates. If a coordinate change adds a draw-dependent scalar
-\(c_s\) to every compositional feature coefficient, both candidate scale
-coefficients subtract \(c_s\). Each candidate's absolute effects are unchanged,
-but their scale variances can change by different amounts because their
-covariances with \(c_s\) differ. Hybrid can then select a different candidate.
-A fixed coefficient offset across all draws does not change the selection.
-
-For this reason, automatic CLR centering is not an interchangeable numerical
-step. It would change the meaning of Gaussian total-scale priors and could
-change the hybrid choice. CLR assumptions remain explicitly available through
-`scale=clr.sm` in the existing scale interface.
+Hybrid compares final-effect widths, which incorporate covariance between each
+candidate's fitted log-proportion effects and its scale shift. Gaussian priors describe
+total-scale coefficients on the original log-proportion basis, so their meaning
+depends on the chosen coordinates. CLR assumptions remain explicitly available
+through `scale=clr.sm` in the existing scale interface.
 
 ### Bandwidth and numerical failures
 
@@ -319,22 +376,10 @@ SD in log2 coefficient units. This is a smoothing choice, not the Gaussian
 scale-prior SD. Assess sensitivity when the effect profile has competing peaks.
 All original features enter scale estimation; there is no hidden feature filter.
 
-For stability, the KDE calculation subtracts an offset and expresses distances
-in bandwidth units, then restores the original units. These are algebraic
-coordinate changes inside the KDE, not CLR centering or a different scale prior.
-There is no bandwidth floor: the default is `bw.nrd0` on centered coordinates.
-If a profile is constant, including a constant feature-bootstrap resample, supply
-an explicit positive `bandwidth`; the code does not choose a smoothing variance
-for that case. This can matter especially with very few features.
-
-Mode search uses a grid with spacing at most one eighth of the bandwidth,
-includes every kernel center, and refines bracketed stationary maxima using the
-analytic derivative. Bounded density optimization is used when the derivative
-is not bracketed. Optimizer/root tolerances are expressed in bandwidth units.
-There is no fixed grid-coarsening cap or near-equal-peak tolerance: exact ties
-in the computed densities choose the leftmost maximum. This remains a numerical
-mode search, not a proof of exact global optimization or an independently verified
-reproduction of the reference implementation.
+Constant profiles, including constant feature-bootstrap resamples, require an
+explicit positive `bandwidth`. This can matter especially with very few features.
+The mode is found numerically; exact ties in computed density select the leftmost
+maximum.
 
 ### Infinite or undefined Laplace variance
 
@@ -351,9 +396,8 @@ is the model you want. It retains `Inf` in
 `diagnostics$laplace.max.conditional.variance` and records the number of such
 iterations in `diagnostics$laplace.unbounded.draws`.
 
-No completed Laplace sequence exists for that coefficient, so there is no sample
-variance to compare under the hybrid rule. The hybrid branch is recorded as `NA`,
-rather than substituting bootstrap or inventing a sample variance. Affected
+No completed Laplace sequence exists for that coefficient, so there is no
+final-effect width to compare under the hybrid rule. Hybrid results are `NA` without substituting the bootstrap candidate. Affected
 coefficient estimates and summaries are `NA`, and `summary()` adds a `status`
 column marking unavailable results. No problematic iterations are dropped to
 summarize a smaller set of draws. Other coefficients and contrasts that do not
@@ -368,13 +412,13 @@ Inspect `diagnostics$unavailable.coefficients`, `unavailable.contrasts`, and
 actual candidate sequence; it is `NA` when that sequence is unavailable or was
 not requested. It is distinct from the conditional curvature-based variance,
 which may be infinite. For fits with both candidate sequences available, hybrid
-always compares their all-draw sample variances and uses bootstrap on an exact tie.
+compares their median feature widths over all draws and uses Laplace on an exact tie.
 
 ## Subject resampling and scope
 
-An intercept-plus-binary design defaults to subject resampling within its two
-groups. General regression uses paired row resampling. To supply simple strata
-explicitly, give a nonmissing length-N vector in the original sample order:
+When a subject bootstrap is used, all designs default to resampling subjects
+and their design rows together across the full sample. To supply strata, give
+a nonmissing length-N vector in the original sample order:
 
 ```{r strata}
 stratified <- aldex(Y, ~ treatment, metadata, nsample=128,
@@ -383,8 +427,9 @@ stratified <- aldex(Y, ~ treatment, metadata, nsample=128,
 stratified$diagnostics$resampling
 ```
 
-Strata preserve sample sizes within those groups. They do not make
-repeated observations independent or provide cluster inference. ALDEx3 does not
+Strata control the bootstrap branch and preserve sample sizes within those groups.
+They do not affect the sparse Laplace branch or make repeated observations
+independent or provide cluster inference. ALDEx3 does not
 automatically stratify by every covariate value in a general formula.
 
 The design matrix is built once, preserving factor levels, reference coding and
@@ -399,12 +444,17 @@ fits record rejection counts in `diagnostics`.
 By default, `fit$estimate` is a P x D x S array of final absolute-effect draws.
 Here P is the coefficient count, D the feature count and S the draw count.
 `fit$posterior` contains P x D matrices `mean`, `lower`, and `upper`, plus
-`level=0.95` and `interval="equal-tailed"`. Contrasts use the same structure
-under `fit$contrasts`. `fit$nsample` records the number of global iterations; `diagnostics$available.draws`
+`level=0.95` and `interval="equal-tailed"`. The top-level `fit$p.val` and `fit$p.val.adj`
+are P x D matrices. Contrasts use the same structure under `fit$contrasts`. `fit$nsample` records
+the number of Monte Carlo iterations; `diagnostics$available.draws`
 records the completed effect-draw count for each coefficient.
 
 Use `return.pars="posterior"`, as in the covariate example, to discard draws
-after calculating exact summaries. `summary()` works with those summaries alone;
+after calculating exact summaries and sign scores; the probability matrices are
+retained. Explicit `return.pars` can also request `p.val` or `p.val.adj` individually.
+For estimate-only results, `summary()` derives scores across all features before
+filtering displayed rows. Older compact results without scores or draws return `NA`
+for those fields with a warning. `summary()` works with stored summaries alone;
 `ignore.intercept` and `component="all"`, `"coefficients"`, or `"contrasts"`
 control its rows. Its `level` and `interval` attributes record interval metadata.
 Arbitrary interval levels cannot be reconstructed from stored endpoints alone.
@@ -412,9 +462,9 @@ Arbitrary interval levels cannot be reconstructed from stored endpoints alone.
 Exact quantiles use all final coefficient draws after hybrid selection. Although
 sample-level arrays are processed one draw at a time, coefficient working memory
 remains O(P D S), including summaries-only fits. Candidate scale arrays are only
-P x S. Random-number order is draw-major and does not depend on streaming or
-retention choices. `streamsize` uses the existing heuristic threshold; it is not
-a hard memory limit. Sample-level arrays are not returned by this initial path.
+P x S. Random-number order does not depend on streaming or retention choices.
+`streamsize` uses a heuristic threshold, not a hard memory limit. Sample-level
+composition and scale arrays are not returned for this method.
 
 The existing `clr.sm`, `tss.sm`, `sample.sm`, `coefficient.sm`, custom sample-scale
 callbacks, and N x nsample scale matrices are also supported with the subject
@@ -423,18 +473,15 @@ regression as the log proportions, preserving sample identity and draw alignment
 A sample scale `X^T b` recovers `b` under a full-rank resampled design; arbitrary
 sample scales need not lie entirely in the design span. Scale is added once.
 
-These completed SSRV summaries differ from the existing t-test-based inference.
-No residual t errors, frequentist p-values, or BH-adjusted posterior probabilities
-are added. Existing inference selectors and defaults remain available, but
-`aldex.plot()`, `aldex.p.adjust()`, `aldex.effect()`, and Cohen's-d diagnostics
-explicitly reject `test="ssrv.bootstrap"` fits. Unsupported SE/df/p-value output
-requests also fail clearly.
+These summaries use final effect draws rather than residual t errors or degrees
+of freedom. `aldex.plot()`, `aldex.p.adjust()`, `aldex.effect()`, and Cohen's-d
+diagnostics do not support `test="ssrv.bootstrap"` fits.
 
 ## Custom coefficient-scale functions
 
 For a fully joint custom coefficient model, pass a function with an `A` formal.
 It receives the P x D log2-proportion coefficient matrix `A`, original P x N
-`X`, original D x N x 1 `logComp`, bootstrap `indices`, and global `draw` number.
+`X`, original D x N x 1 `logComp`, bootstrap `indices`, and Monte Carlo `draw` number.
 Return a finite named P-vector of log2-total-scale coefficients. For example,
 a fixed zero total-scale coefficient for every model term can be written as:
 
@@ -448,11 +495,11 @@ joint_fit <- aldex(Y, ~ treatment + age10, metadata, nsample=16,
 
 This explicitly assumes total abundance one for every subject, with no scale
 uncertainty; it is not a sparse model. Custom sample-scale callbacks without an
-`A` formal retain their original signatures. They are called once per global
+`A` formal retain their original signatures. They are called once per Monte Carlo
 draw with a singleton third composition dimension and must return an N x 1
 matrix. They should not maintain external state that depends on streaming chunks.
 
-## Further reading and implementation provenance
+## Further reading
 
 Gu, Chiaromonte, and Silverman, *Sparse Bayesian Partially Identified Models for
 Microbiome Data*, motivates sparse scale models. See also Nixon, Gloor, and
@@ -460,10 +507,3 @@ Silverman (2025), *Incorporating scale uncertainty in microbiome and gene
 expression analysis as an extension of normalization*, Genome Biology,
 [doi:10.1186/s13059-025-03609-3](https://doi.org/10.1186/s13059-025-03609-3),
 for the broader scale-model formulation.
-
-This implementation follows the supplied specification and the correction to
-supplement S5. No manuscript PDFs or original reference implementation were
-supplied during development. Validation uses independent regression and bootstrap
-calculations; it does not establish exact reproduction of the original full
-hybrid procedure. Mixed-effects bootstrap inference and Bayesian multiple-testing
-or plotting extensions remain outside this release.
